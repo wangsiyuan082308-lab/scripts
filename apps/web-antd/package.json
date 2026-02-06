@@ -1,0 +1,88 @@
+{
+  "author": {
+    "email": "ann.vben@gmail.com",
+    "name": "vben",
+    "url": "https://github.com/anncwb"
+  },
+  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "build": {
+    "appId": "com.vben.admin",
+    "directories": {
+      "output": "release/${version}"
+    },
+    "files": [
+      "dist",
+      "dist-electron"
+    ],
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "oneClick": false,
+      "perMachine": false
+    },
+    "productName": "Vben Admin",
+    "win": {
+      "artifactName": "${productName}_${version}.${ext}",
+      "target": [
+        {
+          "arch": [
+            "x64"
+          ],
+          "target": "nsis"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "@vben/access": "workspace:*",
+    "@vben/common-ui": "workspace:*",
+    "@vben/constants": "workspace:*",
+    "@vben/hooks": "workspace:*",
+    "@vben/icons": "workspace:*",
+    "@vben/layouts": "workspace:*",
+    "@vben/locales": "workspace:*",
+    "@vben/plugins": "workspace:*",
+    "@vben/preferences": "workspace:*",
+    "@vben/request": "workspace:*",
+    "@vben/stores": "workspace:*",
+    "@vben/styles": "workspace:*",
+    "@vben/types": "workspace:*",
+    "@vben/utils": "workspace:*",
+    "@vueuse/core": "catalog:",
+    "ant-design-vue": "catalog:",
+    "dayjs": "catalog:",
+    "exceljs": "^4.4.0",
+    "pinia": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:"
+  },
+  "devDependencies": {
+    "electron": "^40.1.0",
+    "electron-builder": "^26.4.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "homepage": "https://vben.pro",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "name": "@vben/web-antd",
+  "repository": {
+    "directory": "apps/web-antd",
+    "type": "git",
+    "url": "git+https://github.com/vbenjs/vue-vben-admin.git"
+  },
+  "scripts": {
+    "build": "pnpm vite build --mode production",
+    "build:electron": "pnpm vite build --mode production && electron-builder",
+    "build:analyze": "pnpm vite build --mode analyze",
+    "dev": "pnpm vite --mode development",
+    "dev:electron": "pnpm vite --mode development",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit --skipLibCheck"
+  },
+  "type": "module",
+  "version": "5.5.9"
+}

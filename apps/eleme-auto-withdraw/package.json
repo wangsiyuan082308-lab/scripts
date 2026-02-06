@@ -1,0 +1,19 @@
+{
+  "name": "eleme-auto-withdraw",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Ele.me automatic withdrawal automation script",
+  "dependencies": {
+    "@types/node": "^25.2.0",
+    "playwright": "^1.58.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

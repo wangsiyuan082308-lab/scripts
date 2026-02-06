@@ -9,6 +9,20 @@ const [Form, formApi] = useVbenForm({
   handleSubmit: onSubmit,
   schema: [
     {
+      component: 'RadioGroup',
+      componentProps: {
+        options: [
+          { label: '按周比对', value: 'week' },
+          { label: '按月比对', value: 'month' },
+          { label: '不比对', value: 'none' },
+        ],
+      },
+      defaultValue: 'week',
+      fieldName: 'mode',
+      label: '比对模式',
+      rules: 'required',
+    },
+    {
       component: 'Upload',
       componentProps: {
         accept: '.xlsx,.xls',
@@ -32,7 +46,7 @@ const [Form, formApi] = useVbenForm({
 // 确认转换
 async function onSubmit(values: any) {
   try {
-    const { files } = values;
+    const { files, mode } = values;
 
     // 二次确认：检查是否已完成补货检查
     await new Promise((resolve, reject) => {
@@ -48,10 +62,10 @@ async function onSubmit(values: any) {
     });
 
     // 1. 分析文件
-    const { listFile, refFile } = analyzeFiles(files);
+    const { listFile, refFile } = analyzeFiles(files, mode);
 
     // 2. 处理转换
-    const success = await processExcelFiles(listFile, refFile);
+    const success = await processExcelFiles(listFile, refFile, mode);
     if (success) {
       await formApi.resetForm();
     }
@@ -63,9 +77,15 @@ async function onSubmit(values: any) {
 }
 
 // 文件分析器：识别补货清单和补货参考
-const analyzeFiles = (files: File[]) => {
-  if (!files || files.length !== 2) {
-    throw new Error('请确保上传了两个文件（补货清单和补货参考）');
+const analyzeFiles = (files: File[], mode: string) => {
+  const isNoCompare = mode === 'none';
+  // 如果是不比对模式，只需要补货清单
+  if (!files || files.length < (isNoCompare ? 1 : 2)) {
+    throw new Error(
+      isNoCompare
+        ? '请上传【补货清单】Excel文件'
+        : '请确保上传了两个文件（补货清单和补货参考）',
+    );
   }
 
   let listFile: File | null = null;
@@ -84,8 +104,15 @@ const analyzeFiles = (files: File[]) => {
     }
   });
 
-  if (!listFile || !refFile) {
-    throw new Error('文件识别失败，请检查文件名，必须包含“补货清单”和“补货参考”');
+  if (!listFile) {
+    throw new Error('文件识别失败，请检查文件名，必须包含“补货清单”');
+  }
+
+  if (isNoCompare) {
+    // 强制置空，即使识别到了也不使用
+    refFile = null;
+  } else if (!refFile) {
+    throw new Error('文件识别失败，请检查文件名，必须包含“补货参考”');
   }
 
   return { listFile, refFile };
@@ -108,18 +135,24 @@ const readFileAsBuffer = (file: File): Promise<ArrayBuffer> => {
 };
 
 // Excel 处理器：调用 Electron 进行转换
-const processExcelFiles = async (listFile: File, refFile: File) => {
+const processExcelFiles = async (
+  listFile: File,
+  refFile: File | null,
+  mode: string,
+) => {
   try {
     message.loading({
-      content: `正在读取文件...\n清单: ${listFile.name}\n参考: ${refFile.name}`,
+      content: `正在读取文件...\n清单: ${listFile.name}\n参考: ${
+        refFile?.name || '无'
+      }`,
       key: 'processExcel',
     });
 
     // 1. 读取文件流
-    const [listBuffer, refBuffer] = await Promise.all([
-      readFileAsBuffer(listFile),
-      readFileAsBuffer(refFile),
-    ]);
+    const listBuffer = await readFileAsBuffer(listFile);
+    const refBuffer = refFile
+      ? await readFileAsBuffer(refFile)
+      : new ArrayBuffer(0);
 
     message.loading({ content: '正在处理数据...', key: 'processExcel' });
 
@@ -127,6 +160,7 @@ const processExcelFiles = async (listFile: File, refFile: File) => {
     const result = await window.ipcRenderer.invoke('process-excel-buffers', {
       listBuffer,
       refBuffer,
+      mode,
       // 去除文件后缀名，避免生成的默认文件名包含双重后缀
       originalName: listFile.name.replace(/\.[^/.]+$/, ''),
     });

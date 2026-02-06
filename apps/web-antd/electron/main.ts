@@ -142,12 +142,13 @@ function registerIpcHandlers() {
    */
   ipcMain.handle(
     'process-excel-buffers',
-    async (_event, { listBuffer, refBuffer, originalName }) => {
+    async (_event, { listBuffer, refBuffer, originalName, mode }) => {
       try {
         // 2. 调用分析逻辑 (注意：IPC 传输的 ArrayBuffer 需要转为 Buffer)
         const { buffer, summary, storeNames } = await ProcurementAnalyzer.run({
           listBuffer: Buffer.from(listBuffer),
           refBuffer: Buffer.from(refBuffer),
+          mode,
         });
 
         // 拼接门店名称到文件名 (如果有多个门店，取第一个，或者用逗号连接)

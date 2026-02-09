@@ -1,16 +1,46 @@
-const xlsx = require('xlsx');
-const fs = require('fs');
-const path = require('path');
+import * as xlsx from 'xlsx';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// 配置接口
+interface Config {
+  targetMargin: number;
+  inputFile: string;
+  outputDir: string;
+}
+
+// 商品统计接口
+interface ProductStats {
+  totalSales: number;
+  totalRevenue: number;
+  totalCost: number;
+  prices: number[];
+  costs: number[];
+  fixedCost: number; // 新增字段
+}
+
+// 商品结果接口
+interface ProductResult {
+  name: string;
+  grossMargin: number;
+  avgPrice: number;
+  avgCost: number;
+  totalSales: number;
+  totalRevenue: number;
+}
 
 // 配置
-const CONFIG = {
+const CONFIG: Config = {
   targetMargin: 30, // 目标毛利率30%
-  inputFile: '/Users/mac/Downloads/导出订单列表+明细20260209_173622.xlsx',
+  // inputFile: '/Users/mac/Downloads/导出订单列表+明细20260209_173622.xlsx',
+  inputFile: '/Users/mac/Downloads/导出订单列表+明细20260210_134024.xlsx', // 更新为最新文件
   outputDir: '/Users/mac/Downloads'
 };
 
-// 颜色输出
-const colors = {
+// 颜色输出类型
+type ColorType = 'red' | 'green' | 'yellow' | 'blue' | 'magenta' | 'cyan' | 'reset';
+
+const colors: Record<ColorType, string> = {
   red: '\x1b[31m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
@@ -20,7 +50,7 @@ const colors = {
   reset: '\x1b[0m'
 };
 
-function log(message, color = 'reset') {
+function log(message: string, color: ColorType = 'reset') {
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
@@ -46,6 +76,10 @@ function analyzeExcel() {
     }
 
     const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) {
+      log(`❌ 错误: 无法读取Sheet "${sheetName}"`, 'red');
+      return;
+    }
     
     // 转换为JSON数据
     const data = xlsx.utils.sheet_to_json(worksheet);
@@ -54,17 +88,17 @@ function analyzeExcel() {
     // 分析商品毛利率
     analyzeProducts(data);
 
-  } catch (error) {
+  } catch (error: any) {
     log(`\n❌ 错误: ${error.message}`, 'red');
     log(`\n💡 提示: 请确保安装了xlsx库: npm install xlsx\n`, 'yellow');
   }
 }
 
-function analyzeProducts(data) {
+function analyzeProducts(data: any[]) {
   log('📈 开始分析商品毛利率...\n', 'cyan');
 
   // 按商品名称分组统计
-  const productMap = new Map();
+  const productMap = new Map<string, ProductStats>();
 
   data.forEach(row => {
     const productName = row['商品名称'];
@@ -73,39 +107,52 @@ function analyzeProducts(data) {
     const quantity = parseFloat(row['商品销售数量']) || 0;
 
     if (!productMap.has(productName)) {
+      // 特殊商品成本修正
+      // TODO: 未来可以将这些硬编码的成本配置移到外部配置文件或数据库中
+      let fixedCost = 0;
+      if (productName.includes('清风') && productName.includes('无芯卷纸')) {
+        fixedCost = 11.9; // 修正清风无芯卷纸成本为 11.9
+      }
+
       productMap.set(productName, {
         totalSales: 0,
         totalRevenue: 0,
         totalCost: 0,
         prices: [],
-        costs: []
+        costs: [],
+        fixedCost: fixedCost // 记录固定成本
       });
     }
 
-    const product = productMap.get(productName);
+    const product = productMap.get(productName)!;
     product.totalSales += quantity;
     product.totalRevenue += salePrice * quantity;
-    product.totalCost += originalPrice * quantity;
+    
+    // 成本计算逻辑：如果有修正成本，优先使用修正成本；否则使用Excel中的原价
+    const cost = product.fixedCost > 0 ? product.fixedCost : originalPrice;
+    product.totalCost += cost * quantity;
+    
     product.prices.push(salePrice);
-    product.costs.push(originalPrice);
+    product.costs.push(cost);
   });
 
   // 计算每个商品的毛利率
-  const products = [];
+  const products: ProductResult[] = [];
   let lowMarginCount = 0;
 
   for (const [name, stats] of productMap) {
     const avgPrice = stats.totalSales > 0 ? stats.totalRevenue / stats.totalSales : 0;
     const avgCost = stats.totalSales > 0 ? stats.totalCost / stats.totalSales : 0;
     
-    // 计算毛利率: (售价 - 原价) / 售价 * 100%
+    // 计算毛利率: (售价 - 成本) / 售价 * 100%
+    // 这里假设 "商品原价" 字段存储的是成本价
     const grossMargin = avgPrice > 0 ? ((avgPrice - avgCost) / avgPrice) * 100 : 0;
 
     products.push({
       name,
       grossMargin,
       avgPrice,
-      avgCost,
+      avgCost, // 这里的 avgCost 代表平均成本
       totalSales: stats.totalSales,
       totalRevenue: stats.totalRevenue
     });
@@ -122,7 +169,7 @@ function analyzeProducts(data) {
   displayResults(products, lowMarginCount);
 }
 
-function displayResults(products, lowMarginCount) {
+function displayResults(products: ProductResult[], lowMarginCount: number) {
   log('='.repeat(80), 'cyan');
   log(`⚠️  毛利率低于${CONFIG.targetMargin}%的商品列表（需要调整定价）`, 'yellow');
   log('='.repeat(80), 'cyan');
@@ -144,7 +191,7 @@ function displayResults(products, lowMarginCount) {
     log(`${index + 1}. 【${name}】`, 'magenta');
     log(`   毛利率: ${grossMargin.toFixed(2)}% (目标: ${CONFIG.targetMargin}%)`, 'red');
     log(`   平均售价: ¥${avgPrice.toFixed(2)}`, 'cyan');
-    log(`   平均原价: ¥${avgCost.toFixed(2)}`, 'cyan');
+    log(`   平均成本: ¥${avgCost.toFixed(2)}`, 'cyan');
     log(`   总销量: ${totalSales}`, 'blue');
     log(`   总销售额: ¥${totalRevenue.toFixed(2)}`, 'blue');
 
@@ -164,7 +211,7 @@ function displayResults(products, lowMarginCount) {
   displayStats(products);
 }
 
-function exportResults(lowMarginProducts) {
+function exportResults(lowMarginProducts: ProductResult[]) {
   const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
   const outputFile = path.join(CONFIG.outputDir, `低毛利商品_${timestamp}.csv`);
 
@@ -172,24 +219,26 @@ function exportResults(lowMarginProducts) {
     商品名称: p.name,
     毛利率: `${p.grossMargin.toFixed(2)}%`,
     平均售价: `¥${p.avgPrice.toFixed(2)}`,
-    平均原价: `¥${p.avgCost.toFixed(2)}`,
+    平均成本: `¥${p.avgCost.toFixed(2)}`,
     总销量: p.totalSales,
     总销售额: `¥${p.totalRevenue.toFixed(2)}`,
     建议售价: `¥${(p.avgCost / (1 - CONFIG.targetMargin / 100)).toFixed(2)}`
   }));
 
+  if (csvData.length === 0) return;
+
   // 转换为CSV格式
   const headers = Object.keys(csvData[0]);
   const csvContent = [
     headers.join(','),
-    ...csvData.map(row => headers.map(h => `"${row[h]}"`).join(','))
+    ...csvData.map(row => headers.map(h => `"${(row as any)[h]}"`).join(','))
   ].join('\n');
 
   fs.writeFileSync(outputFile, csvContent, 'utf8');
   log(`📊 结果已导出到: ${outputFile}\n`, 'green');
 }
 
-function displayStats(products) {
+function displayStats(products: ProductResult[]) {
   log('='.repeat(80), 'cyan');
   log('📈 整体毛利率统计', 'cyan');
   log('='.repeat(80), 'cyan');
@@ -217,7 +266,7 @@ function displayStats(products) {
   ranges.forEach(range => {
     const count = products.filter(p => p.grossMargin >= range.min && p.grossMargin < range.max).length;
     const percentage = (count / products.length) * 100;
-    const color = count > 0 ? 'red' : 'gray';
+    const color: ColorType = count > 0 ? 'red' : 'reset'; // 使用 reset 替代 gray
     log(`  ${range.label}: ${count} 个商品 (${percentage.toFixed(1)}%)`, color);
   });
 

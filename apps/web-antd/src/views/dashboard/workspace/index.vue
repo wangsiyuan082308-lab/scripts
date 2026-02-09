@@ -54,6 +54,15 @@ const projectItems: WorkbenchProjectItem[] = [
     title: '采购计划生成',
     url: '/dashboard/tools/procurement-plan',
   },
+  {
+    color: '#E53E3E',
+    content: '饿了么商品毛利分析工具',
+    date: '2024-03-24',
+    group: '数据分析',
+    icon: 'ri:pie-chart-2-fill',
+    title: '订单毛利分析',
+    url: '/dashboard/tools/eleme-margin-analyzer',
+  },
 ];
 
 // 2. 快捷导航 (Quick Nav)
@@ -123,6 +132,46 @@ function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
           class="rounded-lg shadow-sm"
           @click="navTo"
         />
+
+        <!-- 最新动态 -->
+        <WorkbenchTrends
+          :items="trendItems"
+          title="最新动态"
+          class="rounded-lg shadow-sm"
+        />
+      </div>
+
+      <!-- 右侧侧边栏 (30%) -->
+      <div class="flex w-full flex-col gap-5 lg:w-1/3">
+        <!-- 快捷导航 -->
+        <WorkbenchQuickNav
+          :items="quickNavItems"
+          title="快捷导航"
+          class="rounded-lg shadow-sm"
+          @click="navTo"
+        />
+
+        <!-- 待办事项 -->
+        <WorkbenchTodo
+          :items="todoItems"
+          title="待办清单"
+          class="rounded-lg shadow-sm"
+        />
+
+        <!-- 广告/插画占位 -->
+        <div
+          class="card-box rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 p-4 text-white shadow-md"
+        >
+          <h3 class="mb-2 text-lg font-bold">ScriptAi Pro</h3>
+          <p class="mb-4 text-sm opacity-90">
+            解锁更多高级自动化功能，提升您的业务效率。
+          </p>
+          <button
+            class="rounded-md bg-white px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-opacity-90"
+          >
+            了解更多
+          </button>
+        </div>
       </div>
     </div>
   </div>

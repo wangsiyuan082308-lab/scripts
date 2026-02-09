@@ -12,54 +12,80 @@ import { useUserStore } from '@vben/stores';
 import { openWindow } from '@vben/utils';
 
 const userStore = useUserStore();
+const router = useRouter();
 
-// 这是一个示例数据，实际项目中需要根据实际情况进行调整
-// url 也可以是内部路由，在 navTo 方法中识别处理，进行内部跳转
-// 例如：url: /dashboard/workspace
+// --- 数据定义 ---
+
+// 1. 核心工具 (Projects)
 const projectItems: WorkbenchProjectItem[] = [
   {
     color: '#1D6F42',
-    content: '采购计划Excel转换',
-    date: '2021-04-01',
-    group: '采购脚本',
+    content: '一键将采购计划转换为标准Excel格式',
+    date: '2024-03-20',
+    group: '数据处理',
     icon: 'ri:file-excel-2-fill',
     title: '采购计划Excel转换',
     url: '/dashboard/tools/excel-convert',
   },
   {
     color: '#0080FF',
-    content: '现在的你决定将来的你。',
-    date: '2021-04-01',
-    group: '采购脚本',
+    content: '自动转换饿了么活动报名脚本数据',
+    date: '2024-03-21',
+    group: '自动化脚本',
     icon: 'ri:code-box-fill',
-    title: '饿了么活动报名脚本转换',
+    title: '活动报名脚本转换',
     url: '/dashboard/tools/eleme-script',
   },
   {
     color: '#FF6600',
-    content: '生成饿了么爆好价活动报名Excel',
-    date: '2024-03-20',
-    group: '采购脚本',
+    content: '快速生成饿了么爆好价活动报名表格',
+    date: '2024-03-22',
+    group: '活动助手',
     icon: 'ri:shopping-bag-3-fill',
-    title: '饿了么爆好价活动助手',
+    title: '爆好价活动助手',
     url: '/dashboard/tools/eleme-baohaojia',
   },
   {
     color: '#8A2BE2',
     content: '批量生成牵牛花/翱象采购计划',
-    date: '2024-03-21',
-    group: '采购脚本',
+    date: '2024-03-23',
+    group: '采购计划',
     icon: 'ri:file-list-3-fill',
     title: '采购计划生成',
     url: '/dashboard/tools/procurement-plan',
   },
 ];
 
-// 同样，这里的 url 也可以使用以 http 开头的外部链接
-const router = useRouter();
+// 2. 快捷导航 (Quick Nav)
+const quickNavItems: WorkbenchQuickNavItem[] = [
+  {
+    color: '#1ab192',
+    icon: 'ri:settings-3-line',
+    title: '系统设置',
+    url: '/preferences/global', // 假设的路由
+  },
+  {
+    color: '#707070',
+    icon: 'ri:github-fill',
+    title: 'GitHub',
+    url: 'https://github.com/wangsiyuan082308-lab/scripts',
+  },
+  {
+    color: '#409eff',
+    icon: 'ri:book-read-line',
+    title: '使用文档',
+    url: 'https://doc.scriptai.com', // 假设链接
+  },
+  {
+    color: '#e6a23c',
+    icon: 'ri:customer-service-2-line',
+    title: '联系支持',
+    url: 'mailto:support@scriptai.com',
+  },
+];
 
-// 这是一个示例方法，实际项目中需要根据实际情况进行调整
-// This is a sample method, adjust according to the actual project requirements
+// --- 导航逻辑 ---
+
 function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
   if (nav.url?.startsWith('http')) {
     openWindow(nav.url);
@@ -78,19 +104,36 @@ function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
 
 <template>
   <div class="p-5">
+    <!-- 头部欢迎区 -->
     <WorkbenchHeader
       :avatar="userStore.userInfo?.avatar || preferences.app.defaultAvatar"
     >
       <template #title>
-        早安, {{ userStore.userInfo?.realName }}, 开始您一天的工作吧！
+        早安, {{ userStore.userInfo?.realName }}, 愿你今天的工作高效又顺心！
       </template>
-      <template #description> 今日晴，20℃ - 32℃！ </template>
     </WorkbenchHeader>
 
-    <div class="mt-5 flex flex-col lg:flex-row">
-      <div class="mr-4 w-full lg:w-3/5">
-        <WorkbenchProject :items="projectItems" title="项目" @click="navTo" />
+    <div class="mt-5 flex flex-col gap-5 lg:flex-row">
+      <!-- 左侧主区域 (70%) -->
+      <div class="flex flex-1 flex-col gap-5">
+        <!-- 效率工具 -->
+        <WorkbenchProject
+          :items="projectItems"
+          title="效率工具"
+          class="rounded-lg shadow-sm"
+          @click="navTo"
+        />
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 简单的卡片通用样式补丁 */
+:deep(.vben-workbench-project),
+:deep(.vben-workbench-trends),
+:deep(.vben-workbench-quick-nav),
+:deep(.vben-workbench-todo) {
+  @apply border border-border bg-white dark:bg-[#151515];
+}
+</style>

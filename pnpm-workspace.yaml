@@ -1,12 +1,3 @@
-onlyBuiltDependencies:
-  - '@parcel/watcher'
-  - core-js
-  - electron
-  - esbuild
-  - lefthook
-  - less
-  - unrs-resolver
-  - vue-demi
 packages:
   - internal/*
   - internal/lint-configs/*
@@ -21,15 +12,6 @@ packages:
   - scripts/*
   - docs
   - playground
-
-overrides:
-  '@ast-grep/napi': 'catalog:'
-  '@ctrl/tinycolor': 'catalog:'
-  clsx: 'catalog:'
-  esbuild: 'catalog:'
-  jiti: 'catalog:'
-  pinia: 'catalog:'
-  vue: 'catalog:'
 
 catalog:
   '@ast-grep/napi': ^0.39.9
@@ -182,6 +164,7 @@ catalog:
   tdesign-vue-next: ^1.18.0
   theme-colors: ^0.1.0
   tippy.js: ^6.3.7
+  ts-node: ^10.9.2
   turbo: ^2.7.6
   typescript: ^5.9.3
   unbuild: ^3.6.1
@@ -210,3 +193,28 @@ catalog:
   yaml-eslint-parser: ^1.3.2
   zod: ^3.25.76
   zod-defaults: 0.1.3
+
+catalogs:
+  conflicts_@types/node_h25_2_0:
+    '@types/node': ^25.2.0
+  conflicts_playwright_h1_58_1:
+    playwright: ^1.58.1
+
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - core-js
+  - electron
+  - esbuild
+  - lefthook
+  - less
+  - unrs-resolver
+  - vue-demi
+
+overrides:
+  '@ast-grep/napi': 'catalog:'
+  '@ctrl/tinycolor': 'catalog:'
+  clsx: 'catalog:'
+  esbuild: 'catalog:'
+  jiti: 'catalog:'
+  pinia: 'catalog:'
+  vue: 'catalog:'

@@ -4,7 +4,8 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
-    "dev": "ts-node -r dotenv/config src/index.ts",
+    "dev": "pnpm run clean && ts-node -r dotenv/config src/index.ts",
+    "clean": "bash clean-browser.sh",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

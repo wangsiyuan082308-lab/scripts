@@ -206,6 +206,8 @@ catalogs:
     dotenv: ^16.4.5
   conflicts_typescript_h5_3_3:
     typescript: ^5.3.3
+  conflicts_conflicts_typescript_h5_3_3_h5_9_3:
+    typescript: ^5.9.3
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

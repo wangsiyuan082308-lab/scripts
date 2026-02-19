@@ -5,11 +5,14 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { autoUpdater } from 'electron-updater';
 
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
+import { FinanceAnalyzer } from './features/finance/index';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
+import { startMockServer } from './mock-server';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,14 +28,43 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST;
 
 let win: BrowserWindow | null;
+let mockServerPort: number | null = null;
 
-function createWindow() {
+async function createWindow() {
+  // 生产模式下启动内嵌 Mock 服务器
+  if (!VITE_DEV_SERVER_URL) {
+    try {
+      mockServerPort = await startMockServer();
+      console.log(`[Main] Mock 服务器已启动，端口: ${mockServerPort}`);
+    } catch (err) {
+      console.error('[Main] Mock 服务器启动失败:', err);
+    }
+  }
+
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, 'favicon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   });
+
+  // 生产模式下：拦截外部 API 请求，转发到本地 Mock 服务器
+  if (!VITE_DEV_SERVER_URL && mockServerPort) {
+    const mockBaseUrl = `http://127.0.0.1:${mockServerPort}`;
+
+    win.webContents.session.webRequest.onBeforeRequest(
+      { urls: ['https://mock-napi.vben.pro/*'] },
+      (details, callback) => {
+        // 将远程 mock 地址重定向到本地 mock 服务器
+        const redirectURL = details.url.replace(
+          'https://mock-napi.vben.pro',
+          mockBaseUrl,
+        );
+        console.log(`[Mock Redirect] ${details.url} -> ${redirectURL}`);
+        callback({ redirectURL });
+      },
+    );
+  }
 
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
@@ -43,7 +75,6 @@ function createWindow() {
     win.loadURL(VITE_DEV_SERVER_URL);
     win.webContents.openDevTools();
   } else {
-    // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 
@@ -54,7 +85,21 @@ function createWindow() {
       event.preventDefault();
     }
   });
+
+  // 检查更新
+  if (!VITE_DEV_SERVER_URL) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
 }
+
+// 自动更新事件监听
+autoUpdater.on('update-available', () => {
+  win?.webContents.send('update-available');
+});
+
+autoUpdater.on('update-downloaded', () => {
+  win?.webContents.send('update-downloaded');
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
@@ -66,11 +111,11 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
+app.on('activate', async () => {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    await createWindow();
   }
 });
 
@@ -211,9 +256,40 @@ function registerIpcHandlers() {
       }
     },
   );
+  /**
+   * 生成财务报表
+   */
+  ipcMain.handle(
+    'generate-finance-report',
+    async (_event, { fileBuffer, platform, rate }) => {
+      try {
+        const { buffer, summary } = await FinanceAnalyzer.run({
+          fileBuffer: Buffer.from(fileBuffer),
+          platform,
+          rate: Number(rate) || 2,
+        });
+
+        const { filePath, canceled } = await dialog.showSaveDialog({
+          title: '保存财务计算报表',
+          defaultPath: `财务报表_${platform}_${Date.now()}.xlsx`,
+          filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+        });
+
+        if (canceled || !filePath) {
+          return { success: false, canceled: true };
+        }
+
+        await fs.writeFile(filePath, buffer);
+        return { success: true, outputPath: filePath, summary };
+      } catch (error: any) {
+        console.error('生成财务报表失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpcHandlers();
-  createWindow();
+  await createWindow();
 });

@@ -58,9 +58,12 @@ async function viteExtraAppConfigPlugin({
     },
     name: 'vite:extra-app-config',
     async transformIndexHtml(html) {
-      const hash = `v=${version}-${generatorContentHash(source, 8)}`;
-
-      const appConfigSrc = `${publicPath}${GLOBAL_CONFIG_FILE_NAME}?${hash}`;
+      // Electron 使用 file:// 加载 index.html 时，部分环境会对本地脚本 query 参数解析不稳定，
+      // 导致 _app.config.js 未执行，进而应用卡在启动 loading。
+      // 这里移除 query hash，确保本地文件路径可稳定加载。
+      const _hash = `v=${version}-${generatorContentHash(source, 8)}`;
+      void _hash;
+      const appConfigSrc = `${publicPath}${GLOBAL_CONFIG_FILE_NAME}`;
 
       return {
         html,

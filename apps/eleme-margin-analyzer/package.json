@@ -1,6 +1,7 @@
 {
   "name": "eleme-margin-analyzer",
   "version": "1.0.0",
+  "description": "饿了么毛利分析工具",
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",

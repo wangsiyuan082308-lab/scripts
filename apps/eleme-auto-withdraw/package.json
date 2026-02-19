@@ -1,7 +1,10 @@
 {
   "name": "eleme-auto-withdraw",
   "version": "1.0.0",
-  "main": "src/index.ts",
+  "description": "饿了么自动提现脚本",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
   "scripts": {
     "start": "ts-node src/index.ts",
     "dev": "pnpm run clean && ts-node -r dotenv/config src/index.ts",
@@ -9,15 +12,12 @@
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "Ele.me automatic withdrawal automation script",
+  "main": "src/index.ts",
   "dependencies": {
-    "@types/node": "^25.2.0",
+    "@types/node": "catalog:conflicts_@types/node_h25_2_0",
     "dotenv": "catalog:",
-    "playwright": "^1.58.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "playwright": "catalog:conflicts_playwright_h1_58_1",
+    "ts-node": "catalog:",
+    "typescript": "catalog:conflicts_conflicts_typescript_h5_3_3_h5_9_3"
   }
 }

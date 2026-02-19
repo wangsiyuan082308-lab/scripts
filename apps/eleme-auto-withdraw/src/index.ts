@@ -1,6 +1,8 @@
+/* eslint-disable no-console */
+import { exec } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as readline from 'node:readline';
+import process from 'node:process';
 
 import { chromium, Frame, Page } from 'playwright';
 
@@ -46,19 +48,19 @@ function saveCoords(coords: Coords) {
  * 获取用户输入
  * @param query 提示信息
  */
-function askQuestion(query: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) =>
-    rl.question(query, (ans) => {
-      rl.close();
-      resolve(ans);
-    }),
-  );
-}
+// function askQuestion(query: string): Promise<string> {
+//   const rl = readline.createInterface({
+//     input: process.stdin,
+//     output: process.stdout,
+//   });
+//
+//   return new Promise((resolve) =>
+//     rl.question(query, (ans) => {
+//       rl.close();
+//       resolve(ans);
+//     }),
+//   );
+// }
 
 /**
  * 延迟函数，用于模拟人类等待
@@ -74,13 +76,17 @@ function delay(ms: number) {
 async function main() {
   console.log('正在启动浏览器...');
 
-  // 使用持久化上下文，保存登录状态
+  // 使用持久化上下文，保存登录状态 - 使用系统 Chrome
   const context = await chromium.launchPersistentContext(CONFIG.userDataDir, {
     headless: false, // 必须有头模式，否则会被检测且无法手动登录
+    channel: 'chrome', // 使用系统安装的 Chrome
     viewport: { width: 1280, height: 800 },
     args: [
       '--disable-blink-features=AutomationControlled', // 尝试隐藏自动化特征
       '--start-maximized',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
     ],
   });
 
@@ -107,7 +113,7 @@ async function main() {
 
     // 播放提示音（Mac系统）
     try {
-      require('node:child_process').exec('say "请登录"');
+      exec('say "请登录"');
     } catch {}
 
     // 自动轮询等待登录成功（URL 不再包含 login 或 sso）
@@ -160,59 +166,157 @@ async function main() {
 async function switchStore(page: Page, targetStore: string) {
   console.log(`正在尝试切换到门店: ${targetStore}...`);
 
+  // 截图目录，用于调试
+  const debugDir = path.join(process.cwd(), 'debug');
+  if (!fs.existsSync(debugDir)) {
+    try {
+      fs.mkdirSync(debugDir, { recursive: true });
+    } catch {}
+  }
+
   try {
-    // 策略：查找门店选择下拉框
-    // 根据用户反馈，使用 class 名 'account-switch' 进行定位
-    const storeSelector = page.locator('.account-switch').first();
+    let dropdownOpened = false;
 
-    if (await storeSelector.isVisible()) {
-      console.log('找到门店选择器 (.account-switch)，点击展开...');
-      await storeSelector.click();
-      await delay(1500); // 等待下拉菜单动画
+    // 1. 尝试寻找并点击切换按钮
+    // 策略：尝试多种可能的选择器，覆盖不同的 UI 框架（Ant Design, Element UI 等）和自定义类名
+    const triggerSelectors = [
+      '.account-switch', // 原有
+      '.shop-select',
+      '.store-select',
+      '.ant-dropdown-trigger', // Ant Design
+      '.el-dropdown-link', // Element UI
+      '[class*="shop-select"]',
+      '[class*="store-select"]',
+      'header .ant-select',
+      // 尝试通过图标定位
+      '.anticon-down',
+      '.el-icon-arrow-down',
+    ];
 
-      // 假设有一个搜索框
-      const searchInput = page.getByPlaceholder(/搜索|门店/);
-      if (await searchInput.isVisible()) {
-        console.log(`搜索门店: ${targetStore}`);
-        // 使用完整的店名进行搜索，以便更精确地定位
+    // 尝试点击选择器
+    for (const selector of triggerSelectors) {
+      try {
+        const el = page.locator(selector).first();
+        // 只点击可见的
+        if (await el.isVisible({ timeout: 500 })) {
+          console.log(`尝试点击可能的切换按钮: ${selector}`);
+          await el.click();
+          await delay(1000); // 等待下拉动画
+
+          // 检查是否有下拉菜单出现
+          // 常见的下拉菜单容器类名
+          const dropdownVisible = await page.evaluate(() => {
+            const possibleDropdowns = document.querySelectorAll(
+              '.ant-dropdown, .el-dropdown-menu, .ant-select-dropdown, ul[role="menu"], .account-switch-dropdown',
+            );
+            for (const d of possibleDropdowns) {
+              const style = window.getComputedStyle(d);
+              if (
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                style.opacity !== '0'
+              ) {
+                return true;
+              }
+            }
+            return false;
+          });
+
+          if (dropdownVisible) {
+            console.log('下拉菜单已展开。');
+            dropdownOpened = true;
+            break;
+          } else {
+            console.log('点击后未检测到下拉菜单，尝试下一个...');
+          }
+        }
+      } catch {}
+    }
+
+    // 2. 如果常规选择器失败，尝试点击页面上显示的当前门店名称
+    // 遍历所有目标门店，如果页面上显示了其中一个，那它可能就是切换按钮（或者当前就在这个店）
+    if (!dropdownOpened) {
+      console.log('常规选择器失效，尝试点击页面上已知的门店名称...');
+      for (const store of CONFIG.targetStores) {
+        try {
+          // 查找可见的文本
+          const textEl = page.locator(`text=${store}`).first();
+          if (await textEl.isVisible({ timeout: 500 })) {
+            console.log(
+              `发现页面显示门店 "${store}"，尝试点击它作为切换按钮...`,
+            );
+            await textEl.click();
+            await delay(1000);
+            dropdownOpened = true; // 假定成功，后续步骤会验证
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // 3. 在下拉菜单中查找并选择目标门店
+    // 无论是否确认下拉菜单打开（有时检测不到），都尝试去查找目标选项
+    console.log(`正在查找目标门店选项: ${targetStore}`);
+
+    // 尝试输入搜索（如果有搜索框）
+    try {
+      const searchInput = page.getByPlaceholder(/搜索|门店|店铺/);
+      if (await searchInput.isVisible({ timeout: 2000 })) {
+        console.log('找到搜索框，输入门店名称...');
         await searchInput.fill(targetStore);
         await delay(1000);
-
-        // 点击目标店铺
-        // 尝试模糊匹配
-        const targetStoreOption = page
-          .locator('li, div[role="option"]')
-          .filter({ hasText: targetStore })
-          .first();
-        if (await targetStoreOption.isVisible()) {
-          await targetStoreOption.click();
-          console.log(`已切换到: ${targetStore}`);
-          await delay(5000); // 等待页面刷新和数据加载
-        } else {
-          console.log(`未找到店铺: ${targetStore}`);
-          // 调试：打印所有可见选项
-          const options = await page
-            .locator('li, div[role="option"]')
-            .allInnerTexts();
-          console.log('当前可见的店铺选项:', options.slice(0, 10));
-        }
-      } else {
-        console.log('未找到搜索框，尝试直接在下拉列表中查找目标店铺...');
-        // 如果没有搜索框，直接在下拉列表中找
-        const targetStoreOption = page.getByText(targetStore).first();
-        if (await targetStoreOption.isVisible()) {
-          await targetStoreOption.click();
-          console.log(`已切换到: ${targetStore}`);
-          await delay(5000);
-        }
       }
-    } else {
-      console.log(
-        '未找到明显的门店选择器（.account-switch），可能已经是目标店铺或选择器定位失败。',
-      );
+    } catch {}
+
+    // 点击目标选项
+    // 选项通常在 li, div[role="option"], .ant-dropdown-menu-item 中
+    try {
+      // 增加选择器范围
+      const targetOption = page
+        .locator(
+          'li, div[role="option"], .ant-dropdown-menu-item, .el-dropdown-menu__item',
+        )
+        .filter({ hasText: targetStore })
+        .first();
+
+      if (await targetOption.isVisible({ timeout: 5000 })) {
+        console.log(`找到目标门店选项: ${targetStore}，点击切换...`);
+        await targetOption.click();
+        await delay(5000); // 等待页面刷新
+        console.log(`已切换到: ${targetStore}`);
+        return;
+      } else {
+        console.log(`未找到目标门店选项: ${targetStore}`);
+        // 如果之前没打开下拉框，这里肯定找不到。
+        // 如果打开了但找不到，可能是名字不匹配。
+      }
+    } catch (error) {
+      console.log('查找目标选项失败:', error);
     }
+
+    // 4. 最后尝试：检查页面是否已经显示了目标门店名称（可能是切换成功了，或者原本就在）
+    // 注意：这需要在“未找到选项”之后做，因为如果找到了选项并点击了，上面已经 return 了
+    try {
+      const currentStoreEl = page
+        .locator('body')
+        .getByText(targetStore)
+        .first();
+      if (await currentStoreEl.isVisible()) {
+        console.log(
+          `最终检查：页面上可见 "${targetStore}"，假定已在目标门店。`,
+        );
+        return;
+      }
+    } catch {}
+
+    console.error(`切换到门店 ${targetStore} 失败。`);
+    // 截图
+    await page.screenshot({
+      path: path.join(debugDir, `switch_failed_${targetStore}.png`),
+    });
+    console.log(`已保存失败截图至 debug/switch_failed_${targetStore}.png`);
   } catch (error) {
-    console.error('切换门店失败，继续尝试后续步骤:', error);
+    console.error('切换门店过程中发生错误:', error);
   }
 }
 
@@ -248,16 +352,9 @@ async function clickButton(
   console.log(`尝试点击按钮: ${selectorOrText}`);
 
   try {
-    let locator;
-    if (isText) {
-      // 查找包含目标文本的常见交互元素
-      locator = ctx
-        .locator('button, div, span, a')
-        .filter({ hasText: selectorOrText });
-    } else {
-      // 直接使用选择器
-      locator = ctx.locator(selectorOrText as string);
-    }
+    const locator = isText
+      ? ctx.locator('button, div, span, a').filter({ hasText: selectorOrText })
+      : ctx.locator(selectorOrText as string);
 
     const count = await locator.count();
     if (count === 0) {

@@ -5,6 +5,18 @@ settings:
   excludeLinksFromLockfile: false
 
 catalogs:
+  conflicts_@types/node_h25_2_0:
+    '@types/node':
+      specifier: ^25.2.0
+      version: 25.2.1
+  conflicts_conflicts_typescript_h5_3_3_h5_9_3:
+    typescript:
+      specifier: ^5.9.3
+      version: 5.9.3
+  conflicts_playwright_h1_58_1:
+    playwright:
+      specifier: ^1.58.1
+      version: 1.58.1
   default:
     '@changesets/changelog-github':
       specifier: ^0.5.2
@@ -414,6 +426,9 @@ catalogs:
     tippy.js:
       specifier: ^6.3.7
       version: 6.3.7
+    ts-node:
+      specifier: ^10.9.2
+      version: 10.9.2
     turbo:
       specifier: ^2.7.6
       version: 2.7.6
@@ -619,19 +634,19 @@ importers:
   apps/eleme-auto-withdraw:
     dependencies:
       '@types/node':
-        specifier: ^25.2.0
+        specifier: catalog:conflicts_@types/node_h25_2_0
         version: 25.2.1
       dotenv:
         specifier: 'catalog:'
         version: 16.6.1
       playwright:
-        specifier: ^1.58.1
+        specifier: catalog:conflicts_playwright_h1_58_1
         version: 1.58.1
       ts-node:
-        specifier: ^10.9.2
+        specifier: 'catalog:'
         version: 10.9.2(@types/node@25.2.1)(typescript@5.9.3)
       typescript:
-        specifier: ^5.9.3
+        specifier: catalog:conflicts_conflicts_typescript_h5_3_3_h5_9_3
         version: 5.9.3
 
   apps/eleme-margin-analyzer:
@@ -705,6 +720,9 @@ importers:
       dayjs:
         specifier: 'catalog:'
         version: 1.11.19
+      electron-updater:
+        specifier: ^6.1.7
+        version: 6.7.3
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
@@ -5947,6 +5965,9 @@ packages:
   electron-to-chromium@1.5.279:
     resolution: {integrity: sha512-0bblUU5UNdOt5G7XqGiJtpZMONma6WAfq9vsFmtn9x1+joAObr6x1chfqyxFSDCAFwFhCQDrqeAr6MYdpwJ9Hg==}
 
+  electron-updater@6.7.3:
+    resolution: {integrity: sha512-EgkT8Z9noqXKbwc3u5FkJA+r48jwZ5DTUiOkJMOTEEH//n5Am6wfQGz7nvSFEA2oIAMv9jRzn5JKTyWeSKOPgg==}
+
   electron-winstaller@5.4.0:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
@@ -9896,6 +9917,9 @@ packages:
   tiny-emitter@2.1.0:
     resolution: {integrity: sha512-NB6Dk1A9xgQPMoGqC5CVXn123gWyte215ONT5Pp5a0yt4nlEoO1ZWeCwpncaekPHXO60i47ihFnZPiRPjRMq4Q==}
 
+  tiny-typed-emitter@2.1.0:
+    resolution: {integrity: sha512-qVtvMxeXbVej0cQWKqVSSAHmKZEHAvxdF8HEUBFWts8h+xEo5m/lEiPakuyZ3BnCBjOD8i24kzNOiOLLgsSxhA==}
+
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -13562,7 +13586,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.2.0
       '@types/keyv': 3.1.4
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
       '@types/responselike': 1.0.3
 
   '@types/chai@5.2.3':
@@ -13572,7 +13596,7 @@ snapshots:
 
   '@types/conventional-commits-parser@5.0.2':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/debug@4.1.12':
     dependencies:
@@ -13591,7 +13615,7 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/html-minifier-terser@7.0.2': {}
 
@@ -13606,7 +13630,7 @@ snapshots:
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/lodash.clonedeep@4.5.9':
     dependencies:
@@ -13640,7 +13664,7 @@ snapshots:
 
   '@types/plist@3.0.5':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
       xmlbuilder: 15.1.1
     optional: true
 
@@ -13650,19 +13674,19 @@ snapshots:
 
   '@types/qrcode@1.5.6':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/qs@6.14.0': {}
 
   '@types/readdir-glob@1.1.5':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/resolve@1.20.2': {}
 
   '@types/responselike@1.0.3':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
 
   '@types/sortablejs@1.15.9': {}
 
@@ -13675,7 +13699,7 @@ snapshots:
 
   '@types/yauzl@2.10.3':
     dependencies:
-      '@types/node': 25.2.1
+      '@types/node': 20.19.33
     optional: true
 
   '@typescript-eslint/eslint-plugin@8.54.0(@typescript-eslint/parser@8.54.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)':
@@ -15770,6 +15794,19 @@ snapshots:
       - supports-color
 
   electron-to-chromium@1.5.279: {}
+
+  electron-updater@6.7.3:
+    dependencies:
+      builder-util-runtime: 9.5.1
+      fs-extra: 10.1.0
+      js-yaml: 4.1.1
+      lazy-val: 1.0.5
+      lodash.escaperegexp: 4.1.2
+      lodash.isequal: 4.5.0
+      semver: 7.7.3
+      tiny-typed-emitter: 2.1.0
+    transitivePeerDependencies:
+      - supports-color
 
   electron-winstaller@5.4.0:
     dependencies:
@@ -20054,6 +20091,8 @@ snapshots:
       semver: 5.7.2
 
   tiny-emitter@2.1.0: {}
+
+  tiny-typed-emitter@2.1.0: {}
 
   tinybench@2.9.0: {}
 

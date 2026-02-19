@@ -26,10 +26,14 @@ export async function run(options: RunOptions) {
   packages.forEach((pkg) => {
     const scripts = (pkg?.packageJson as Record<string, any>)?.scripts || {};
     const pkgName = pkg?.packageJson?.name;
+    const description = (pkg?.packageJson as Record<string, any>)?.description;
+    
+    // 构造显示名称：name + description (如果有)
+    const displayName = description ? `${pkgName} - ${description}` : pkgName;
 
     if (scripts[command]) {
       selectOptions.push({
-        label: pkgName,
+        label: displayName,
         value: { command, pkgName },
       });
     }
@@ -37,7 +41,7 @@ export async function run(options: RunOptions) {
     const electronCommand = `${command}:electron`;
     if (scripts[electronCommand]) {
       selectOptions.push({
-        label: `${pkgName} (Electron)`,
+        label: `${displayName} (Electron)`,
         value: { command: electronCommand, pkgName },
       });
     }

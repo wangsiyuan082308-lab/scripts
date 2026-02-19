@@ -2,6 +2,8 @@
 import type {
   WorkbenchProjectItem,
   WorkbenchQuickNavItem,
+  WorkbenchTodoItem,
+  WorkbenchTrendItem,
 } from '@vben/common-ui';
 
 import { useRouter } from 'vue-router';
@@ -15,6 +17,62 @@ const userStore = useUserStore();
 const router = useRouter();
 
 // --- 数据定义 ---
+
+// 3. 待办事项 (Todo)
+const todoItems: WorkbenchTodoItem[] = [
+  {
+    completed: false,
+    content: '检查饿了么Cookie是否过期',
+    date: '2024-03-24',
+    title: 'Cookie 检查',
+  },
+  {
+    completed: true,
+    content: '备份上周的采购数据',
+    date: '2024-03-23',
+    title: '数据备份',
+  },
+  {
+    completed: false,
+    content: '更新自动化脚本到最新版本',
+    date: '2024-03-25',
+    title: '系统更新',
+  },
+  {
+    completed: false,
+    content: '审核新的补货建议表',
+    date: '2024-03-24',
+    title: '业务审核',
+  },
+];
+
+// 4. 最新动态 (Trends)
+const trendItems: WorkbenchTrendItem[] = [
+  {
+    avatar: userStore.userInfo?.avatar || preferences.app.defaultAvatar,
+    content: '成功执行了 <a>采购计划生成</a> 任务，导出了 12 个文件',
+    date: '刚刚',
+    title: userStore.userInfo?.realName || '管理员',
+  },
+  {
+    avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=2',
+    content: '系统自动完成了 <a>饿了么自动撤单</a> (模拟模式)',
+    date: '1小时前',
+    title: '系统机器人',
+  },
+  {
+    avatar: userStore.userInfo?.avatar || preferences.app.defaultAvatar,
+    content: '更新了 <a>爆好价活动助手</a> 的配置文件',
+    date: '昨天',
+    title: userStore.userInfo?.realName || '管理员',
+  },
+  {
+    avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=4',
+    content: '发布了 ScriptAi v1.2.0 版本，新增了多项功能',
+    date: '3天前',
+    title: 'ScriptAi Team',
+  },
+];
 
 // 1. 核心工具 (Projects)
 const projectItems: WorkbenchProjectItem[] = [
@@ -62,6 +120,15 @@ const projectItems: WorkbenchProjectItem[] = [
     icon: 'ri:pie-chart-2-fill',
     title: '订单毛利分析',
     url: '/dashboard/tools/eleme-margin-analyzer',
+  },
+  {
+    color: '#00BFFF',
+    content: '财务报表计算工具',
+    date: '2024-03-25',
+    group: '财务工具',
+    icon: 'ri:money-cny-box-fill',
+    title: '财务报表计算',
+    url: '/dashboard/tools/finance-report',
   },
 ];
 
@@ -132,46 +199,6 @@ function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
           class="rounded-lg shadow-sm"
           @click="navTo"
         />
-
-        <!-- 最新动态 -->
-        <WorkbenchTrends
-          :items="trendItems"
-          title="最新动态"
-          class="rounded-lg shadow-sm"
-        />
-      </div>
-
-      <!-- 右侧侧边栏 (30%) -->
-      <div class="flex w-full flex-col gap-5 lg:w-1/3">
-        <!-- 快捷导航 -->
-        <WorkbenchQuickNav
-          :items="quickNavItems"
-          title="快捷导航"
-          class="rounded-lg shadow-sm"
-          @click="navTo"
-        />
-
-        <!-- 待办事项 -->
-        <WorkbenchTodo
-          :items="todoItems"
-          title="待办清单"
-          class="rounded-lg shadow-sm"
-        />
-
-        <!-- 广告/插画占位 -->
-        <div
-          class="card-box rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 p-4 text-white shadow-md"
-        >
-          <h3 class="mb-2 text-lg font-bold">ScriptAi Pro</h3>
-          <p class="mb-4 text-sm opacity-90">
-            解锁更多高级自动化功能，提升您的业务效率。
-          </p>
-          <button
-            class="rounded-md bg-white px-4 py-2 text-sm font-medium text-indigo-600 transition hover:bg-opacity-90"
-          >
-            了解更多
-          </button>
-        </div>
       </div>
     </div>
   </div>

@@ -1,4 +1,7 @@
 {
+  "name": "@vben/web-antd",
+  "version": "5.5.9",
+  "description": "ScriptAi 管理后台 (Web/Electron)",
   "author": {
     "email": "ann.vben@gmail.com",
     "name": "vben",
@@ -51,6 +54,7 @@
     "@vueuse/core": "catalog:",
     "ant-design-vue": "catalog:",
     "dayjs": "catalog:",
+    "electron-updater": "^6.1.7",
     "exceljs": "^4.4.0",
     "pinia": "catalog:",
     "vue": "catalog:",
@@ -68,11 +72,17 @@
   },
   "license": "MIT",
   "main": "dist-electron/main.js",
-  "name": "@vben/web-antd",
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "wangsiyuan082308-lab",
+      "repo": "scripts"
+    }
+  ],
   "repository": {
     "directory": "apps/web-antd",
     "type": "git",
-    "url": "git+https://github.com/vbenjs/vue-vben-admin.git"
+    "url": "git+https://github.com/wangsiyuan082308-lab/scripts.git"
   },
   "scripts": {
     "build": "pnpm vite build --mode production",
@@ -83,6 +93,5 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
-  "type": "module",
-  "version": "5.5.9"
+  "type": "module"
 }

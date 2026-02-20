@@ -83,7 +83,7 @@ catalog:
   dayjs: ^1.11.19
   defu: ^6.1.4
   depcheck: ^1.4.7
-  dotenv: ^16.6.1
+  dotenv: 'catalog:'
   echarts: ^6.0.0
   element-plus: ^2.13.1
   es-toolkit: ^1.44.0
@@ -198,16 +198,16 @@ catalog:
 catalogs:
   conflicts_@types/node_h25_2_0:
     '@types/node': ^25.2.0
-  conflicts_playwright_h1_58_1:
-    playwright: ^1.58.1
   conflicts_conflicts_@types/node_h25_2_0_h20_11_24:
     '@types/node': ^20.11.24
-  conflicts_dotenv_h16_4_5:
-    dotenv: ^16.4.5
-  conflicts_typescript_h5_3_3:
-    typescript: ^5.3.3
   conflicts_conflicts_typescript_h5_3_3_h5_9_3:
     typescript: ^5.9.3
+  conflicts_dotenv_h16_4_5:
+    dotenv: ^16.4.5
+  conflicts_playwright_h1_58_1:
+    playwright: ^1.58.1
+  conflicts_typescript_h5_3_3:
+    typescript: ^5.3.3
 
 onlyBuiltDependencies:
   - '@parcel/watcher'

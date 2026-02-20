@@ -205,7 +205,7 @@ catalogs:
       specifier: ^1.4.7
       version: 1.4.7
     dotenv:
-      specifier: ^16.6.1
+      specifier: 'catalog:'
       version: 16.6.1
     echarts:
       specifier: ^6.0.0
@@ -636,9 +636,6 @@ importers:
       '@types/node':
         specifier: catalog:conflicts_@types/node_h25_2_0
         version: 25.2.1
-      dotenv:
-        specifier: 'catalog:'
-        version: 16.6.1
       playwright:
         specifier: catalog:conflicts_playwright_h1_58_1
         version: 1.58.1
@@ -648,6 +645,10 @@ importers:
       typescript:
         specifier: catalog:conflicts_conflicts_typescript_h5_3_3_h5_9_3
         version: 5.9.3
+    devDependencies:
+      dotenv:
+        specifier: 'catalog:'
+        version: 16.6.1
 
   apps/eleme-margin-analyzer:
     dependencies:

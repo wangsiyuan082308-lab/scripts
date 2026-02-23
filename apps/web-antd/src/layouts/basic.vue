@@ -21,6 +21,7 @@ import { openWindow } from '@vben/utils';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
+import AppUpdater from '#/components/app-updater.vue';
 
 const notifications = ref<NotificationItem[]>([
   {
@@ -176,6 +177,7 @@ watch(
       />
     </template>
     <template #extra>
+      <AppUpdater />
       <AuthenticationLoginExpiredModal
         v-model:open="accessStore.loginExpired"
         :avatar

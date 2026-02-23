@@ -1,9 +1,6 @@
 <script lang="ts" setup>
 import type {
   WorkbenchProjectItem,
-  WorkbenchQuickNavItem,
-  WorkbenchTodoItem,
-  WorkbenchTrendItem,
 } from '@vben/common-ui';
 
 import { useRouter } from 'vue-router';
@@ -18,64 +15,35 @@ const router = useRouter();
 
 // --- 数据定义 ---
 
-// 3. 待办事项 (Todo)
-const todoItems: WorkbenchTodoItem[] = [
-  {
-    completed: false,
-    content: '检查饿了么Cookie是否过期',
-    date: '2024-03-24',
-    title: 'Cookie 检查',
-  },
-  {
-    completed: true,
-    content: '备份上周的采购数据',
-    date: '2024-03-23',
-    title: '数据备份',
-  },
-  {
-    completed: false,
-    content: '更新自动化脚本到最新版本',
-    date: '2024-03-25',
-    title: '系统更新',
-  },
-  {
-    completed: false,
-    content: '审核新的补货建议表',
-    date: '2024-03-24',
-    title: '业务审核',
-  },
-];
-
-// 4. 最新动态 (Trends)
-const trendItems: WorkbenchTrendItem[] = [
-  {
-    avatar: userStore.userInfo?.avatar || preferences.app.defaultAvatar,
-    content: '成功执行了 <a>采购计划生成</a> 任务，导出了 12 个文件',
-    date: '刚刚',
-    title: userStore.userInfo?.realName || '管理员',
-  },
-  {
-    avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=2',
-    content: '系统自动完成了 <a>饿了么自动撤单</a> (模拟模式)',
-    date: '1小时前',
-    title: '系统机器人',
-  },
-  {
-    avatar: userStore.userInfo?.avatar || preferences.app.defaultAvatar,
-    content: '更新了 <a>爆好价活动助手</a> 的配置文件',
-    date: '昨天',
-    title: userStore.userInfo?.realName || '管理员',
-  },
-  {
-    avatar: 'https://api.dicebear.com/7.x/miniavs/svg?seed=4',
-    content: '发布了 ScriptAi v1.2.0 版本，新增了多项功能',
-    date: '3天前',
-    title: 'ScriptAi Team',
-  },
-];
-
-// 1. 核心工具 (Projects)
+// 核心工具 (Projects)
 const projectItems: WorkbenchProjectItem[] = [
+  {
+    color: '#FF4500',
+    content: '自动抓取活动、ROI计算、智能推荐报名、实时日志',
+    date: '2026-02-20',
+    group: '活动助手',
+    icon: 'ri:shopping-cart-2-fill',
+    title: '饿了么活动助手',
+    url: '/activity/list',
+  },
+  {
+    color: '#faad14',
+    content: '自动执行饿了么门店提现，智能优化策略',
+    date: '2026-02-20',
+    group: '自动化',
+    icon: 'ri:money-cny-circle-fill',
+    title: '饿了么自动提现',
+    url: '/withdrawal/overview',
+  },
+  {
+    color: '#00BFFF',
+    content: '门店月度财务报表、成本配置管理',
+    date: '2026-02-20',
+    group: '财务工具',
+    icon: 'ri:money-cny-box-fill',
+    title: '财务报表管理',
+    url: '/finance/overview',
+  },
   {
     color: '#1D6F42',
     content: '一键将采购计划转换为标准Excel格式',
@@ -113,56 +81,20 @@ const projectItems: WorkbenchProjectItem[] = [
     url: '/dashboard/tools/procurement-plan',
   },
   {
-    color: '#E53E3E',
-    content: '饿了么商品毛利分析工具',
-    date: '2024-03-24',
-    group: '数据分析',
-    icon: 'ri:pie-chart-2-fill',
-    title: '订单毛利分析',
-    url: '/dashboard/tools/eleme-margin-analyzer',
-  },
-  {
     color: '#00BFFF',
     content: '财务报表计算工具',
     date: '2024-03-25',
     group: '财务工具',
-    icon: 'ri:money-cny-box-fill',
+    icon: 'ri:calculator-fill',
     title: '财务报表计算',
     url: '/dashboard/tools/finance-report',
   },
 ];
 
 // 2. 快捷导航 (Quick Nav)
-const quickNavItems: WorkbenchQuickNavItem[] = [
-  {
-    color: '#1ab192',
-    icon: 'ri:settings-3-line',
-    title: '系统设置',
-    url: '/preferences/global', // 假设的路由
-  },
-  {
-    color: '#707070',
-    icon: 'ri:github-fill',
-    title: 'GitHub',
-    url: 'https://github.com/wangsiyuan082308-lab/scripts',
-  },
-  {
-    color: '#409eff',
-    icon: 'ri:book-read-line',
-    title: '使用文档',
-    url: 'https://doc.scriptai.com', // 假设链接
-  },
-  {
-    color: '#e6a23c',
-    icon: 'ri:customer-service-2-line',
-    title: '联系支持',
-    url: 'mailto:support@scriptai.com',
-  },
-];
-
 // --- 导航逻辑 ---
 
-function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
+function navTo(nav: WorkbenchProjectItem) {
   if (nav.url?.startsWith('http')) {
     openWindow(nav.url);
     return;

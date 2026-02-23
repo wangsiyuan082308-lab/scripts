@@ -93,12 +93,40 @@ async function createWindow() {
 }
 
 // 自动更新事件监听
-autoUpdater.on('update-available', () => {
-  win?.webContents.send('update-available');
+autoUpdater.on('update-available', (info) => {
+  win?.webContents.send('update-available', {
+    version: info.version,
+    releaseDate: info.releaseDate,
+  });
 });
 
-autoUpdater.on('update-downloaded', () => {
-  win?.webContents.send('update-downloaded');
+autoUpdater.on('download-progress', (progress) => {
+  win?.webContents.send('update-download-progress', {
+    percent: progress.percent,
+    bytesPerSecond: progress.bytesPerSecond,
+    transferred: progress.transferred,
+    total: progress.total,
+  });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  win?.webContents.send('update-downloaded', {
+    version: info.version,
+  });
+});
+
+autoUpdater.on('error', (err) => {
+  win?.webContents.send('update-error', err.message);
+});
+
+// 手动检查更新
+ipcMain.on('check-for-update', () => {
+  autoUpdater.checkForUpdatesAndNotify();
+});
+
+// 安装更新并重启
+ipcMain.on('install-update', () => {
+  autoUpdater.quitAndInstall();
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common

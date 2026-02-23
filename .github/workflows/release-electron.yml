@@ -1,0 +1,140 @@
+name: Build & Release Electron
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/web-antd/**'
+      - '.github/workflows/release-electron.yml'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 自动 bump patch 版本号并提交
+      - name: Bump version
+        id: bump
+        run: |
+          cd apps/web-antd
+          OLD_VERSION=$(node -p "require('./package.json').version")
+          IFS='.' read -r major minor patch <<< "$OLD_VERSION"
+          NEW_VERSION="${major}.${minor}.$((patch + 1))"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          cd ../..
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped: ${OLD_VERSION} -> ${NEW_VERSION}"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/web-antd/package.json package.json
+          git commit -m "chore: release v${{ steps.bump.outputs.version }}" || echo "No changes"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin main --tags
+
+      # macOS 打包
+      - name: Build Electron (macOS)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm -F @vben/web-antd run build:electron
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-mac
+          path: |
+            apps/web-antd/release/**/*.dmg
+            apps/web-antd/release/**/*.zip
+            apps/web-antd/release/**/*.yml
+          if-no-files-found: ignore
+
+  build-windows:
+    needs: release
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build Electron (Windows)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm -F @vben/web-antd run build:electron
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-win
+          path: |
+            apps/web-antd/release/**/*.exe
+            apps/web-antd/release/**/*.yml
+          if-no-files-found: ignore
+
+  publish:
+    needs: [release, build-windows]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.release.outputs.version }}
+          name: v${{ needs.release.outputs.version }}
+          files: artifacts/**
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

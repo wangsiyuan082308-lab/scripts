@@ -9,7 +9,7 @@
   },
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
   "build": {
-    "appId": "com.vben.admin",
+    "appId": "com.oby.merchant-tools",
     "directories": {
       "output": "release/${version}"
     },
@@ -17,13 +17,29 @@
       "dist",
       "dist-electron"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "wangsiyuan082308-lab",
+        "repo": "scripts"
+      }
+    ],
+    "mac": {
+      "artifactName": "${productName}_${version}.${ext}",
+      "target": [
+        {
+          "arch": ["x64", "arm64"],
+          "target": "dmg"
+        }
+      ]
+    },
     "nsis": {
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "oneClick": false,
       "perMachine": false
     },
-    "productName": "Vben Admin",
+    "productName": "Oby商家工具",
     "win": {
       "artifactName": "${productName}_${version}.${ext}",
       "target": [
@@ -72,13 +88,6 @@
   },
   "license": "MIT",
   "main": "dist-electron/main.js",
-  "publish": [
-    {
-      "provider": "github",
-      "owner": "wangsiyuan082308-lab",
-      "repo": "scripts"
-    }
-  ],
   "repository": {
     "directory": "apps/web-antd",
     "type": "git",

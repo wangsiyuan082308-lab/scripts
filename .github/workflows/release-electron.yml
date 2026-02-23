@@ -69,7 +69,7 @@ jobs:
       - name: Build Electron (macOS)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm turbo run build --filter="@vben/web-antd..." && pnpm -F @vben/web-antd electron-builder
+        run: pnpm turbo run build --filter="@vben/web-antd..." && cd apps/web-antd && npx electron-builder
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -106,7 +106,7 @@ jobs:
       - name: Build Electron (Windows)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm turbo run build --filter="@vben/web-antd..." && pnpm -F @vben/web-antd electron-builder
+        run: pnpm turbo run build --filter="@vben/web-antd..." && cd apps/web-antd && npx electron-builder
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

@@ -41,7 +41,7 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'ActivityLogs',
         path: '/activity/logs',
-        component: () => import('#/views/activity/logs/index.vue'),
+        component: () => import('#/views/activity/execution-logs/index.vue'),
         meta: {
           icon: 'lucide:scroll-text',
           title: '执行日志',

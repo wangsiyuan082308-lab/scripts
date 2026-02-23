@@ -65,15 +65,11 @@ jobs:
           git tag "v${{ steps.bump.outputs.version }}"
           git push origin main --tags
 
-      # 先构建所有内部依赖包
-      - name: Build internal packages
-        run: pnpm --filter "@vben-core/*" --filter "@vben/*" --filter "!@vben/web-antd" build --if-present
-
-      # macOS 打包
+      # macOS 打包（turbo 会自动先构建所有依赖包）
       - name: Build Electron (macOS)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm -F @vben/web-antd run build:electron
+        run: pnpm turbo run build --filter="@vben/web-antd..." && pnpm -F @vben/web-antd electron-builder
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -106,14 +102,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # 先构建所有内部依赖包
-      - name: Build internal packages
-        run: pnpm --filter "@vben-core/*" --filter "@vben/*" --filter "!@vben/web-antd" build --if-present
-
+      # turbo 会自动按依赖顺序构建所有内部包再构建 web-antd
       - name: Build Electron (Windows)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm -F @vben/web-antd run build:electron
+        run: pnpm turbo run build --filter="@vben/web-antd..." && pnpm -F @vben/web-antd electron-builder
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

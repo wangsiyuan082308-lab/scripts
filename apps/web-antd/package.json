@@ -1,6 +1,6 @@
 {
   "name": "@vben/web-antd",
-  "version": "5.5.9",
+  "version": "5.5.10",
   "description": "ScriptAi 管理后台 (Web/Electron)",
   "author": {
     "email": "ann.vben@gmail.com",
@@ -28,7 +28,10 @@
       "artifactName": "${productName}_${version}.${ext}",
       "target": [
         {
-          "arch": ["x64", "arm64"],
+          "arch": [
+            "x64",
+            "arm64"
+          ],
           "target": "dmg"
         }
       ]

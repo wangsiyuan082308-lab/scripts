@@ -65,6 +65,10 @@ jobs:
           git tag "v${{ steps.bump.outputs.version }}"
           git push origin main --tags
 
+      # 先构建所有内部依赖包
+      - name: Build internal packages
+        run: pnpm --filter "@vben-core/*" --filter "@vben/*" --filter "!@vben/web-antd" build --if-present
+
       # macOS 打包
       - name: Build Electron (macOS)
         env:
@@ -101,6 +105,10 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # 先构建所有内部依赖包
+      - name: Build internal packages
+        run: pnpm --filter "@vben-core/*" --filter "@vben/*" --filter "!@vben/web-antd" build --if-present
 
       - name: Build Electron (Windows)
         env:

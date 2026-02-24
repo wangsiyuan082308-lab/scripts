@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Col, Row, Statistic, Tag } from 'ant-design-vue';
+import { Button, Card, Col, message, Row, Statistic, Tag } from 'ant-design-vue';
 
 import { requestClient } from '#/api/request';
 
 interface StatusInfo {
   apiOnline: boolean;
-  storeCount: number;
-  totalExecutions: number;
   lastAnalyzed: string | null;
   optimizationCount: number;
-  totalWithdrawn: number;
+  storeCount: number;
   successRate: number;
+  totalExecutions: number;
+  totalWithdrawn: number;
 }
 
 const router = useRouter();
@@ -69,6 +69,7 @@ async function fetchStatus() {
     };
   } catch {
     status.value.apiOnline = false;
+    message.error('获取提现状态失败');
   } finally {
     loading.value = false;
   }
@@ -134,11 +135,11 @@ onMounted(fetchStatus);
           <Tag :color="status.apiOnline ? 'success' : 'error'">
             {{ status.apiOnline ? '🟢 在线' : '🔴 离线' }}
           </Tag>
-          <span class="text-sm text-gray-400">
+          <span class="text-sm text-gray-400 dark:text-gray-500">
             最后执行：{{ formatTime(status.lastAnalyzed) }}
           </span>
         </div>
-        <Button :loading="loading" @click="fetchStatus">🔄 刷新</Button>
+        <Button :loading="loading" @click="fetchStatus">刷新</Button>
       </div>
 
       <!-- 功能导航 -->
@@ -169,6 +170,9 @@ onMounted(fetchStatus);
 .stat-card:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
+.dark .stat-card:hover {
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.06);
+}
 
 .nav-card {
   cursor: pointer;
@@ -178,6 +182,9 @@ onMounted(fetchStatus);
 .nav-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.dark .nav-card:hover {
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.06);
 }
 
 .nav-card-icon {
@@ -208,6 +215,6 @@ onMounted(fetchStatus);
   color: #e0e0e0;
 }
 .dark .nav-card-desc {
-  color: #666;
+  color: #888;
 }
 </style>

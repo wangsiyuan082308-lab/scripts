@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -11,6 +11,7 @@ import {
   Descriptions,
   DescriptionsItem,
   Empty,
+  message,
   Row,
   Spin,
   Statistic,
@@ -25,28 +26,28 @@ const router = useRouter();
 const loading = ref(false);
 
 interface ActivityDetail {
-  id: string;
-  name: string;
-  startTime: string;
-  endTime: string;
   daysToDeadline: number;
-  platformSubsidy: number;
-  merchantCost: number;
-  totalDiscount: number;
-  merchantRatio: number;
-  status: 'available' | 'signed_up' | 'expired';
-  level: 'p0' | 'p1' | 'p2' | 'p3';
-  roi: number;
+  endTime: string;
   fullText: string;
+  id: string;
+  level: 'p0' | 'p1' | 'p2' | 'p3';
+  merchantCost: number;
+  merchantRatio: number;
+  name: string;
+  platformSubsidy: number;
+  roi: number;
   signupStores: StoreSignup[];
+  startTime: string;
+  status: 'available' | 'expired' | 'signed_up';
+  totalDiscount: number;
 }
 
 interface StoreSignup {
-  storeId: string;
-  storeName: string;
   city: string;
   signupTime: string;
-  status: 'success' | 'failed' | 'pending';
+  status: 'failed' | 'pending' | 'success';
+  storeId: string;
+  storeName: string;
 }
 
 const detail = ref<ActivityDetail | null>(null);
@@ -58,7 +59,7 @@ const levelConfig: Record<string, { label: string; tagColor: string }> = {
   p3: { label: '⚪ 不推荐', tagColor: 'default' },
 };
 
-const statusConfig: Record<string, { label: string; color: string }> = {
+const statusConfig: Record<string, { color: string; label: string }> = {
   available: { label: '可报名', color: 'blue' },
   signed_up: { label: '已报名', color: 'green' },
   expired: { label: '已过期', color: 'default' },
@@ -71,7 +72,7 @@ const storeColumns = [
   { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
 ];
 
-const storeStatusConfig: Record<string, { label: string; color: string }> = {
+const storeStatusConfig: Record<string, { color: string; label: string }> = {
   success: { label: '报名成功', color: 'green' },
   failed: { label: '报名失败', color: 'red' },
   pending: { label: '待确认', color: 'orange' },
@@ -89,6 +90,7 @@ async function fetchDetail() {
     detail.value = res;
   } catch (e) {
     console.error('获取活动详情失败', e);
+    message.error('获取活动详情失败');
   } finally {
     loading.value = false;
   }
@@ -104,7 +106,10 @@ onMounted(fetchDetail);
 <template>
   <Page title="活动详情">
     <template #extra>
-      <Button @click="goBack">返回列表</Button>
+      <div class="flex gap-2">
+        <Button @click="fetchDetail">刷新</Button>
+        <Button @click="goBack">返回列表</Button>
+      </div>
     </template>
 
     <Spin :spinning="loading">
@@ -114,17 +119,17 @@ onMounted(fetchDetail);
         <Row :gutter="[16, 16]" class="mb-4">
           <Col :xs="12" :sm="6">
             <Card>
-              <Statistic title="平台补贴" :prefix="'¥'" :value="detail.platformSubsidy" :value-style="{ color: '#f5222d' }" />
+              <Statistic title="平台补贴" prefix="¥" :value="detail.platformSubsidy" :value-style="{ color: '#f5222d' }" />
             </Card>
           </Col>
           <Col :xs="12" :sm="6">
             <Card>
-              <Statistic title="商家出资" :prefix="'¥'" :value="detail.merchantCost" />
+              <Statistic title="商家出资" prefix="¥" :value="detail.merchantCost" />
             </Card>
           </Col>
           <Col :xs="12" :sm="6">
             <Card>
-              <Statistic title="商家出资比例" :suffix="'%'" :value="(detail.merchantRatio * 100).toFixed(1)" :value-style="{ color: detail.merchantRatio > 0.3 ? '#f5222d' : '#52c41a' }" />
+              <Statistic title="商家出资比例" suffix="%" :value="(detail.merchantRatio * 100).toFixed(1)" :value-style="{ color: detail.merchantRatio > 0.3 ? '#f5222d' : '#52c41a' }" />
             </Card>
           </Col>
           <Col :xs="12" :sm="6">
@@ -152,7 +157,7 @@ onMounted(fetchDetail);
               {{ detail.startTime }} ~ {{ detail.endTime }}
             </DescriptionsItem>
             <DescriptionsItem label="截止天数">
-              <span :style="{ color: detail.daysToDeadline <= 3 ? '#f5222d' : '#333', fontWeight: detail.daysToDeadline <= 3 ? 'bold' : 'normal' }">
+              <span :class="detail.daysToDeadline <= 3 ? 'font-bold text-red-500' : 'text-gray-700 dark:text-gray-300'">
                 {{ detail.daysToDeadline }}天
               </span>
             </DescriptionsItem>

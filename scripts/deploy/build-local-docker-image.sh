@@ -13,7 +13,7 @@ function stop_and_remove_container() {
 
 function remove_image() {
     # Remove the existing image
-    docker rmi vben-admin-pro >/dev/null 2>&1
+    docker rmi ${IMAGE_NAME} >/dev/null 2>&1
 }
 
 function install_dependencies() {
@@ -34,7 +34,7 @@ function log_message() {
         >&2 echo "ERROR: ${ERROR}"
         exit 1
     else
-        echo "docker image with tag '${IMAGE_NAME}' built sussessfully. Use below sample command to run the container"
+        echo "docker image with tag '${IMAGE_NAME}' built successfully. Use below sample command to run the container"
         echo ""
         echo "docker run -d -p 8010:8080 --name ${IMAGE_NAME} ${IMAGE_NAME}"
     fi

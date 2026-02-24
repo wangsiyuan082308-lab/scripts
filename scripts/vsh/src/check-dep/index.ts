@@ -115,8 +115,18 @@ function formatDepcheckResult(pkgName: string, unused: DepcheckResult): void {
 async function runDepcheck(config: DepcheckConfig = {}): Promise<void> {
   try {
     const finalConfig = {
-      ...DEFAULT_CONFIG,
-      ...config,
+      ignoreMatches: [
+        ...DEFAULT_CONFIG.ignoreMatches,
+        ...(config.ignoreMatches ?? []),
+      ],
+      ignorePackages: [
+        ...DEFAULT_CONFIG.ignorePackages,
+        ...(config.ignorePackages ?? []),
+      ],
+      ignorePatterns: [
+        ...DEFAULT_CONFIG.ignorePatterns,
+        ...(config.ignorePatterns ?? []),
+      ],
     };
 
     const { packages } = await getPackages();

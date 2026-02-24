@@ -24,17 +24,15 @@ async function runLint({ format }: LintCommandOptions) {
     });
     return;
   }
-  await Promise.all([
-    execaCommand(`eslint . --cache`, {
-      stdio: 'inherit',
-    }),
-    execaCommand(`prettier . --ignore-unknown --check --cache`, {
-      stdio: 'inherit',
-    }),
-    execaCommand(`stylelint "**/*.{vue,css,less,scss}" --cache`, {
-      stdio: 'inherit',
-    }),
-  ]);
+  await execaCommand(`eslint . --cache`, {
+    stdio: 'inherit',
+  });
+  await execaCommand(`prettier . --ignore-unknown --check --cache`, {
+    stdio: 'inherit',
+  });
+  await execaCommand(`stylelint "**/*.{vue,css,less,scss}" --cache`, {
+    stdio: 'inherit',
+  });
 }
 
 function defineLintCommand(cac: CAC) {

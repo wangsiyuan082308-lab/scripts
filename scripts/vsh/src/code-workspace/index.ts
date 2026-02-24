@@ -26,15 +26,13 @@ async function createCodeWorkspace({
 }: CodeWorkspaceCommandOptions) {
   const { packages, rootDir } = await getPackages();
 
-  let folders = packages.map((pkg) => {
+  const folders = packages.map((pkg) => {
     const { dir, packageJson } = pkg;
     return {
       name: packageJson.name,
       path: toPosixPath(relative(rootDir, dir)),
     };
   });
-
-  folders = folders.filter(Boolean);
 
   const monorepoRoot = findMonorepoRoot();
   const outputPath = join(monorepoRoot, CODE_WORKSPACE_FILE);

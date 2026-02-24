@@ -20,7 +20,6 @@ const DEFAULT_CONFIG = {
     'packages/@core/ui-kit/menu-ui/src/',
     'packages/@core/ui-kit/popup-ui/src/',
   ],
-  threshold: 0, // 循环依赖的阈值
 } as const;
 
 // 类型定义
@@ -29,7 +28,6 @@ type CircularDependencyResult = string[];
 interface CheckCircularConfig {
   allowedExtensions?: string[];
   ignoreDirs?: string[];
-  threshold?: number;
 }
 
 interface CommandOptions {
@@ -37,9 +35,6 @@ interface CommandOptions {
   staged: boolean;
   verbose: boolean;
 }
-
-// 缓存机制
-const cache = new Map<string, CircularDependencyResult[]>();
 
 /**
  * 格式化循环依赖的输出
@@ -81,22 +76,14 @@ async function checkCircular({
     // 生成忽略模式
     const ignorePattern = `**/{${finalConfig.ignoreDirs.join(',')}}/**`;
 
-    // 检查缓存
-    const cacheKey = `${staged}-${process.cwd()}-${ignorePattern}`;
-    if (cache.has(cacheKey)) {
-      const cachedResults = cache.get(cacheKey);
-      if (cachedResults) {
-        verbose && formatCircles(cachedResults);
-      }
-      return;
-    }
-
     // 检测循环依赖
     const results = await circularDepsDetect({
       absolute: staged,
       cwd: process.cwd(),
       ignore: [ignorePattern],
     });
+
+    let finalResults = results;
 
     if (staged) {
       let files = await getStagedFiles();
@@ -116,17 +103,13 @@ async function checkCircular({
         }
       }
 
-      // 更新缓存
-      cache.set(cacheKey, circularFiles);
-      verbose && formatCircles(circularFiles);
-    } else {
-      // 更新缓存
-      cache.set(cacheKey, results);
-      verbose && formatCircles(results);
+      finalResults = circularFiles;
     }
 
+    verbose && formatCircles(finalResults);
+
     // 如果发现循环依赖，只输出警告信息
-    if (results.length > 0) {
+    if (finalResults.length > 0) {
       console.log(
         '\n⚠️ Warning: Circular dependencies found, please check and fix',
       );
@@ -148,14 +131,10 @@ function defineCheckCircularCommand(cac: CAC): void {
     .command('check-circular')
     .option('--staged', 'Only check staged files')
     .option('--verbose', 'Show detailed information')
-    .option('--threshold <number>', 'Threshold for circular dependencies', {
-      default: 0,
-    })
     .option('--ignore-dirs <dirs>', 'Directories to ignore, comma separated')
     .usage('Analyze project circular dependencies')
-    .action(async ({ ignoreDirs, staged, threshold, verbose }) => {
+    .action(async ({ ignoreDirs, staged, verbose }) => {
       const config: CheckCircularConfig = {
-        threshold: Number(threshold),
         ...(ignoreDirs && { ignoreDirs: ignoreDirs.split(',') }),
       };
 

@@ -17,7 +17,7 @@ const SKIP_DIRS = new Set(['.DS_Store', '.git', '.idea', '.vscode']);
  * @param {number} _depth - 当前递归深度
  * @returns {Promise<boolean>} - 是否需要进一步递归处理
  */
-async function processItem(currentDir, item, targets, _depth) {
+async function processItem(currentDir, item, targets) {
   // 跳过特殊目录
   if (SKIP_DIRS.has(item)) {
     return false;
@@ -26,7 +26,7 @@ async function processItem(currentDir, item, targets, _depth) {
   try {
     const itemPath = normalize(join(currentDir, item));
 
-    if (targets.includes(item)) {
+    if (targets.has(item)) {
       // 匹配到目标目录或文件时直接删除
       await fs.rm(itemPath, { force: true, recursive: true });
       console.log(`✅ Deleted: ${itemPath}`);
@@ -80,7 +80,7 @@ async function cleanTargetsRecursively(currentDir, targets, depth = 0) {
 
     const tasks = batch.map(async (dirent) => {
       const item = dirent.name;
-      const shouldRecurse = await processItem(currentDir, item, targets, depth);
+      const shouldRecurse = await processItem(currentDir, item, targets);
 
       // 如果是目录且没有被删除，则递归处理
       if (shouldRecurse && dirent.isDirectory()) {
@@ -110,14 +110,14 @@ async function cleanTargetsRecursively(currentDir, targets, depth = 0) {
   // 要删除的目录及文件名称
   const targets = ['node_modules', 'dist', '.turbo', 'dist.zip'];
   const deleteLockFile = process.argv.includes('--del-lock');
-  const cleanupTargets = [...targets];
+  const cleanupTargets = new Set(targets);
 
   if (deleteLockFile) {
-    cleanupTargets.push('pnpm-lock.yaml');
+    cleanupTargets.add('pnpm-lock.yaml');
   }
 
   console.log(
-    `🚀 Starting cleanup of targets: ${cleanupTargets.join(', ')} from root: ${rootDir}`,
+    `🚀 Starting cleanup of targets: ${[...cleanupTargets].join(', ')} from root: ${rootDir}`,
   );
 
   const startTime = Date.now();

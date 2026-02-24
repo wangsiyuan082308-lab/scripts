@@ -10,11 +10,15 @@ RUN npm i -g corepack
 
 WORKDIR /app
 
-# copy package.json and pnpm-lock.yaml to workspace
-COPY . /app
+# 先复制依赖相关文件，利用 Docker 层缓存
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
 # 安装依赖
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+# 再复制源码
+COPY . /app
+
 RUN pnpm run build --filter=\!./docs
 
 RUN echo "Builder Success 🎉"

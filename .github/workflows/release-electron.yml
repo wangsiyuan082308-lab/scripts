@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'apps/web-antd/**'
+      - 'packages/**'
       - '.github/workflows/release-electron.yml'
 
 jobs:
@@ -78,7 +79,7 @@ jobs:
           path: |
             apps/web-antd/release/**/*.dmg
             apps/web-antd/release/**/*.zip
-            apps/web-antd/release/**/*.yml
+            apps/web-antd/release/**/latest-mac.yml
           if-no-files-found: ignore
 
   build-windows:
@@ -114,7 +115,7 @@ jobs:
           name: release-win
           path: |
             apps/web-antd/release/**/*.exe
-            apps/web-antd/release/**/*.yml
+            apps/web-antd/release/**/latest.yml
           if-no-files-found: ignore
 
   publish:

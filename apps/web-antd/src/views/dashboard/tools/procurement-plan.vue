@@ -3,6 +3,8 @@ import { Page, useVbenForm } from '@vben/common-ui';
 
 import { message, Modal } from 'ant-design-vue';
 
+import { readFileAsBuffer } from '#/utils/file';
+
 // 定义表单数据引用
 
 const [Form, formApi] = useVbenForm({
@@ -92,11 +94,6 @@ async function onSubmit(values: any) {
     });
   }
 }
-
-// 辅助函数：读取文件为 ArrayBuffer
-const readFileAsBuffer = async (file: File): Promise<ArrayBuffer> => {
-  return await file.arrayBuffer();
-};
 </script>
 
 <template>

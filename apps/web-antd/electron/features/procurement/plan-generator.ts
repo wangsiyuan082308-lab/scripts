@@ -154,8 +154,7 @@ export const ProcurementPlanGenerator = {
     });
 
     // 4. 导出 Buffer
-    // @ts-ignore: buffer is compatible with Buffer
-    const buffer = await wbOutput.xlsx.writeBuffer();
+    const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
 
     // 生成默认文件名
     const timestamp = new Date()

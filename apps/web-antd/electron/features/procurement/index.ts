@@ -171,8 +171,7 @@ export class ProcurementAnalyzer {
       }
     });
 
-    // @ts-ignore
-    const buffer = await wbOutput.xlsx.writeBuffer();
+    const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
     const summary = `处理完成！(模式: ${isNoCompare ? '不比对' : normalizedMode === 'month' ? '按月' : '按周'})\n共扫描 ${listData.length} 条数据，保留 ${keptCount} 条，已移除 ${
       listData.length - validRows.length + removedCount
     } 条不合规数据`;

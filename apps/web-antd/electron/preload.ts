@@ -1,24 +1,46 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
-  },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.off(channel, ...omit)
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.send(channel, ...omit)
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.invoke(channel, ...omit)
-  },
+const INVOKE_CHANNELS = [
+  'process-excel-buffers',
+  'generate-eleme-activity',
+  'process-eleme-baohaojia',
+  'generate-procurement-plan',
+];
 
-  // You can expose other APTs you need here.
-  // ...
-})
+const SEND_CHANNELS = [
+  'install-update',
+  'check-for-update',
+];
+
+const ON_CHANNELS = [
+  'update-available',
+  'update-download-progress',
+  'update-downloaded',
+  'update-error',
+  'main-process-message',
+];
+
+contextBridge.exposeInMainWorld('ipcRenderer', {
+  invoke(channel: string, ...args: any[]) {
+    if (!INVOKE_CHANNELS.includes(channel)) {
+      throw new Error(`IPC invoke not allowed: ${channel}`);
+    }
+    return ipcRenderer.invoke(channel, ...args);
+  },
+  send(channel: string, ...args: any[]) {
+    if (!SEND_CHANNELS.includes(channel)) {
+      throw new Error(`IPC send not allowed: ${channel}`);
+    }
+    ipcRenderer.send(channel, ...args);
+  },
+  on(channel: string, listener: (...args: any[]) => void) {
+    if (!ON_CHANNELS.includes(channel)) {
+      throw new Error(`IPC on not allowed: ${channel}`);
+    }
+    ipcRenderer.on(channel, (_event, ...args) => listener(...args));
+    return { channel, listener };
+  },
+  off(channel: string, listener: (...args: any[]) => void) {
+    ipcRenderer.off(channel, listener);
+  },
+});

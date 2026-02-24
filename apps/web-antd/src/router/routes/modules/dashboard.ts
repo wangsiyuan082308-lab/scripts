@@ -50,15 +50,6 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'FinanceReport',
-        path: '/dashboard/tools/finance-report',
-        component: () => import('#/views/dashboard/tools/finance-report.vue'),
-        meta: {
-          hideInMenu: true,
-          title: '财务报表计算',
-        },
-      },
-      {
         name: 'ProcurementPlan',
         path: '/dashboard/tools/procurement-plan',
         component: () => import('#/views/dashboard/tools/procurement-plan.vue'),

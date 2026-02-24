@@ -58,9 +58,7 @@ export class ElemeActivityGenerator {
 
 
     // 7. 生成 Buffer
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const buffer = await workbook.xlsx.writeBuffer();
+    const buffer = (await workbook.xlsx.writeBuffer()) as Buffer;
     return Buffer.from(buffer);
   }
 }

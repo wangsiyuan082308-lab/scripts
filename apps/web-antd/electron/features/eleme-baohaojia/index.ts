@@ -78,8 +78,7 @@ export class ElemeBaohaojiaAnalyzer {
       wsOutput.addRow(row);
     });
 
-    // @ts-ignore
-    const buffer = await wbOutput.xlsx.writeBuffer();
+    const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
     const summary = `处理完成！共扫描 ${rawData.length} 条数据，成功转换 ${successCount} 条，跳过 ${skipCount} 条（缺失条码）。`;
 
     return { buffer: buffer as Buffer, summary };

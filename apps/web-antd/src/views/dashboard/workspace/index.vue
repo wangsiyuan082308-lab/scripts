@@ -36,15 +36,6 @@ const projectItems: WorkbenchProjectItem[] = [
     url: '/withdrawal/overview',
   },
   {
-    color: '#00BFFF',
-    content: '门店月度财务报表、成本配置管理',
-    date: '2026-02-20',
-    group: '财务工具',
-    icon: 'ri:money-cny-box-fill',
-    title: '财务报表管理',
-    url: '/finance/overview',
-  },
-  {
     color: '#1D6F42',
     content: '一键将采购计划转换为标准Excel格式',
     date: '2024-03-20',
@@ -79,15 +70,6 @@ const projectItems: WorkbenchProjectItem[] = [
     icon: 'ri:file-list-3-fill',
     title: '采购计划生成',
     url: '/dashboard/tools/procurement-plan',
-  },
-  {
-    color: '#00BFFF',
-    content: '财务报表计算工具',
-    date: '2024-03-25',
-    group: '财务工具',
-    icon: 'ri:calculator-fill',
-    title: '财务报表计算',
-    url: '/dashboard/tools/finance-report',
   },
 ];
 

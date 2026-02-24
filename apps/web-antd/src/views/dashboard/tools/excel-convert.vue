@@ -3,6 +3,8 @@ import { Page, useVbenForm } from '@vben/common-ui';
 
 import { message, Modal } from 'ant-design-vue';
 
+import { readFileAsBuffer } from '#/utils/file';
+
 // 定义表单数据引用
 
 const [Form, formApi] = useVbenForm({
@@ -116,22 +118,6 @@ const analyzeFiles = (files: File[], mode: string) => {
   }
 
   return { listFile, refFile };
-};
-
-// 辅助函数：读取文件为 ArrayBuffer
-const readFileAsBuffer = (file: File): Promise<ArrayBuffer> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        resolve(e.target.result as ArrayBuffer);
-      } else {
-        reject(new Error('File read failed'));
-      }
-    };
-    reader.onerror = (e) => reject(e);
-    reader.readAsArrayBuffer(file);
-  });
 };
 
 // Excel 处理器：调用 Electron 进行转换

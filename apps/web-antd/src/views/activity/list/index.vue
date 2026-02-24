@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import type { EChartsOption } from 'echarts';
+
+import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
@@ -12,6 +15,7 @@ import {
   Drawer,
   Empty,
   Input,
+  message,
   Row,
   Select,
   Spin,
@@ -22,33 +26,34 @@ import {
 } from 'ant-design-vue';
 
 import { requestClient } from '#/api/request';
+import { exportToExcel } from '#/utils/export-excel';
 
 interface Activity {
-  id: string;
-  name: string;
-  startTime: string;
-  endTime: string;
-  signupDeadline: string;
   daysToDeadline: number;
-  platformSubsidy: number;
-  merchantCost: number;
-  suitableStores: string[];
-  status: 'available' | 'signed_up' | 'expired';
-  level: 'p0' | 'p1' | 'p2' | 'p3';
-  platform: 'eleme' | 'meituan' | 'unknown';
+  endTime: string;
   fullText: string;
+  id: string;
+  level: 'p0' | 'p1' | 'p2' | 'p3';
+  merchantCost: number;
+  name: string;
+  platform: 'eleme' | 'meituan' | 'unknown';
+  platformSubsidy: number;
+  signupDeadline: string;
+  startTime: string;
+  status: 'available' | 'expired' | 'signed_up';
+  suitableStores: string[];
   url: string;
 }
 
 interface Summary {
-  total: number;
   available: number;
-  signedUp: number;
   expired: number;
   p0: number;
   p1: number;
   p2: number;
   p3: number;
+  signedUp: number;
+  total: number;
 }
 
 const loading = ref(false);
@@ -62,6 +67,9 @@ const searchText = ref('');
 const drawerVisible = ref(false);
 const currentActivity = ref<Activity | null>(null);
 
+const chartRef = ref<InstanceType<typeof EchartsUI>>();
+const { renderEcharts } = useEcharts(chartRef);
+
 const levelConfig: Record<string, { label: string; tagColor: string }> = {
   p0: { label: '🔴 今日必报', tagColor: 'red' },
   p1: { label: '🟡 值得报名', tagColor: 'orange' },
@@ -69,80 +77,35 @@ const levelConfig: Record<string, { label: string; tagColor: string }> = {
   p3: { label: '⚪ 不推荐', tagColor: 'default' },
 };
 
-const statusConfig: Record<string, { label: string; color: string }> = {
+const statusConfig: Record<string, { color: string; label: string }> = {
   available: { label: '可报名', color: 'blue' },
   signed_up: { label: '已报名', color: 'green' },
   expired: { label: '已过期', color: 'default' },
 };
 
-const platformConfig: Record<string, { label: string; color: string }> = {
+const platformConfig: Record<string, { color: string; label: string }> = {
   eleme: { label: '饿了么', color: 'blue' },
   meituan: { label: '美团', color: 'orange' },
   unknown: { label: '未知', color: 'default' },
 };
 
 const columns = [
+  { title: '推荐', dataIndex: 'level', key: 'level', width: 110 },
+  { title: '平台', dataIndex: 'platform', key: 'platform', width: 80 },
+  { title: '活动名称', dataIndex: 'name', key: 'name', ellipsis: true },
+  { title: '活动时间', key: 'time', width: 160 },
   {
-    title: '推荐',
-    dataIndex: 'level',
-    key: 'level',
-    width: 110,
-  },
-  {
-    title: '平台',
-    dataIndex: 'platform',
-    key: 'platform',
-    width: 80,
-  },
-  {
-    title: '活动名称',
-    dataIndex: 'name',
-    key: 'name',
-    ellipsis: true,
-  },
-  {
-    title: '活动时间',
-    key: 'time',
-    width: 160,
-  },
-  {
-    title: '报名截止',
-    dataIndex: 'signupDeadline',
-    key: 'deadline',
-    width: 100,
+    title: '报名截止', dataIndex: 'signupDeadline', key: 'deadline', width: 100,
     sorter: (a: Activity, b: Activity) => (a.daysToDeadline || 9999) - (b.daysToDeadline || 9999),
   },
   {
-    title: '平台补贴',
-    dataIndex: 'platformSubsidy',
-    key: 'subsidy',
-    width: 100,
+    title: '平台补贴', dataIndex: 'platformSubsidy', key: 'subsidy', width: 100,
     sorter: (a: Activity, b: Activity) => (a.platformSubsidy || 0) - (b.platformSubsidy || 0),
   },
-  {
-    title: '商家出资',
-    dataIndex: 'merchantCost',
-    key: 'cost',
-    width: 100,
-  },
-  {
-    title: '适用门店',
-    dataIndex: 'suitableStores',
-    key: 'stores',
-    width: 200,
-  },
-  {
-    title: '状态',
-    dataIndex: 'status',
-    key: 'status',
-    width: 90,
-  },
-  {
-    title: '操作',
-    key: 'action',
-    width: 80,
-    fixed: 'right' as const,
-  },
+  { title: '商家出资', dataIndex: 'merchantCost', key: 'cost', width: 100 },
+  { title: '适用门店', dataIndex: 'suitableStores', key: 'stores', width: 200 },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
+  { title: '操作', key: 'action', width: 80, fixed: 'right' as const },
 ];
 
 const filteredActivities = computed(() => {
@@ -170,10 +133,31 @@ function formatTime(activity: Activity) {
   if (activity.startTime && activity.endTime) {
     return `${activity.startTime} ~ ${activity.endTime}`;
   }
-  // 匹配 YYYY/MM/DD ~ YYYY/MM/DD 或 MM/DD ~ MM/DD
   const match = activity.fullText?.match(/活动时间[：:]\s*(\d{2,4}\/\d{2}(?:\/\d{2})?)\s*~\s*(\d{2,4}\/\d{2}(?:\/\d{2})?)/);
   if (match) return `${match[1]} ~ ${match[2]}`;
   return '-';
+}
+
+function renderChart(s: Summary) {
+  const option: EChartsOption = {
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, left: 'center' },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        avoidLabelOverlap: false,
+        label: { show: false },
+        data: [
+          { value: s.p0, name: '今日必报', itemStyle: { color: '#f5222d' } },
+          { value: s.p1, name: '值得报名', itemStyle: { color: '#faad14' } },
+          { value: s.p2, name: '可选活动', itemStyle: { color: '#52c41a' } },
+          { value: s.p3, name: '不推荐', itemStyle: { color: '#d9d9d9' } },
+        ].filter((d) => d.value > 0),
+      },
+    ],
+  };
+  renderEcharts(option);
 }
 
 async function fetchActivities() {
@@ -182,11 +166,28 @@ async function fetchActivities() {
     const res = await requestClient.get<any>('/eleme/activities');
     activities.value = res.list || [];
     summary.value = res.summary || summary.value;
+    renderChart(summary.value);
   } catch (e) {
     console.error('获取活动列表失败', e);
+    message.error('获取活动列表失败');
   } finally {
     loading.value = false;
   }
+}
+
+function handleExport() {
+  const exportColumns = [
+    { title: '推荐等级', dataIndex: 'level', width: 12 },
+    { title: '平台', dataIndex: 'platform', width: 10 },
+    { title: '活动名称', dataIndex: 'name', width: 30 },
+    { title: '开始时间', dataIndex: 'startTime', width: 14 },
+    { title: '结束时间', dataIndex: 'endTime', width: 14 },
+    { title: '报名截止', dataIndex: 'signupDeadline', width: 14 },
+    { title: '平台补贴', dataIndex: 'platformSubsidy', width: 12 },
+    { title: '商家出资', dataIndex: 'merchantCost', width: 12 },
+    { title: '状态', dataIndex: 'status', width: 10 },
+  ];
+  exportToExcel(exportColumns, filteredActivities.value, '活动列表');
 }
 
 onMounted(fetchActivities);
@@ -195,26 +196,35 @@ onMounted(fetchActivities);
 <template>
   <Page title="活动中心">
     <div class="p-4">
-      <!-- 统计卡片 -->
+      <!-- 统计卡片 + 饼图 -->
       <Row :gutter="[16, 16]" class="mb-4">
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic title="活动总数" :value="summary.total" />
-          </Card>
+        <Col :xs="24" :md="16">
+          <Row :gutter="[16, 16]">
+            <Col :xs="12" :sm="6">
+              <Card class="stat-card" size="small">
+                <Statistic title="活动总数" :value="summary.total" />
+              </Card>
+            </Col>
+            <Col :xs="12" :sm="6">
+              <Card class="stat-card" size="small">
+                <Statistic title="可报名" :value="summary.available" :value-style="{ color: '#1890ff' }" />
+              </Card>
+            </Col>
+            <Col :xs="12" :sm="6">
+              <Card class="stat-card" size="small">
+                <Statistic title="已报名" :value="summary.signedUp" :value-style="{ color: '#52c41a' }" />
+              </Card>
+            </Col>
+            <Col :xs="12" :sm="6">
+              <Card class="stat-card" size="small">
+                <Statistic title="今日必报" :value="summary.p0" :value-style="{ color: '#f5222d' }" />
+              </Card>
+            </Col>
+          </Row>
         </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic title="可报名" :value="summary.available" :value-style="{ color: '#1890ff' }" />
-          </Card>
-        </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic title="已报名" :value="summary.signedUp" :value-style="{ color: '#52c41a' }" />
-          </Card>
-        </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic title="今日必报" :value="summary.p0" :value-style="{ color: '#f5222d' }" />
+        <Col :xs="24" :md="8">
+          <Card size="small" title="等级分布">
+            <EchartsUI ref="chartRef" style="height: 160px" />
           </Card>
         </Col>
       </Row>
@@ -222,7 +232,7 @@ onMounted(fetchActivities);
       <!-- 活动列表 -->
       <Card>
         <template #title>
-          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+          <div class="flex flex-wrap items-center gap-3">
             <span>活动列表</span>
             <Input.Search
               v-model:value="searchText"
@@ -240,7 +250,10 @@ onMounted(fetchActivities);
           </div>
         </template>
         <template #extra>
-          <Button :loading="loading" @click="fetchActivities">🔄 刷新</Button>
+          <div class="flex items-center gap-2">
+            <Button @click="handleExport">导出</Button>
+            <Button :loading="loading" @click="fetchActivities">刷新</Button>
+          </div>
         </template>
 
         <Spin :spinning="loading">
@@ -267,7 +280,7 @@ onMounted(fetchActivities);
 
               <template v-else-if="column.key === 'name'">
                 <Tooltip :title="record.name">
-                  <a style="cursor: pointer" @click="showDetail(record as Activity)">{{ record.name }}</a>
+                  <a class="cursor-pointer" @click="showDetail(record as Activity)">{{ record.name }}</a>
                 </Tooltip>
               </template>
 
@@ -276,22 +289,25 @@ onMounted(fetchActivities);
               </template>
 
               <template v-else-if="column.key === 'deadline'">
-                <span v-if="record.signupDeadline" :style="{ color: record.daysToDeadline <= 3 ? '#f5222d' : record.daysToDeadline <= 7 ? '#faad14' : '' }">
+                <span
+                  v-if="record.signupDeadline"
+                  :class="record.daysToDeadline <= 3 ? 'text-red-500' : record.daysToDeadline <= 7 ? 'text-yellow-500' : ''"
+                >
                   {{ record.signupDeadline }}
                 </span>
-                <span v-else style="color: #999">长期</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">长期</span>
               </template>
 
               <template v-else-if="column.key === 'subsidy'">
-                <span v-if="record.platformSubsidy > 0" style="color: #f5222d; font-weight: bold">
+                <span v-if="record.platformSubsidy > 0" class="font-bold text-red-500">
                   ¥{{ record.platformSubsidy }}
                 </span>
-                <span v-else style="color: #999">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'cost'">
                 <span v-if="record.merchantCost > 0">¥{{ record.merchantCost }}</span>
-                <span v-else style="color: #999">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'stores'">
@@ -301,7 +317,7 @@ onMounted(fetchActivities);
                   </Tooltip>
                 </template>
                 <span v-else-if="record.suitableStores?.length">{{ record.suitableStores.join('、') }}</span>
-                <span v-else style="color: #999">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'status'">
@@ -350,13 +366,13 @@ onMounted(fetchActivities);
               {{ formatTime(currentActivity) }}
             </DescriptionsItem>
             <DescriptionsItem label="报名截止">
-              <span v-if="currentActivity.signupDeadline" :style="{ color: currentActivity.daysToDeadline <= 3 ? '#f5222d' : '' }">
+              <span v-if="currentActivity.signupDeadline" :class="currentActivity.daysToDeadline <= 3 ? 'text-red-500' : ''">
                 {{ currentActivity.signupDeadline }}
               </span>
-              <span v-else style="color: #999">长期有效</span>
+              <span v-else class="text-gray-400 dark:text-gray-500">长期有效</span>
             </DescriptionsItem>
             <DescriptionsItem label="平台补贴">
-              <span v-if="currentActivity.platformSubsidy > 0" style="color: #f5222d; font-weight: bold">
+              <span v-if="currentActivity.platformSubsidy > 0" class="font-bold text-red-500">
                 ¥{{ currentActivity.platformSubsidy }}
               </span>
               <span v-else>无</span>
@@ -376,12 +392,12 @@ onMounted(fetchActivities);
           </Descriptions>
 
           <Card title="活动原文" size="small" class="mt-4">
-            <div style="white-space: pre-wrap; font-size: 13px; color: #666; line-height: 1.8">
+            <div class="whitespace-pre-wrap text-sm leading-relaxed text-gray-500 dark:text-gray-400">
               {{ currentActivity.fullText || '暂无详情' }}
             </div>
           </Card>
 
-          <div class="mt-4" style="text-align: right">
+          <div class="mt-4 text-right">
             <Button
               v-if="currentActivity.url"
               type="primary"

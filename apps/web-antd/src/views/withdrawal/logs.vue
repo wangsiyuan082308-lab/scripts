@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Button,
   Card,
   Empty,
+  message,
   Select,
   Spin,
+  Switch,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -15,10 +18,11 @@ import {
 import { requestClient } from '#/api/request';
 
 interface LogEntry {
-  timestamp: string;
+  data?: any;
   level: string;
   message: string;
-  data?: any;
+  store?: string;
+  timestamp: string;
 }
 
 const loading = ref(false);
@@ -28,6 +32,8 @@ const storeOptions = ref<string[]>([]);
 const selectedFile = ref('');
 const levelFilter = ref('');
 const storeFilter = ref('');
+const autoRefresh = ref(false);
+let timer: ReturnType<typeof setInterval> | null = null;
 
 const levelColors: Record<string, string> = {
   info: 'blue',
@@ -37,31 +43,10 @@ const levelColors: Record<string, string> = {
 };
 
 const columns = [
-  {
-    title: '时间',
-    dataIndex: 'timestamp',
-    key: 'timestamp',
-    width: 200,
-  },
-  {
-    title: '级别',
-    dataIndex: 'level',
-    key: 'level',
-    width: 80,
-  },
-  {
-    title: '消息',
-    dataIndex: 'message',
-    key: 'message',
-    ellipsis: true,
-  },
-  {
-    title: '详情',
-    dataIndex: 'data',
-    key: 'data',
-    width: 300,
-    ellipsis: true,
-  },
+  { title: '时间', dataIndex: 'timestamp', key: 'timestamp', width: 200 },
+  { title: '级别', dataIndex: 'level', key: 'level', width: 80 },
+  { title: '消息', dataIndex: 'message', key: 'message', ellipsis: true },
+  { title: '详情', dataIndex: 'data', key: 'data', width: 300, ellipsis: true },
 ];
 
 async function fetchLogs() {
@@ -85,8 +70,18 @@ async function fetchLogs() {
     }
   } catch (e) {
     console.error('获取日志失败', e);
+    message.error('获取日志失败');
   } finally {
     loading.value = false;
+  }
+}
+
+function toggleAutoRefresh(checked: boolean) {
+  if (checked) {
+    timer = setInterval(fetchLogs, 30_000);
+  } else if (timer) {
+    clearInterval(timer);
+    timer = null;
   }
 }
 
@@ -110,6 +105,9 @@ function formatData(data: any) {
 }
 
 onMounted(fetchLogs);
+onUnmounted(() => {
+  if (timer) clearInterval(timer);
+});
 </script>
 
 <template>
@@ -119,7 +117,7 @@ onMounted(fetchLogs);
       <Card class="mb-4">
         <div class="flex flex-wrap items-center gap-4">
           <div class="flex items-center gap-2">
-            <span>日志文件：</span>
+            <span class="text-gray-600 dark:text-gray-400">日志文件：</span>
             <Select
               v-model:value="selectedFile"
               style="width: 260px"
@@ -130,7 +128,7 @@ onMounted(fetchLogs);
             />
           </div>
           <div class="flex items-center gap-2">
-            <span>级别：</span>
+            <span class="text-gray-600 dark:text-gray-400">级别：</span>
             <Select
               v-model:value="levelFilter"
               style="width: 120px"
@@ -146,7 +144,7 @@ onMounted(fetchLogs);
             />
           </div>
           <div class="flex items-center gap-2">
-            <span>门店：</span>
+            <span class="text-gray-600 dark:text-gray-400">门店：</span>
             <Select
               v-model:value="storeFilter"
               style="width: 200px"
@@ -156,7 +154,13 @@ onMounted(fetchLogs);
               @change="fetchLogs"
             />
           </div>
-          <span class="text-gray-400">共 {{ logs.length }} 条日志</span>
+          <div class="flex-1" />
+          <span class="text-sm text-gray-400 dark:text-gray-500">共 {{ logs.length }} 条</span>
+          <div class="flex items-center gap-1">
+            <span class="text-sm text-gray-500 dark:text-gray-400">自动刷新</span>
+            <Switch v-model:checked="autoRefresh" size="small" @change="toggleAutoRefresh" />
+          </div>
+          <Button size="small" :loading="loading" @click="fetchLogs">刷新</Button>
         </div>
       </Card>
 
@@ -175,6 +179,7 @@ onMounted(fetchLogs);
               (_record: LogEntry, index?: number) =>
                 _record.timestamp + String(index)
             "
+            :scroll="{ x: 800 }"
             size="small"
             :row-class-name="
               (record: LogEntry) =>
@@ -206,7 +211,7 @@ onMounted(fetchLogs);
               </template>
 
               <template v-else-if="column.key === 'data'">
-                <span class="font-mono text-xs text-gray-500">
+                <span class="font-mono text-xs text-gray-500 dark:text-gray-400">
                   {{ formatData(record.data) }}
                 </span>
               </template>

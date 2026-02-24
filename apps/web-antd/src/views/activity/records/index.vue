@@ -1,37 +1,50 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Button,
   Card,
+  Col,
   Empty,
+  Input,
+  message,
+  Row,
   Spin,
   Statistic,
   Table,
   Tag,
-  Col,
-  Row,
 } from 'ant-design-vue';
 
 import { requestClient } from '#/api/request';
+import { exportToExcel } from '#/utils/export-excel';
 
-interface Record {
-  id?: string;
-  name: string;
-  startTime?: string;
+interface ActivityRecord {
   endTime?: string;
-  platformSubsidy?: number;
+  id?: string;
   merchantCost?: number;
-  suitableStores?: string[];
-  status?: string;
+  name: string;
+  platformSubsidy?: number;
   signupDate?: string;
   source?: string;
+  startTime?: string;
+  status?: string;
+  suitableStores?: string[];
 }
 
 const loading = ref(false);
-const records = ref<Record[]>([]);
+const records = ref<ActivityRecord[]>([]);
 const total = ref(0);
+const searchText = ref('');
+
+const filteredRecords = computed(() => {
+  if (!searchText.value) return records.value;
+  const keyword = searchText.value.toLowerCase();
+  return records.value.filter((r) =>
+    r.name?.toLowerCase().includes(keyword),
+  );
+});
 
 const columns = [
   {
@@ -68,6 +81,8 @@ const columns = [
     dataIndex: 'signupDate',
     key: 'signupDate',
     width: 120,
+    sorter: (a: ActivityRecord, b: ActivityRecord) =>
+      (a.signupDate || '').localeCompare(b.signupDate || ''),
   },
   {
     title: '状态',
@@ -85,9 +100,23 @@ async function fetchRecords() {
     total.value = res.total || 0;
   } catch (e) {
     console.error('获取报名记录失败', e);
+    message.error('获取报名记录失败');
   } finally {
     loading.value = false;
   }
+}
+
+function handleExport() {
+  const exportColumns = [
+    { title: '活动名称', dataIndex: 'name', width: 30 },
+    { title: '开始时间', dataIndex: 'startTime', width: 18 },
+    { title: '结束时间', dataIndex: 'endTime', width: 18 },
+    { title: '平台补贴', dataIndex: 'platformSubsidy', width: 12 },
+    { title: '商家成本', dataIndex: 'merchantCost', width: 12 },
+    { title: '报名日期', dataIndex: 'signupDate', width: 14 },
+    { title: '状态', dataIndex: 'status', width: 10 },
+  ];
+  exportToExcel(exportColumns, filteredRecords.value, '活动报名记录');
 }
 
 onMounted(fetchRecords);
@@ -132,14 +161,28 @@ onMounted(fetchRecords);
         </Col>
       </Row>
 
+      <!-- 工具栏 -->
+      <div class="mb-4 flex items-center gap-2">
+        <Input.Search
+          v-model:value="searchText"
+          placeholder="搜索活动名称"
+          style="width: 240px"
+          allow-clear
+        />
+        <div class="flex-1" />
+        <Button @click="fetchRecords">刷新</Button>
+        <Button @click="handleExport">导出 Excel</Button>
+      </div>
+
       <!-- 记录表格 -->
       <Card>
         <Spin :spinning="loading">
           <Table
             :columns="columns"
-            :data-source="records"
+            :data-source="filteredRecords"
             :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
-            row-key="(record: Record, index: number) => record.id || record.name + index"
+            :row-key="(_record: ActivityRecord, index: number) => _record.id || _record.name + index"
+            :scroll="{ x: 900 }"
             size="middle"
           >
             <template #bodyCell="{ column, record }">
@@ -151,19 +194,19 @@ onMounted(fetchRecords);
                 <span v-if="record.startTime">
                   {{ record.startTime }} ~ {{ record.endTime }}
                 </span>
-                <span v-else class="text-gray-400">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'subsidy'">
-                <span v-if="record.platformSubsidy" style="color: #f5222d">
+                <span v-if="record.platformSubsidy" class="text-red-500">
                   ¥{{ record.platformSubsidy }}
                 </span>
-                <span v-else class="text-gray-400">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'cost'">
                 <span v-if="record.merchantCost">¥{{ record.merchantCost }}</span>
-                <span v-else class="text-gray-400">-</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
               <template v-else-if="column.key === 'stores'">
@@ -197,5 +240,8 @@ onMounted(fetchRecords);
 }
 .stat-card:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+:root.dark .stat-card:hover {
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.06);
 }
 </style>

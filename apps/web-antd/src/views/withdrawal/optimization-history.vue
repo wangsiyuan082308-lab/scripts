@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Card, Col, Empty, Row, Spin, Statistic, Table, Tag } from 'ant-design-vue';
+import { Button, Card, Col, Empty, message, Row, Spin, Statistic, Table, Tag } from 'ant-design-vue';
 
 import { requestClient } from '#/api/request';
 
 interface Optimization {
-  timestamp: string;
   strategy: {
     optimizations: Array<{
-      type?: string;
       action?: string;
       expected_improvement?: string;
+      type?: string;
     }>;
   };
+  timestamp: string;
 }
 
 const loading = ref(false);
@@ -27,6 +27,9 @@ const columns = [
     dataIndex: 'timestamp',
     key: 'timestamp',
     width: 200,
+    sorter: (a: Optimization, b: Optimization) =>
+      (a.timestamp || '').localeCompare(b.timestamp || ''),
+    defaultSortOrder: 'descend' as const,
   },
   {
     title: '优化数量',
@@ -56,6 +59,7 @@ async function fetchOptimizations() {
     optimizations.value = list;
   } catch (e) {
     console.error('获取优化策略失败', e);
+    message.error('获取优化策略失败');
   } finally {
     loading.value = false;
   }
@@ -83,6 +87,11 @@ onMounted(fetchOptimizations);
             />
           </Card>
         </Col>
+        <Col :xs="24" :sm="12">
+          <div class="flex h-full items-end justify-end pb-2">
+            <Button :loading="loading" @click="fetchOptimizations">刷新</Button>
+          </div>
+        </Col>
       </Row>
 
       <!-- 优化历史表格 -->
@@ -97,6 +106,7 @@ onMounted(fetchOptimizations);
               showTotal: (t: number) => `共 ${t} 条`,
             }"
             :row-key="(record: Optimization, index?: number) => record.timestamp || String(index)"
+            :scroll="{ x: 800 }"
             size="middle"
           >
             <template #bodyCell="{ column, record }">
@@ -137,18 +147,18 @@ onMounted(fetchOptimizations);
                     >
                       {{ opt.type }}
                     </Tag>
-                    <span class="text-gray-600">
+                    <span class="text-gray-600 dark:text-gray-400">
                       {{ opt.action || '' }}
                     </span>
                     <span
                       v-if="opt.expected_improvement"
-                      class="ml-2 text-xs text-gray-400"
+                      class="ml-2 text-xs text-gray-400 dark:text-gray-500"
                     >
                       预期：{{ opt.expected_improvement }}
                     </span>
                   </div>
                 </div>
-                <span v-else class="text-gray-400">无详情</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">无详情</span>
               </template>
             </template>
 
@@ -168,5 +178,8 @@ onMounted(fetchOptimizations);
 }
 .stat-card:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+.dark .stat-card:hover {
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.06);
 }
 </style>

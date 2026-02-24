@@ -2,6 +2,8 @@ import { defineEventHandler } from 'h3';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { useResponseError } from '../../utils/response';
+
 const CONFIG_PATH = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/oby-finance-analyzer/store_config.json',
@@ -46,6 +48,6 @@ export default defineEventHandler(() => {
       },
     };
   } catch (e: any) {
-    return { code: -1, data: { list: [], total: 0 }, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

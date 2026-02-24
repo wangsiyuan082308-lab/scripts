@@ -2,6 +2,8 @@ import { defineEventHandler, getQuery } from 'h3';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { useResponseError } from '../../utils/response';
+
 const LOGS_DIR = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/eleme-auto-withdrawal/logs',
@@ -96,6 +98,6 @@ export default defineEventHandler((event) => {
       },
     };
   } catch (e: any) {
-    return { code: -1, data: { list: [], files: [] }, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

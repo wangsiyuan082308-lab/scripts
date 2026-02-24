@@ -2,6 +2,8 @@ import { defineEventHandler, getQuery } from 'h3';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { useResponseError } from '../../utils/response';
+
 const DATA_DIR = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/eleme-activity-assistant/data',
@@ -63,18 +65,28 @@ export default defineEventHandler((event) => {
 
     // 合并报名结果：从 super_brand_signup_*.json 和 报名历史.json 中标记已报名活动
     const signedNames = new Set<string>();
+
+    // super_brand_signup 文件（单个文件解析失败不影响整体）
     try {
       const dataFiles = readdirSync(DATA_DIR);
-      // super_brand_signup 文件
       for (const f of dataFiles.filter((f) => f.startsWith('super_brand_signup_') && f.endsWith('.json'))) {
-        const signup = JSON.parse(readFileSync(join(DATA_DIR, f), 'utf-8'));
-        if (signup.results) {
-          for (const r of signup.results) {
-            if (r.success) signedNames.add(r.name);
+        try {
+          const signup = JSON.parse(readFileSync(join(DATA_DIR, f), 'utf-8'));
+          if (signup.results) {
+            for (const r of signup.results) {
+              if (r.success) signedNames.add(r.name);
+            }
           }
+        } catch {
+          // 单个 signup 文件解析失败，跳过
         }
       }
-      // 报名历史
+    } catch {
+      // 读取目录失败，跳过报名文件合并
+    }
+
+    // 报名历史（解析失败不影响整体）
+    try {
       const historyPath = join(DATA_DIR, '报名历史.json');
       if (existsSync(historyPath)) {
         const history = JSON.parse(readFileSync(historyPath, 'utf-8'));
@@ -192,6 +204,6 @@ export default defineEventHandler((event) => {
 
     return { code: 0, data: { list: activities, summary } };
   } catch (e: any) {
-    return { code: -1, data: { list: [], summary: null }, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

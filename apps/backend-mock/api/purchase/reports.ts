@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
+import { useResponseError } from '../../utils/response';
+
 const HOME = homedir();
 
 const AOIXIANG_DIR = join(
@@ -283,6 +285,6 @@ export default defineEventHandler((event) => {
       },
     };
   } catch (e: any) {
-    return { code: -1, data: null, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

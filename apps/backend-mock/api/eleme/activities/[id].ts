@@ -2,6 +2,8 @@ import { defineEventHandler, getRouterParam } from 'h3';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { useResponseError } from '../../../utils/response';
+
 const DATA_DIR = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/eleme-activity-assistant/data',
@@ -10,7 +12,7 @@ const DATA_DIR = join(
 export default defineEventHandler((event) => {
   const id = getRouterParam(event, 'id');
   if (!id) {
-    return { code: -1, data: null, message: '缺少活动ID' };
+    return useResponseError('缺少活动ID');
   }
 
   try {
@@ -24,7 +26,7 @@ export default defineEventHandler((event) => {
     }
 
     if (!activity) {
-      return { code: -1, data: null, message: '活动不存在' };
+      return useResponseError('活动不存在');
     }
 
     // 从 super_brand_signup 文件中查找报名门店记录
@@ -86,6 +88,6 @@ export default defineEventHandler((event) => {
       },
     };
   } catch (e: any) {
-    return { code: -1, data: null, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join, normalize } from 'node:path';
+import { createInterface } from 'node:readline';
 
 const rootDir = process.cwd();
 
@@ -110,6 +111,7 @@ async function cleanTargetsRecursively(currentDir, targets, depth = 0) {
   // 要删除的目录及文件名称
   const targets = ['node_modules', 'dist', '.turbo', 'dist.zip'];
   const deleteLockFile = process.argv.includes('--del-lock');
+  const skipConfirm = process.argv.includes('--yes') || process.argv.includes('-y');
   const cleanupTargets = new Set(targets);
 
   if (deleteLockFile) {
@@ -117,13 +119,27 @@ async function cleanTargetsRecursively(currentDir, targets, depth = 0) {
   }
 
   console.log(
-    `🚀 Starting cleanup of targets: ${[...cleanupTargets].join(', ')} from root: ${rootDir}`,
+    `🚀 Will clean targets: ${[...cleanupTargets].join(', ')} from root: ${rootDir}`,
   );
+
+  if (!skipConfirm) {
+    const confirmed = await new Promise((resolve) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl.question('⚠️  Are you sure you want to proceed? (y/N) ', (answer) => {
+        rl.close();
+        resolve(answer.trim().toLowerCase() === 'y');
+      });
+    });
+
+    if (!confirmed) {
+      console.log('👋 Cleanup cancelled.');
+      process.exit(0);
+    }
+  }
 
   const startTime = Date.now();
 
   try {
-    // 先统计要删除的目标数量
     console.log('📊 Scanning for cleanup targets...');
 
     await cleanTargetsRecursively(rootDir, cleanupTargets);

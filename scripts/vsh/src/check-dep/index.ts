@@ -1,6 +1,6 @@
 import type { CAC } from 'cac';
 
-import { getPackages } from '@vben/node-utils';
+import { colors, consola, getPackages, spinner, UNICODE } from '@vben/node-utils';
 
 import depcheck from 'depcheck';
 
@@ -41,6 +41,7 @@ interface DepcheckResult {
 }
 
 interface DepcheckConfig {
+  check?: boolean;
   ignoreMatches?: string[];
   ignorePackages?: string[];
   ignorePatterns?: string[];
@@ -87,24 +88,25 @@ function formatDepcheckResult(pkgName: string, unused: DepcheckResult): void {
     return;
   }
 
-  console.log('\n📦 Package:', pkgName);
+  consola.log('');
+  consola.log(colors.cyan('📦 Package:'), pkgName);
 
   if (Object.keys(unused.missing).length > 0) {
-    console.log('❌ Missing dependencies:');
+    consola.log(colors.red('  ✖ Missing dependencies:'));
     Object.entries(unused.missing).forEach(([dep, files]) => {
-      console.log(`  - ${dep}:`);
-      files.forEach((file) => console.log(`    → ${file}`));
+      consola.log(`    - ${dep}:`);
+      files.forEach((file) => consola.log(`      → ${file}`));
     });
   }
 
   if (unused.dependencies.length > 0) {
-    console.log('⚠️ Unused dependencies:');
-    unused.dependencies.forEach((dep) => console.log(`  - ${dep}`));
+    consola.log(colors.yellow('  ⚠ Unused dependencies:'));
+    unused.dependencies.forEach((dep) => consola.log(`    - ${dep}`));
   }
 
   if (unused.devDependencies.length > 0) {
-    console.log('⚠️ Unused devDependencies:');
-    unused.devDependencies.forEach((dep) => console.log(`  - ${dep}`));
+    consola.log(colors.yellow('  ⚠ Unused devDependencies:'));
+    unused.devDependencies.forEach((dep) => consola.log(`    - ${dep}`));
   }
 }
 
@@ -113,25 +115,30 @@ function formatDepcheckResult(pkgName: string, unused: DepcheckResult): void {
  * @param config - 配置选项
  */
 async function runDepcheck(config: DepcheckConfig = {}): Promise<void> {
+  const { check = false, ...restConfig } = config;
+
   try {
     const finalConfig = {
       ignoreMatches: [
         ...DEFAULT_CONFIG.ignoreMatches,
-        ...(config.ignoreMatches ?? []),
+        ...(restConfig.ignoreMatches ?? []),
       ],
       ignorePackages: [
         ...DEFAULT_CONFIG.ignorePackages,
-        ...(config.ignorePackages ?? []),
+        ...(restConfig.ignorePackages ?? []),
       ],
       ignorePatterns: [
         ...DEFAULT_CONFIG.ignorePatterns,
-        ...(config.ignorePatterns ?? []),
+        ...(restConfig.ignorePatterns ?? []),
       ],
     };
 
-    const { packages } = await getPackages();
-
     let hasIssues = false;
+
+    const { packages } = await spinner(
+      { title: 'Analyzing dependencies...' },
+      () => getPackages(),
+    );
 
     await Promise.all(
       packages.map(async (pkg: PackageInfo) => {
@@ -159,14 +166,22 @@ async function runDepcheck(config: DepcheckConfig = {}): Promise<void> {
       }),
     );
 
-    if (!hasIssues) {
-      console.log('\n✅ Dependency check completed, no issues found');
+    if (hasIssues) {
+      consola.error(
+        colors.red(`${UNICODE.FAILURE} Dependency issues found`),
+      );
+      if (!check) {
+        process.exit(1);
+      }
+    } else {
+      consola.success(colors.green(`${UNICODE.SUCCESS} No dependency issues found`));
     }
   } catch (error) {
-    console.error(
-      '❌ Dependency check failed:',
+    consola.error(
+      colors.red('Dependency check failed:'),
       error instanceof Error ? error.message : error,
     );
+    process.exit(1);
   }
 }
 
@@ -189,9 +204,14 @@ function defineDepcheckCommand(cac: CAC): void {
       '--ignore-patterns <patterns>',
       'File patterns to ignore, comma separated',
     )
+    .option(
+      '--check',
+      'Only check, do not exit on issues.',
+    )
     .usage('Analyze project dependencies')
-    .action(async ({ ignoreMatches, ignorePackages, ignorePatterns }) => {
+    .action(async ({ check, ignoreMatches, ignorePackages, ignorePatterns }) => {
       const config: DepcheckConfig = {
+        check,
         ...(ignorePackages && { ignorePackages: ignorePackages.split(',') }),
         ...(ignoreMatches && { ignoreMatches: ignoreMatches.split(',') }),
         ...(ignorePatterns && { ignorePatterns: ignorePatterns.split(',') }),

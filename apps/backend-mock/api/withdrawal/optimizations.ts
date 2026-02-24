@@ -2,6 +2,8 @@ import { defineEventHandler } from 'h3';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { useResponseError } from '../../utils/response';
+
 const SKILL_DIR = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/eleme-auto-withdrawal',
@@ -27,6 +29,6 @@ export default defineEventHandler(() => {
       },
     };
   } catch (e: any) {
-    return { code: -1, data: { history: [], knowledge: null }, message: e.message };
+    return useResponseError(e.message, e.message);
   }
 });

@@ -25,8 +25,20 @@ export class ProcurementAnalyzer {
 
     const listData = await readExcel(listBuffer);
     const refData = !isNoCompare ? await readExcel(refBuffer) : [];
-    // 过滤已通过数据以及有供应商商品链接的数据
-    const validRows = listData.filter( (row: any) => row['检查状态'] === '已通过' && row['供应商商品链接'] !== '');
+    // 兼容牵牛花/翱象：检查状态支持 已通过 / Passed / Normal / 通过；供应商商品链接可模糊匹配列名
+    const getCell = (row: any, exactKey: string, partialKeywords: string[]) => {
+      if (row[exactKey] !== undefined && row[exactKey] !== null && row[exactKey] !== '') return row[exactKey];
+      const key = Object.keys(row).find((k) => partialKeywords.some((kw) => k.includes(kw)));
+      return key ? row[key] : undefined;
+    };
+    const validStatusValues = new Set(['已通过', 'Passed', 'Normal', '通过', '成功']);
+    const validRows = listData.filter((row: any) => {
+      const status = getCell(row, '检查状态', ['检查状态', '状态']) ?? row['检查状态'];
+      const link = getCell(row, '供应商商品链接', ['供应商商品链接', '商品链接', '链接']);
+      const statusStr = status != null ? String(status).trim() : '';
+      const linkStr = link != null ? String(link).trim() : '';
+      return validStatusValues.has(statusStr) && linkStr !== '';
+    });
     if (validRows.length === 0) {
       throw new Error('No valid data found (Check Status: Passed/Normal)');
     }

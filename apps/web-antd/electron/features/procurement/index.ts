@@ -1,4 +1,5 @@
 import * as ExcelJS from 'exceljs';
+
 import { readExcel } from '../../utils/excel-helper';
 
 interface ProcurementOptions {
@@ -7,38 +8,31 @@ interface ProcurementOptions {
   mode?: string; // 'week' | 'month' | 'none'
 }
 
-export class ProcurementAnalyzer {
-  static async run({
+export const ProcurementAnalyzer = {
+  async run({
     listBuffer,
     refBuffer,
     mode = 'week',
   }: ProcurementOptions): Promise<{
     buffer: Buffer;
-    summary: string;
     storeNames: string[];
+    summary: string;
   }> {
     // 1. 读取数据
     const normalizedMode = String(mode).trim();
     const isNoCompare = normalizedMode === 'none';
 
-    console.log(`[Procurement] Mode: ${normalizedMode}, IsNoCompare: ${isNoCompare}`);
+    console.log(
+      `[Procurement] Mode: ${normalizedMode}, IsNoCompare: ${isNoCompare}`,
+    );
 
     const listData = await readExcel(listBuffer);
-    const refData = !isNoCompare ? await readExcel(refBuffer) : [];
-    // 兼容牵牛花/翱象：检查状态支持 已通过 / Passed / Normal / 通过；供应商商品链接可模糊匹配列名
-    const getCell = (row: any, exactKey: string, partialKeywords: string[]) => {
-      if (row[exactKey] !== undefined && row[exactKey] !== null && row[exactKey] !== '') return row[exactKey];
-      const key = Object.keys(row).find((k) => partialKeywords.some((kw) => k.includes(kw)));
-      return key ? row[key] : undefined;
-    };
-    const validStatusValues = new Set(['已通过', 'Passed', 'Normal', '通过', '成功']);
-    const validRows = listData.filter((row: any) => {
-      const status = getCell(row, '检查状态', ['检查状态', '状态']) ?? row['检查状态'];
-      const link = getCell(row, '供应商商品链接', ['供应商商品链接', '商品链接', '链接']);
-      const statusStr = status != null ? String(status).trim() : '';
-      const linkStr = link != null ? String(link).trim() : '';
-      return validStatusValues.has(statusStr) && linkStr !== '';
-    });
+    const refData = isNoCompare ? [] : await readExcel(refBuffer);
+    // 过滤已通过数据以及有供应商商品链接的数据
+    const validRows = listData.filter(
+      (row: any) =>
+        row['检查状态'] === '已通过' && row['供应商商品链接'] !== '',
+    );
     if (validRows.length === 0) {
       throw new Error('No valid data found (Check Status: Passed/Normal)');
     }
@@ -56,7 +50,7 @@ export class ProcurementAnalyzer {
         storeNamesSet.add(String(row[storeNameKey]).trim());
       }
     });
-    const storeNames = Array.from(storeNamesSet);
+    const storeNames = [...storeNamesSet];
 
     // 3. 构建参考表映射
     const refMap = new Map();
@@ -84,7 +78,7 @@ export class ProcurementAnalyzer {
     ];
 
     let keptCount = 0;
-    let removedCount = 0
+    let removedCount = 0;
     // 循环当前的补货清单
     validRows.forEach((row: any) => {
       const upcKey = Object.keys(row).find((k) => k.includes('商品UPC'));
@@ -108,7 +102,7 @@ export class ProcurementAnalyzer {
       let purchaseQty = purchaseQtyKey ? Number(row[purchaseQtyKey]) : 0;
       if (isNaN(purchaseQty)) purchaseQty = originalQty;
 
-      let bgColor: string | null = null;
+      let bgColor: null | string = null;
       // 如果补货参考存在，且30天月销或7天周销字段存在
       // 只有在非 'none' 模式且找到了对应的参考行时才进行比对
       if (!isNoCompare && refRow) {
@@ -121,16 +115,19 @@ export class ProcurementAnalyzer {
 
         const ref30Days = key30 ? Number(refRow[key30]) || 0 : 0;
         const ref7Days = key7 ? Number(refRow[key7]) || 0 : 0;
-        
+
         // 根据模式选择对比基准
-        const comparisonValue = normalizedMode === 'month' ? ref30Days : ref7Days;
+        const comparisonValue =
+          normalizedMode === 'month' ? ref30Days : ref7Days;
 
         // 如果建议补货量大于参考量（周销7天或月销30天），就减少一半
         if (originalQty > comparisonValue) {
           const result = purchaseQty / 2;
           finalQty = result < 1 ? 1 : Math.floor(result);
           bgColor = 'FFFF0000'; // Red
-          console.log(`[Halved] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Comp: ${comparisonValue}, Final: ${finalQty}`);
+          console.log(
+            `[Halved] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Comp: ${comparisonValue}, Final: ${finalQty}`,
+          );
         } else {
           finalQty = purchaseQty;
         }
@@ -145,13 +142,17 @@ export class ProcurementAnalyzer {
         // 如果起订量大于建议补货量，要么就是起订量
         if (minOrderQty > finalQty) {
           finalQty = minOrderQty;
-          console.log(`[MinOrder] SKU: ${row['商品SKU']}, Final adjusted to MinOrder: ${minOrderQty}`);
+          console.log(
+            `[MinOrder] SKU: ${row['商品SKU']}, Final adjusted to MinOrder: ${minOrderQty}`,
+          );
         }
       } else {
         finalQty = purchaseQty;
         // 仅在调试时打印部分行，避免日志过多
         if (Math.random() < 0.05) {
-             console.log(`[NoCompare] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Final: ${finalQty}`);
+          console.log(
+            `[NoCompare] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Final: ${finalQty}`,
+          );
         }
       }
 
@@ -184,10 +185,10 @@ export class ProcurementAnalyzer {
     });
 
     const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
-    const summary = `处理完成！(模式: ${isNoCompare ? '不比对' : normalizedMode === 'month' ? '按月' : '按周'})\n共扫描 ${listData.length} 条数据，保留 ${keptCount} 条，已移除 ${
+    const summary = `处理完成！(模式: ${isNoCompare ? '不比对' : (normalizedMode === 'month' ? '按月' : '按周')})\n共扫描 ${listData.length} 条数据，保留 ${keptCount} 条，已移除 ${
       listData.length - validRows.length + removedCount
     } 条不合规数据`;
 
     return { buffer: buffer as Buffer, summary, storeNames };
-  }
-}
+  },
+};

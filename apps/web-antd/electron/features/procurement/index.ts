@@ -28,22 +28,38 @@ export const ProcurementAnalyzer = {
 
     const listData = await readExcel(listBuffer);
     const refData = isNoCompare ? [] : await readExcel(refBuffer);
-    // 兼容牵牛花/翱象：检查状态支持多种值；供应商商品链接可模糊匹配列名
-    const getCell = (row: any, exactKey: string, partialKeywords: string[]) => {
-      if (row[exactKey] !== undefined && row[exactKey] !== null && row[exactKey] !== '') return row[exactKey];
-      const key = Object.keys(row).find((k) => partialKeywords.some((kw) => k.includes(kw)));
+
+    // 调试：打印实际列名和前3行数据
+    if (listData.length > 0) {
+      const columns = Object.keys(listData[0]!);
+      console.log('[Procurement] Excel columns:', columns);
+      listData.slice(0, 3).forEach((row: any, i: number) => {
+        const statusKey = columns.find((k) => k.includes('检查') || k.includes('状态'));
+        const linkKey = columns.find((k) => k.includes('供应商') || k.includes('链接'));
+        console.log(`[Procurement] Row ${i}: status[${statusKey}]="${row[statusKey!]}", link[${linkKey}]="${row[linkKey!]}"`);
+      });
+    }
+
+    // 模糊匹配列名
+    const findColumn = (row: any, keywords: string[]) => {
+      const key = Object.keys(row).find((k) => keywords.some((kw) => k.includes(kw)));
       return key ? row[key] : undefined;
     };
-    const validStatusValues = new Set(['已通过', 'Passed', 'Normal', '通过', '成功']);
     const validRows = listData.filter((row: any) => {
-      const status = getCell(row, '检查状态', ['检查状态', '状态']);
-      const link = getCell(row, '供应商商品链接', ['供应商商品链接', '商品链接', '链接']);
+      const status = findColumn(row, ['检查状态', '检查结果', '状态']);
+      const link = findColumn(row, ['供应商商品链接', '商品链接', '链接']);
       const statusStr = status != null ? String(status).trim() : '';
       const linkStr = link != null ? String(link).trim() : '';
-      return validStatusValues.has(statusStr) && linkStr !== '';
+      return statusStr === '已通过' && linkStr !== '';
     });
     if (validRows.length === 0) {
-      throw new Error('No valid data found (Check Status: Passed/Normal)');
+      const sampleRow = listData[0] || {};
+      const cols = Object.keys(sampleRow).join(', ');
+      const statusKey = Object.keys(sampleRow).find((k) => k.includes('检查') || k.includes('状态'));
+      const statusValues = [...new Set(listData.slice(0, 20).map((r: any) => statusKey ? String(r[statusKey] ?? '') : ''))];
+      throw new Error(
+        `未找到有效数据。Excel列名: [${cols}]；状态列"${statusKey || '未找到'}"的值: [${statusValues.join(', ')}]`,
+      );
     }
 
     // 收集唯一的门店名称

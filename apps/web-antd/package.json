@@ -25,7 +25,7 @@
       }
     ],
     "mac": {
-      "artifactName": "${productName}_${version}.${ext}",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
           "arch": [
@@ -49,9 +49,9 @@
       "oneClick": false,
       "perMachine": false
     },
-    "productName": "Oby商家工具",
+    "productName": "Oby",
     "win": {
-      "artifactName": "${productName}_${version}.${ext}",
+      "artifactName": "${productName}-${version}-setup.${ext}",
       "target": [
         {
           "arch": [

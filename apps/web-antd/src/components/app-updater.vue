@@ -57,11 +57,13 @@ function onUpdateDownloaded(_e: any, info: { version: string }) {
 
 function onUpdateError(_e: any, message: string) {
   downloading.value = false;
+  const errMsg = message || '未知错误';
+  console.error('[AppUpdater] Error:', errMsg);
   notification.error({
     key: notificationKey,
     message: '更新失败',
-    description: message || '检查更新时出错，请稍后重试',
-    duration: 8,
+    description: errMsg,
+    duration: 0,
   });
 }
 

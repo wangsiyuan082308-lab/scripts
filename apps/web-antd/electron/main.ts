@@ -85,7 +85,8 @@ autoUpdater.on('update-downloaded', (info) => {
 });
 
 autoUpdater.on('error', (err) => {
-  win?.webContents.send('update-error', err.message);
+  console.error('[AutoUpdater] Error:', err);
+  win?.webContents.send('update-error', err.message || String(err));
 });
 
 // 手动检查更新

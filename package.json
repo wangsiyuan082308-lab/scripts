@@ -107,5 +107,5 @@
     "version": "pnpm exec changeset version && pnpm install --no-frozen-lockfile"
   },
   "type": "module",
-  "version": "5.5.21"
+  "version": "5.5.22"
 }

@@ -41,17 +41,11 @@ function onDownloadProgress(
 
 function onUpdateDownloaded(_e: any, info: { version: string }) {
   downloading.value = false;
-  notification.success({
+  notification.info({
     key: notificationKey,
-    message: '更新已就绪',
-    description: `版本 ${info?.version || ''} 已下载完成`,
+    message: '更新即将安装',
+    description: `版本 ${info?.version || ''} 已下载完成，3 秒后自动重启更新...`,
     duration: 0,
-    btn: () =>
-      h(
-        Button,
-        { type: 'primary', size: 'small', onClick: installUpdate },
-        () => '立即重启更新',
-      ),
   });
 }
 

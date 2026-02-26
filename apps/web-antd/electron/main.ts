@@ -82,6 +82,10 @@ autoUpdater.on('update-downloaded', (info) => {
   win?.webContents.send('update-downloaded', {
     version: info.version,
   });
+  // 下载完成后 3 秒自动重启安装
+  setTimeout(() => {
+    autoUpdater.quitAndInstall();
+  }, 3000);
 });
 
 autoUpdater.on('error', (err) => {

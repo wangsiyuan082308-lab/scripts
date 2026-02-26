@@ -20,7 +20,7 @@ function onUpdateChecking() {
   });
 }
 
-function onUpdateAvailable(_e: any, info: { version: string }) {
+function onUpdateAvailable(info: { version: string }) {
   notification.info({
     key: notificationKey,
     message: '发现新版本',
@@ -30,7 +30,6 @@ function onUpdateAvailable(_e: any, info: { version: string }) {
 }
 
 function onDownloadProgress(
-  _e: any,
   progress: { percent: number; bytesPerSecond: number; transferred: number; total: number },
 ) {
   downloading.value = true;
@@ -48,7 +47,7 @@ function onDownloadProgress(
   });
 }
 
-function onUpdateDownloaded(_e: any, info: { version: string }) {
+function onUpdateDownloaded(info: { version: string }) {
   downloading.value = false;
   notification.info({
     key: notificationKey,
@@ -58,7 +57,7 @@ function onUpdateDownloaded(_e: any, info: { version: string }) {
   });
 }
 
-function onUpdateError(_e: any, message: string) {
+function onUpdateError(message: string) {
   downloading.value = false;
   const errMsg = message || '未知错误';
   console.error('[AppUpdater] Error:', errMsg);

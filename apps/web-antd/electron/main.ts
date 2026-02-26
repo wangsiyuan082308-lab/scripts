@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
+import pkg from '../package.json';
+
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import { ProcurementAnalyzer } from './features/procurement/index';
@@ -276,7 +278,17 @@ function setupMenu() {
           {
             label: appName,
             submenu: [
-              { label: `关于 ${appName}`, role: 'about' as const },
+              {
+                label: `关于 ${appName}`,
+                click: () => {
+                  dialog.showMessageBox({
+                    type: 'info',
+                    title: `关于 ${appName}`,
+                    message: appName,
+                    detail: `版本: v${pkg.version}\n${pkg.description || ''}`,
+                  });
+                },
+              },
               { type: 'separator' as const },
               {
                 label: '检查更新...',

@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
@@ -261,6 +261,99 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  setupMenu();
   registerIpcHandlers();
   await createWindow();
 });
+
+function setupMenu() {
+  const isMac = process.platform === 'darwin';
+  const appName = 'Oby商家工具';
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: appName,
+            submenu: [
+              { label: `关于 ${appName}`, role: 'about' as const },
+              { type: 'separator' as const },
+              {
+                label: '检查更新...',
+                click: () => {
+                  win?.webContents.send('update-checking');
+                  autoUpdater.checkForUpdatesAndNotify();
+                },
+              },
+              { type: 'separator' as const },
+              { label: `隐藏 ${appName}`, role: 'hide' as const },
+              { label: '隐藏其他', role: 'hideOthers' as const },
+              { label: '显示全部', role: 'unhide' as const },
+              { type: 'separator' as const },
+              { label: `退出 ${appName}`, role: 'quit' as const },
+            ],
+          } as Electron.MenuItemConstructorOptions,
+        ]
+      : []),
+    {
+      label: '文件',
+      submenu: [
+        ...(!isMac
+          ? [
+              {
+                label: '检查更新...',
+                click: () => {
+                  win?.webContents.send('update-checking');
+                  autoUpdater.checkForUpdatesAndNotify();
+                },
+              },
+              { type: 'separator' as const },
+            ]
+          : []),
+        { label: isMac ? '关闭窗口' : '退出', role: (isMac ? 'close' : 'quit') as const },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { label: '撤销', role: 'undo' as const },
+        { label: '重做', role: 'redo' as const },
+        { type: 'separator' as const },
+        { label: '剪切', role: 'cut' as const },
+        { label: '复制', role: 'copy' as const },
+        { label: '粘贴', role: 'paste' as const },
+        { label: '全选', role: 'selectAll' as const },
+      ],
+    },
+    {
+      label: '视图',
+      submenu: [
+        { label: '重新加载', role: 'reload' as const },
+        { label: '强制重新加载', role: 'forceReload' as const },
+        { label: '开发者工具', role: 'toggleDevTools' as const },
+        { type: 'separator' as const },
+        { label: '实际大小', role: 'resetZoom' as const },
+        { label: '放大', role: 'zoomIn' as const },
+        { label: '缩小', role: 'zoomOut' as const },
+        { type: 'separator' as const },
+        { label: '全屏', role: 'togglefullscreen' as const },
+      ],
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { label: '最小化', role: 'minimize' as const },
+        { label: '缩放', role: 'zoom' as const },
+        ...(isMac
+          ? [
+              { type: 'separator' as const },
+              { label: '前置全部窗口', role: 'front' as const },
+            ]
+          : [{ label: '关闭', role: 'close' as const }]),
+      ],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}

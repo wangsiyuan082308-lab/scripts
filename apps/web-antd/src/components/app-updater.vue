@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { onMounted, onUnmounted, ref } from 'vue';
 
-import { Button, notification, Progress } from 'ant-design-vue';
+import { notification, Progress } from 'ant-design-vue';
 import { h } from 'vue';
 
 const ipc = (window as any).ipcRenderer;
@@ -10,6 +10,15 @@ const isElectron = !!ipc;
 const downloading = ref(false);
 const percent = ref(0);
 const notificationKey = 'app-updater';
+
+function onUpdateChecking() {
+  notification.info({
+    key: notificationKey,
+    message: '正在检查更新',
+    description: '正在连接服务器检查新版本...',
+    duration: 0,
+  });
+}
 
 function onUpdateAvailable(_e: any, info: { version: string }) {
   notification.info({
@@ -70,12 +79,14 @@ let listeners: Array<() => void> = [];
 onMounted(() => {
   if (!isElectron) return;
 
+  ipc.on('update-checking', onUpdateChecking);
   ipc.on('update-available', onUpdateAvailable);
   ipc.on('update-download-progress', onDownloadProgress);
   ipc.on('update-downloaded', onUpdateDownloaded);
   ipc.on('update-error', onUpdateError);
 
   listeners = [
+    () => ipc.off('update-checking', onUpdateChecking),
     () => ipc.off('update-available', onUpdateAvailable),
     () => ipc.off('update-download-progress', onDownloadProgress),
     () => ipc.off('update-downloaded', onUpdateDownloaded),

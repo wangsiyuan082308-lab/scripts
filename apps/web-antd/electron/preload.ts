@@ -17,6 +17,7 @@ const ON_CHANNELS = [
   'update-download-progress',
   'update-downloaded',
   'update-error',
+  'update-checking',
   'main-process-message',
 ];
 

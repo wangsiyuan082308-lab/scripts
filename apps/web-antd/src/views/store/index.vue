@@ -18,11 +18,10 @@ import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 const searchFormItems = [
   {
     label: '门店名称',
-    renderType: 'input',
     child:{
       valueKey: 'storeName',
-      rules: [{ required: true, message: '请输入门店名称' }],
-    },
+      renderType:'input'
+    }
   },
   {
     renderType: 'suffixButton',

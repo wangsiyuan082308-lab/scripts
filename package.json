@@ -107,5 +107,9 @@
     "version": "pnpm exec changeset version && pnpm install --no-frozen-lockfile"
   },
   "type": "module",
-  "version": "5.5.27"
+  "version": "5.5.27",
+  "dependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "lodash-es": "^4.17.23"
+  }
 }

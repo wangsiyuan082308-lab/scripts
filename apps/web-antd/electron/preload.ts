@@ -5,6 +5,32 @@ const INVOKE_CHANNELS = [
   'generate-eleme-activity',
   'process-eleme-baohaojia',
   'generate-procurement-plan',
+  'execute-procurement-task',
+  // Auth
+  'login',
+  'logout',
+  'get-current-user',
+  // Storage
+  'get-stores',
+  'save-stores',
+  'add-store',
+  'update-store',
+  'delete-store',
+  'get-suppliers',
+  'save-suppliers',
+  'add-supplier',
+  'update-supplier',
+  'delete-supplier',
+  'get-tasks',
+  'save-tasks',
+  'add-task',
+  'update-task',
+  'delete-task',
+  // Merchant
+  'get-merchants',
+  'add-merchant',
+  'update-merchant',
+  'delete-merchant',
 ];
 
 const SEND_CHANNELS = [

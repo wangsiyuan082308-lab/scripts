@@ -10,7 +10,7 @@ import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 import { notification } from 'ant-design-vue';
 import { defineStore } from 'pinia';
 
-import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
+import { getAccessCodesApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -33,19 +33,23 @@ export const useAuthStore = defineStore('auth', () => {
     let userInfo: null | UserInfo = null;
     try {
       loginLoading.value = true;
-      const { accessToken } = await loginApi(params);
+      const { success, user } = await loginApi(params);
 
-      // 如果成功获取到 accessToken
-      if (accessToken) {
+      // 如果成功获取到用户信息
+      if (success && user) {
+        // 由于是 IPC 登录，模拟一个 accessToken
+        const accessToken = 'ipc-token';
         accessStore.setAccessToken(accessToken);
 
-        // 获取用户信息并存储到 accessStore 中
-        const [fetchUserInfoResult, accessCodes] = await Promise.all([
-          fetchUserInfo(),
-          getAccessCodesApi(),
-        ]);
+        // 构造用户信息
+        userInfo = {
+          ...user,
+          realName: user.username,
+          roles: [user.role],
+        } as unknown as UserInfo;
 
-        userInfo = fetchUserInfoResult;
+        // 获取用户权限码
+        const accessCodes = await getAccessCodesApi();
 
         userStore.setUserInfo(userInfo);
         accessStore.setAccessCodes(accessCodes);
@@ -98,9 +102,30 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchUserInfo() {
-    let userInfo: null | UserInfo = null;
-    userInfo = await getUserInfoApi();
-    userStore.setUserInfo(userInfo);
+    let userInfo = userStore.userInfo;
+    if (userInfo) {
+      return userInfo;
+    }
+
+    // 尝试从主进程恢复用户信息
+    try {
+      const user = await (window as any).ipcRenderer.invoke('get-current-user');
+      if (user) {
+        userInfo = {
+          ...user,
+          realName: user.username,
+          roles: [user.role],
+        } as unknown as UserInfo;
+        userStore.setUserInfo(userInfo);
+
+        // 获取用户权限码
+        const accessCodes = await getAccessCodesApi();
+        accessStore.setAccessCodes(accessCodes);
+      }
+    } catch (error) {
+      console.error('Failed to restore user info from IPC:', error);
+    }
+
     return userInfo;
   }
 

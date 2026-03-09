@@ -11,8 +11,20 @@ import pkg from '../package.json';
 
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
+import { ProcurementTaskRunner } from './features/procurement-task/runner';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
+import { StoreMasterFeature } from './features/store-master/index';
+import { SupplierMasterFeature } from './features/supplier-master/index';
+import {
+  storeStorage,
+  supplierStorage,
+  taskStorage,
+  merchantStorage,
+} from './shared/storage';
+import { authFeature, User } from './features/auth/index';
+
+let currentUser: User | null = null;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -125,6 +137,31 @@ app.on('activate', async () => {
 
 // 注册 IPC 处理器
 function registerIpcHandlers() {
+  const requireAuth = () => {
+    if (!currentUser) {
+      throw new Error('Unauthorized: Please login first');
+    }
+    return currentUser;
+  };
+
+  // Auth Handlers
+  ipcMain.handle('login', async (_, { username, password }) => {
+    const user = await authFeature.login(username, password);
+    if (user) {
+      currentUser = user;
+      return { success: true, user };
+    }
+    return { success: false, message: 'Invalid credentials' };
+  });
+
+  ipcMain.handle('logout', async () => {
+    currentUser = null;
+    return { success: true };
+  });
+
+  ipcMain.handle('get-current-user', async () => {
+    return currentUser;
+  });
   /**
    * 生成饿了么活动报名表
    */
@@ -260,9 +297,135 @@ function registerIpcHandlers() {
       }
     },
   );
+
+  /**
+   * 导入供应商主数据
+   */
+  ipcMain.handle('import-suppliers', async (_event, { fileBuffer }) => {
+    try {
+      const suppliers = await SupplierMasterFeature.importSuppliers(
+        Buffer.from(fileBuffer),
+      );
+      return { success: true, data: suppliers };
+    } catch (error: any) {
+      console.error('导入供应商失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  /**
+   * 导入店铺主数据
+   */
+  ipcMain.handle('import-stores', async (_event, { fileBuffer }) => {
+    try {
+      const user = requireAuth();
+      const stores = await StoreMasterFeature.importStores(
+        Buffer.from(fileBuffer),
+      );
+      // Save imported stores to local JSON storage
+      await storeStorage.save(stores, user);
+      return { success: true, data: stores };
+    } catch (error: any) {
+      console.error('导入店铺失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+  /**
+   * 执行采购任务
+   */
+  ipcMain.handle('execute-procurement-task', async (_event, task) => {
+    return await ProcurementTaskRunner.executeTask(task);
+  });
+
+  // --- Storage Management Handlers ---
+
+  // Merchants
+  ipcMain.handle('get-merchants', async () => {
+    const user = requireAuth();
+    return merchantStorage.get(user);
+  });
+  ipcMain.handle('add-merchant', async (_event, item) => {
+    const user = requireAuth();
+    return merchantStorage.add(item, user);
+  });
+  ipcMain.handle('update-merchant', async (_event, item) => {
+    const user = requireAuth();
+    return merchantStorage.update(item, user);
+  });
+  ipcMain.handle('delete-merchant', async (_event, id) => {
+    const user = requireAuth();
+    return merchantStorage.delete(id, user);
+  });
+
+  // Stores
+  ipcMain.handle('get-stores', async () => {
+    const user = requireAuth();
+    return storeStorage.get(user);
+  });
+  ipcMain.handle('save-stores', async (_event, data) => {
+    const user = requireAuth();
+    return storeStorage.save(data, user);
+  });
+  ipcMain.handle('add-store', async (_event, item) => {
+    const user = requireAuth();
+    return storeStorage.add(item, user);
+  });
+  ipcMain.handle('update-store', async (_event, item) => {
+    const user = requireAuth();
+    return storeStorage.update(item, user);
+  });
+  ipcMain.handle('delete-store', async (_event, id) => {
+    const user = requireAuth();
+    return storeStorage.delete(id, user);
+  });
+
+  // Suppliers
+  ipcMain.handle('get-suppliers', async () => {
+    const user = requireAuth();
+    return supplierStorage.get(user);
+  });
+  ipcMain.handle('save-suppliers', async (_event, data) => {
+    const user = requireAuth();
+    return supplierStorage.save(data, user);
+  });
+  ipcMain.handle('add-supplier', async (_event, item) => {
+    const user = requireAuth();
+    return supplierStorage.add(item, user);
+  });
+  ipcMain.handle('update-supplier', async (_event, item) => {
+    const user = requireAuth();
+    return supplierStorage.update(item, user);
+  });
+  ipcMain.handle('delete-supplier', async (_event, id) => {
+    const user = requireAuth();
+    return supplierStorage.delete(id, user);
+  });
+
+  // Tasks
+  ipcMain.handle('get-tasks', async () => {
+    const user = requireAuth();
+    return taskStorage.get(user);
+  });
+  ipcMain.handle('save-tasks', async (_event, data) => {
+    const user = requireAuth();
+    return taskStorage.save(data, user);
+  });
+  ipcMain.handle('add-task', async (_event, item) => {
+    const user = requireAuth();
+    return taskStorage.add(item, user);
+  });
+  ipcMain.handle('update-task', async (_event, item) => {
+    const user = requireAuth();
+    return taskStorage.update(item, user);
+  });
+  ipcMain.handle('delete-task', async (_event, id) => {
+    const user = requireAuth();
+    return taskStorage.delete(id, user);
+  });
 }
 
 app.whenReady().then(async () => {
+  await authFeature.init();
   setupMenu();
   registerIpcHandlers();
   await createWindow();

@@ -44,6 +44,7 @@ catalog:
   '@types/html-minifier-terser': ^7.0.2
   '@types/json-bigint': ^1.0.4
   '@types/jsonwebtoken': ^9.0.10
+  '@types/lodash-es': ^4.17.12
   '@types/lodash.clonedeep': ^4.5.9
   '@types/node': ^24.10.9
   '@types/nprogress': ^0.2.3
@@ -123,6 +124,7 @@ catalog:
   jsonc-eslint-parser: ^2.4.2
   jsonwebtoken: ^9.0.3
   lefthook: ^2.0.16
+  lodash-es: ^4.17.23
   lodash.clonedeep: ^4.5.0
   lucide-vue-next: ^0.553.0
   medium-zoom: ^1.1.0

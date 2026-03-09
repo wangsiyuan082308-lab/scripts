@@ -1,6 +1,4 @@
-<script lang="ts" setup>
-import { h, ref } from 'vue';
-import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
+<script lang="tsx" setup>
 import type { Store } from '#/api/store';
 import {
   addStore,
@@ -10,16 +8,21 @@ import {
   updateStore,
 } from '#/api/store';
 import { parseStoreImportExcel } from '#/api/system-settings-import';
+import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
+import { h, ref } from 'vue';
 
-import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
+import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 // 搜索配置
 const searchFormItems = [
   {
-    label: '店铺名称',
+    label: '门店名称',
     renderType: 'input',
-    valueKey: 'storeName',
+    child:{
+      valueKey: 'storeName',
+      rules: [{ required: true, message: '请输入门店名称' }],
+    },
   },
   {
     renderType: 'suffixButton',
@@ -39,54 +42,25 @@ const searchFormItems = [
 
 // 表格列配置
 const columns = [
-  { dataIndex: 'storeId', title: '店铺ID', width: 100 },
-  { dataIndex: 'storeName', title: '店铺名称', minWidth: 150 },
+  { dataIndex: 'storeId', title: '门店ID', width: 100 },
+  { dataIndex: 'storeName', title: '门店名称', minWidth: 150 },
   { dataIndex: 'platform', title: '平台', width: 120 },
   { dataIndex: 'contact', title: '联系人', width: 100 },
   { dataIndex: 'address', title: '地址', minWidth: 150 },
   {
     title: '操作',
     width: 150,
-    render: (h: any, ctx: { record?: Store; row?: Store }) => {
+    render: (_h: any, ctx: { record?: Store; row?: Store }) => {
       const row = ctx?.row || ctx?.record;
       if (!row) return null;
-      return h('div', [
-        h(
-          'span',
-          {
-            style: {
-              color: '#1677ff',
-              cursor: 'pointer',
-              marginRight: '12px',
-            },
-            onClick: (event: MouseEvent) => {
-              event.stopPropagation();
-              handleEdit(row);
-            },
-          },
-          () => '编辑',
-        ),
-        h(
-          Popconfirm,
-          {
-            title: '确认删除?',
-            onConfirm: () => handleDelete(row),
-          },
-          {
-            default: () =>
-              h(
-                'span',
-                {
-                  style: {
-                    color: '#ff4d4f',
-                    cursor: 'pointer',
-                  },
-                },
-                () => '删除',
-              ),
-          },
-        ),
-      ]);
+      return (
+        <div>
+          <Button type="link" onClick={() => handleEdit(row)}>编辑</Button>
+          <Popconfirm title="确认删除?" onConfirm={() => handleDelete(row)}>
+            <Button type="link" danger>删除</Button>
+          </Popconfirm>
+        </div>
+      )
     },
   },
 ];
@@ -112,7 +86,7 @@ const handleUpload = async (file: File) => {
 // 头部操作按钮
 const headerOptions = [
   {
-    label: '添加店铺',
+    label: '添加门店',
     renderType: 'button',
     type: 'primary',
     click: handleAdd,
@@ -153,46 +127,58 @@ const tableRef = ref();
 // 表单配置
 const formItems = ref([
   {
-    label: '店铺ID',
-    renderType: 'input',
-    valueKey: 'storeId',
-    rules: [{ required: true, message: '请输入店铺ID' }],
-    disabled: false,
+    label: '门店ID',
+    show:isUpdate.value,
+    child:{
+      valueKey: 'storeId',
+      renderType:'input',
+    },
   },
   {
-    label: '店铺名称',
-    renderType: 'input',
-    valueKey: 'storeName',
-    rules: [{ required: true, message: '请输入店铺名称' }],
+    label: '门店名称',
+    child:{
+      valueKey: 'storeName',
+      renderType:'input'
+    }
   },
   {
     label: '平台',
-    renderType: 'select',
-    valueKey: 'platform',
-    options: [
-      { label: '翱象', value: 'Aoxiang' },
-      { label: '牵牛花', value: 'Qianniuhua' },
-    ],
+    child:{
+      valueKey: 'platform',
+      renderType:'select',
+      options: [
+        { label: '翱象', value: '翱象' },
+        { label: '牵牛花', value: '牵牛花' },
+      ],
+    },
   },
   {
     label: '区域',
-    renderType: 'input',
-    valueKey: 'region',
+    child:{
+      valueKey: 'region',
+      renderType:'input'
+    }
   },
   {
     label: '地址',
-    renderType: 'input',
-    valueKey: 'address',
+    child:{
+      valueKey: 'address',
+      renderType:'input'
+    }
   },
   {
     label: '联系人',
-    renderType: 'input',
-    valueKey: 'contact',
+    child:{
+      valueKey: 'contact',
+      renderType:'input'
+    }
   },
   {
     label: '电话',
-    renderType: 'input',
-    valueKey: 'phone',
+    child:{
+      valueKey: 'phone',
+      renderType:'input'
+    }
   },
 ]);
 
@@ -211,8 +197,7 @@ function handleAdd() {
   isUpdate.value = false;
   currentId.value = '';
   formModel.value = {};
-  // 启用店铺ID输入
-  formItems.value[0].disabled = false;
+  // 启用门店ID输入
   showModal.value = true;
 }
 
@@ -220,8 +205,7 @@ function handleEdit(row: Store) {
   isUpdate.value = true;
   currentId.value = row.storeId;
   formModel.value = { ...row };
-  // 禁用店铺ID输入
-  formItems.value[0].disabled = true;
+  // 禁用门店ID输入
   showModal.value = true;
 }
 
@@ -273,7 +257,7 @@ const handleSubmit = async (model: any) => {
 
   <BaseModelForm
     v-model:show="showModal"
-    :title="isUpdate ? '编辑店铺' : '添加店铺'"
+    :title="isUpdate ? '编辑门店' : '添加门店'"
     :form-items="formItems"
     v-model:model="formModel"
     :submit="handleSubmit"

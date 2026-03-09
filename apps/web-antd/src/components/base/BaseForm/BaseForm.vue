@@ -193,8 +193,6 @@ export default {
 
       <!-- 后缀按钮 -->
       <FormItem v-else-if="['suffixButton'].includes(item.renderType)">
-        <!-- -->
-
         <template v-for="child in item.options">
           <Button
             v-if="child.renderType === 'search'"
@@ -268,12 +266,12 @@ export default {
           />
         </template>
         <template v-else>
-          <BaseFormRender
-            v-bind="item"
-            :render-data="item"
-            :render-type="item.renderType"
-            :label="item.label"
-          />
+          <BaseFormRender 
+            v-bind.prop="item.child" 
+            :renderData="item" 
+            :renderType="item.child?.renderType"
+            :label="item.child?.label"
+            />
         </template>
         <div v-html="item.member"></div>
       </FormItem>

@@ -50,7 +50,7 @@ export default {
       <div
         v-if="option.renderType === 'text'"
         :key="index"
-        v-bind.prop="option"
+        v-bind="option"
       >
         {{ option.name || option.label }}
       </div>

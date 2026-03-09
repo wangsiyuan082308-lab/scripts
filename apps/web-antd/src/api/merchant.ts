@@ -1,3 +1,9 @@
+import {
+  listMerchants,
+  removeMerchant,
+  saveMerchant,
+} from './system-settings-repo';
+
 export interface Merchant {
   id: string;
   name: string;
@@ -10,31 +16,61 @@ export interface Merchant {
   [key: string]: any;
 }
 
-async function invokeIpc<T>(channel: string, ...args: any[]): Promise<T> {
-  // @ts-ignore
-  const result = await window.ipcRenderer.invoke(channel, ...args);
-  // Compatible with backend response structure { code: 0, data: ... }
-  if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
-    if (result.code === 0) {
-      return result.data;
-    }
-    throw new Error(result.message || 'IPC Operation Failed');
-  }
-  return result;
+function createMerchantId() {
+  return `M${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, '0')}`;
+}
+
+function normalizeMerchant(data: Partial<Merchant>): Merchant {
+  const id = (data.id || '').trim() || createMerchantId();
+  return {
+    ...data,
+    address: (data.address || '').trim(),
+    contact: (data.contact || '').trim(),
+    id,
+    name: (data.name || '').trim(),
+    phone: (data.phone || '').trim(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function includesIgnoreCase(value: string, keyword: string) {
+  return value.toLowerCase().includes(keyword.toLowerCase());
 }
 
 export async function getMerchantList(params?: any) {
-  return invokeIpc<Merchant[]>('get-merchants', params);
+  const merchants = await listMerchants();
+  const query = params?.data ?? params ?? {};
+  const keyword = `${query?.name || ''}`.trim();
+  if (!keyword) {
+    return merchants;
+  }
+
+  return merchants.filter((item) => includesIgnoreCase(item.name || '', keyword));
 }
 
 export async function addMerchant(data: Merchant) {
-  return invokeIpc('add-merchant', data);
+  const merchant = normalizeMerchant(data);
+  return saveMerchant({
+    ...merchant,
+    createdAt: merchant.createdAt || new Date().toISOString(),
+  });
 }
 
 export async function updateMerchant(data: Merchant) {
-  return invokeIpc('update-merchant', data);
+  if (!data?.id) {
+    throw new Error('商户ID不能为空');
+  }
+  const existing = (await listMerchants()).find((item) => item.id === data.id);
+  return saveMerchant({
+    ...(existing || {}),
+    ...normalizeMerchant(data),
+    createdAt: existing?.createdAt || data.createdAt || new Date().toISOString(),
+  });
 }
 
 export async function deleteMerchant(id: string) {
-  return invokeIpc('delete-merchant', id);
+  await removeMerchant(id);
+  return listMerchants();
 }

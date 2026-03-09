@@ -81,6 +81,9 @@ catalogs:
     '@types/jsonwebtoken':
       specifier: ^9.0.10
       version: 9.0.10
+    '@types/lodash-es':
+      specifier: ^4.17.12
+      version: 4.17.12
     '@types/lodash.clonedeep':
       specifier: ^4.5.9
       version: 4.5.9
@@ -291,6 +294,9 @@ catalogs:
     lefthook:
       specifier: ^2.0.16
       version: 2.0.16
+    lodash-es:
+      specifier: ^4.17.23
+      version: 4.17.23
     lodash.clonedeep:
       specifier: ^4.5.0
       version: 4.5.0
@@ -501,10 +507,10 @@ importers:
   .:
     dependencies:
       '@types/lodash-es':
-        specifier: ^4.17.12
+        specifier: 'catalog:'
         version: 4.17.12
       lodash-es:
-        specifier: ^4.17.23
+        specifier: 'catalog:'
         version: 4.17.23
     devDependencies:
       '@changesets/changelog-github':
@@ -673,6 +679,9 @@ importers:
       ant-design-vue:
         specifier: 'catalog:'
         version: 4.2.6(vue@3.5.27(typescript@5.9.3))
+      chromium-bidi:
+        specifier: ^15.0.0
+        version: 15.0.0(devtools-protocol@0.0.1595872)
       dayjs:
         specifier: 'catalog:'
         version: 1.11.19
@@ -685,6 +694,9 @@ importers:
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@5.9.3)(vue@3.5.27(typescript@5.9.3))
+      playwright:
+        specifier: 'catalog:'
+        version: 1.58.0
       vue:
         specifier: ^3.5.27
         version: 3.5.27(typescript@5.9.3)
@@ -5117,6 +5129,11 @@ packages:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
 
+  chromium-bidi@15.0.0:
+    resolution: {integrity: sha512-ESWZM1u85CoeSozBXXG9M73S5tH0EjkqnFJoQ6F3MHs2YGe0CLVMaRvhGxetLP6w4GVR59+/cpWvDLUpLvJXLQ==}
+    peerDependencies:
+      devtools-protocol: '*'
+
   chromium-pickle-js@0.2.0:
     resolution: {integrity: sha512-1R5Fho+jBq0DDydt+/vHWj5KJNJCKdARKOCwZUen84I5BreWoLqRLANH1U87eJy1tiASPtMnGqJJq0ZsLoRPOw==}
 
@@ -5728,6 +5745,9 @@ packages:
 
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
+
+  devtools-protocol@0.0.1595872:
+    resolution: {integrity: sha512-kRfgp8vWVjBu/fbYCiVFiOqsCk3CrMKEo3WbgGT2NXK2dG7vawWPBljixajVgGK9II8rDO9G0oD0zLt3I1daRg==}
 
   didyoumean@1.2.2:
     resolution: {integrity: sha512-gxtyfqMg7GKyhQmb056K7M3xszy/myH8w+B4RT+QXBQsvAOdc3XymqDDPHx1BgPgsdAA5SIifona89YtRATDzw==}
@@ -14795,6 +14815,12 @@ snapshots:
 
   chownr@3.0.0: {}
 
+  chromium-bidi@15.0.0(devtools-protocol@0.0.1595872):
+    dependencies:
+      devtools-protocol: 0.0.1595872
+      mitt: 3.0.1
+      zod: 3.25.76
+
   chromium-pickle-js@0.2.0: {}
 
   ci-info@3.9.0: {}
@@ -15435,6 +15461,8 @@ snapshots:
 
   detect-node@2.1.0:
     optional: true
+
+  devtools-protocol@0.0.1595872: {}
 
   didyoumean@1.2.2: {}
 

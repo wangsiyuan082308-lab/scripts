@@ -9,6 +9,7 @@ import {
   getStoreList,
   updateStore,
 } from '#/api/store';
+import { parseStoreImportExcel } from '#/api/system-settings-import';
 
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
@@ -46,14 +47,22 @@ const columns = [
   {
     title: '操作',
     width: 150,
-    fixed: 'right',
-    render: (h: any, { row }: { row: Store }) => {
+    render: (h: any, ctx: { record?: Store; row?: Store }) => {
+      const row = ctx?.row || ctx?.record;
+      if (!row) return null;
       return h('div', [
         h(
-          Button,
+          'span',
           {
-            type: 'link',
-            onClick: () => handleEdit(row),
+            style: {
+              color: '#1677ff',
+              cursor: 'pointer',
+              marginRight: '12px',
+            },
+            onClick: (event: MouseEvent) => {
+              event.stopPropagation();
+              handleEdit(row);
+            },
           },
           () => '编辑',
         ),
@@ -66,10 +75,12 @@ const columns = [
           {
             default: () =>
               h(
-                Button,
+                'span',
                 {
-                  type: 'link',
-                  danger: true,
+                  style: {
+                    color: '#ff4d4f',
+                    cursor: 'pointer',
+                  },
                 },
                 () => '删除',
               ),
@@ -82,28 +93,18 @@ const columns = [
 
 const handleUpload = async (file: File) => {
   try {
-    const buffer = await file.arrayBuffer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (window as any).ipcRenderer.invoke('import-stores', {
-      fileBuffer: buffer,
-    });
-
-    if (
-      !response ||
-      !response.success ||
-      !Array.isArray(response.data) ||
-      response.data.length === 0
-    ) {
-      message.warning(response?.message || '未解析到数据或数据为空');
+    const stores = await parseStoreImportExcel(await file.arrayBuffer());
+    if (!Array.isArray(stores) || stores.length === 0) {
+      message.warning('未解析到数据或数据为空');
       return false;
     }
 
-    await addStores(response.data);
-    message.success('导入成功');
+    await addStores(stores);
+    message.success(`导入成功，共 ${stores.length} 条`);
     tableRef.value?.search();
   } catch (error) {
     console.error(error);
-    message.error('导入失败');
+    message.error((error as Error)?.message || '导入失败');
   }
   return false;
 };
@@ -172,7 +173,6 @@ const formItems = ref([
       { label: '翱象', value: 'Aoxiang' },
       { label: '牵牛花', value: 'Qianniuhua' },
     ],
-    rules: [{ required: true, message: '请选择平台' }],
   },
   {
     label: '区域',
@@ -218,7 +218,7 @@ function handleAdd() {
 
 function handleEdit(row: Store) {
   isUpdate.value = true;
-  currentId.value = row.id || row.storeId;
+  currentId.value = row.storeId;
   formModel.value = { ...row };
   // 禁用店铺ID输入
   formItems.value[0].disabled = true;
@@ -239,7 +239,11 @@ async function handleDelete(row: Store) {
 const handleSubmit = async (model: any) => {
   try {
     if (isUpdate.value) {
-      await updateStore({ ...model, id: currentId.value } as Store);
+      await updateStore({
+        ...model,
+        id: currentId.value,
+        storeId: model.storeId || currentId.value,
+      } as Store);
       message.success('更新成功');
     } else {
       await addStore(model as Store);

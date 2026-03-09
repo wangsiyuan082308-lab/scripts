@@ -188,6 +188,7 @@ const tableProps = computed(() => ({
   showSummary: attrs['show-summary'],
   summaryMethod: attrs['summary-method'],
   rowKey: props.rowKey,
+  emptyText: '暂无数据', // 直接使用中文
 }));
 
 /**

@@ -361,7 +361,8 @@ export default {
       :style="styles"
       v-bind="$attrs"
       v-on="$attrs"
-      v-model="baseForm.model[$attrs.valueKey]"
+      :model-value="baseForm.model[$attrs.valueKey]"
+      @update:modelValue="(val) => baseForm.updateModel($attrs.valueKey, val)"
     />
     <!-- 时间搜索 单个 -->
     <DatePicker

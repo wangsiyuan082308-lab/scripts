@@ -10,7 +10,7 @@ import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 import { notification } from 'ant-design-vue';
 import { defineStore } from 'pinia';
 
-import { getAccessCodesApi, loginApi, logoutApi } from '#/api';
+import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -33,19 +33,30 @@ export const useAuthStore = defineStore('auth', () => {
     let userInfo: null | UserInfo = null;
     try {
       loginLoading.value = true;
-      const { success, user } = await loginApi(params);
+      // 异步处理用户登录操作并获取 accessToken
+      const result = await loginApi(params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { success, user, message: errorMsg } = result as any;
 
       // 如果成功获取到用户信息
       if (success && user) {
-        // 由于是 IPC 登录，模拟一个 accessToken
-        const accessToken = 'ipc-token';
+        const accessToken = user.accessToken;
+        if (!accessToken) {
+          throw new Error('登录返回缺少访问令牌');
+        }
         accessStore.setAccessToken(accessToken);
 
-        // 构造用户信息
+        // 兼容 role / roles 两种后端结构
+        const roles = Array.isArray(user.roles)
+          ? user.roles
+          : user.role
+            ? [user.role]
+            : [];
+
         userInfo = {
           ...user,
-          realName: user.username,
-          roles: [user.role],
+          realName: user.realName || user.username,
+          roles,
         } as unknown as UserInfo;
 
         // 获取用户权限码
@@ -71,7 +82,20 @@ export const useAuthStore = defineStore('auth', () => {
             message: $t('authentication.loginSuccess'),
           });
         }
+      } else {
+        // 登录失败提示
+        notification.error({
+          message: '登录失败',
+          description: errorMsg || '用户名或密码错误',
+          duration: 3,
+        });
       }
+    } catch (error: any) {
+      notification.error({
+        message: '登录失败',
+        description: error?.message || '用户名或密码错误',
+        duration: 3,
+      });
     } finally {
       loginLoading.value = false;
     }
@@ -107,14 +131,20 @@ export const useAuthStore = defineStore('auth', () => {
       return userInfo;
     }
 
-    // 尝试从主进程恢复用户信息
+    // 通过后端接口恢复用户信息
     try {
-      const user = await (window as any).ipcRenderer.invoke('get-current-user');
+      const user = await getUserInfoApi();
       if (user) {
+        const roles = Array.isArray((user as any).roles)
+          ? (user as any).roles
+          : (user as any).role
+            ? [(user as any).role]
+            : [];
+
         userInfo = {
           ...user,
-          realName: user.username,
-          roles: [user.role],
+          realName: (user as any).realName || (user as any).username,
+          roles,
         } as unknown as UserInfo;
         userStore.setUserInfo(userInfo);
 
@@ -123,7 +153,7 @@ export const useAuthStore = defineStore('auth', () => {
         accessStore.setAccessCodes(accessCodes);
       }
     } catch (error) {
-      console.error('Failed to restore user info from IPC:', error);
+      console.error('Failed to restore user info from API:', error);
     }
 
     return userInfo;

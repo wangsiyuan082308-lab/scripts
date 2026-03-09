@@ -6,10 +6,14 @@ const INVOKE_CHANNELS = [
   'process-eleme-baohaojia',
   'generate-procurement-plan',
   'execute-procurement-task',
-  // Auth
-  'login',
-  'logout',
-  'get-current-user',
+  'get-withdrawal-tasks',
+  'get-withdrawal-task-detail',
+  'add-withdrawal-task',
+  'update-withdrawal-task',
+  'delete-withdrawal-task',
+  'run-withdrawal-task',
+  'retry-withdrawal-task',
+  'save-withdrawal-tasks',
   // Storage
   'get-stores',
   'save-stores',

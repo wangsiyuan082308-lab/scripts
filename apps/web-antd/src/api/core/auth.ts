@@ -7,15 +7,21 @@ export namespace AuthApi {
     username?: string;
   }
 
-  /** 登录接口返回值 */
+  /** 登录成功返回的用户信息 */
+  export interface LoginUser {
+    accessToken?: string;
+    merchantId?: string;
+    role?: string;
+    roles?: string[];
+    username: string;
+    [key: string]: any;
+  }
+
+  /** 供 store 消费的登录结果 */
   export interface LoginResult {
+    message?: string;
     success: boolean;
-    user: {
-      username: string;
-      role: string;
-      merchantId: string;
-      [key: string]: any;
-    };
+    user?: LoginUser;
   }
 
   export interface RefreshTokenResult {
@@ -28,7 +34,27 @@ export namespace AuthApi {
  * 登录
  */
 export async function loginApi(data: AuthApi.LoginParams) {
-  return (window as any).ipcRenderer.invoke('login', data);
+  try {
+    const response = await baseRequestClient.post('/auth/login', data, {
+      withCredentials: true,
+    });
+    const payload = (response as any)?.data;
+    if (payload?.code === 0 && payload?.data) {
+      return {
+        success: true,
+        user: payload.data,
+      } satisfies AuthApi.LoginResult;
+    }
+    return {
+      success: false,
+      message: payload?.error ?? payload?.message ?? 'Login failed',
+    } satisfies AuthApi.LoginResult;
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.error ?? error?.message ?? 'Login failed',
+    } satisfies AuthApi.LoginResult;
+  }
 }
 
 /**

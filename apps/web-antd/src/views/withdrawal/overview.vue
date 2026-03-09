@@ -32,6 +32,13 @@ const status = ref<StatusInfo>({
 
 const navCards = [
   {
+    title: '提现任务',
+    icon: '⏰',
+    desc: '手动提现与每日定时提现任务管理',
+    route: '/withdrawal/task',
+    gradient: 'linear-gradient(135deg, #36cfc9 0%, #1677ff 100%)',
+  },
+  {
     title: '门店统计',
     icon: '🏪',
     desc: '各门店提现成功率、累计金额、执行趋势',
@@ -144,7 +151,7 @@ onMounted(fetchStatus);
 
       <!-- 功能导航 -->
       <Row :gutter="[16, 16]">
-        <Col v-for="nav in navCards" :key="nav.route" :xs="24" :sm="8">
+        <Col v-for="nav in navCards" :key="nav.route" :xs="24" :sm="12" :lg="6">
           <Card
             hoverable
             class="nav-card"

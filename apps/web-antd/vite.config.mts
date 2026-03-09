@@ -1,6 +1,19 @@
 import { defineConfig } from '@vben/vite-config';
 import electron from 'vite-plugin-electron/simple';
 
+const AUTOMATION_EXTERNAL_PACKAGES = ['playwright', 'playwright-core', 'chromium-bidi'];
+
+const isAutomationRuntimeExternal = (id: string) => {
+  return AUTOMATION_EXTERNAL_PACKAGES.some((pkg) => {
+    return (
+      id === pkg ||
+      id.startsWith(`${pkg}/`) ||
+      id.includes(`/node_modules/${pkg}/`) ||
+      id.includes(`\\node_modules\\${pkg}\\`)
+    );
+  });
+};
+
 export default defineConfig(async () => {
   return {
     application: {},
@@ -10,19 +23,27 @@ export default defineConfig(async () => {
       build: {
         target: 'esnext' as any,
         rollupOptions: {
-          external: [
-            'exceljs',
-            'xlsx',
-            'electron',
-            'node:fs',
-            'node:path',
-            'node:buffer',
-            'node:process',
-            'node:url',
-            // 确保这些模块不被打包
-            'regenerator-runtime',
-            'core-js',
-          ],
+          external: (id) => {
+            if (
+              [
+                'exceljs',
+                'xlsx',
+                'electron',
+                'node:fs',
+                'node:path',
+                'node:buffer',
+                'node:process',
+                'node:url',
+                // 确保这些模块不被打包
+                'regenerator-runtime',
+                'core-js',
+              ].includes(id)
+            ) {
+              return true;
+            }
+
+            return isAutomationRuntimeExternal(id);
+          },
           output: {
             manualChunks: (id) => {
               if (id.includes('node_modules')) {
@@ -43,6 +64,13 @@ export default defineConfig(async () => {
         await electron({
           main: {
             entry: 'electron/main.ts',
+            vite: {
+              build: {
+                rollupOptions: {
+                  external: (id) => isAutomationRuntimeExternal(id),
+                },
+              },
+            },
           },
           preload: {
             input: 'electron/preload.ts',

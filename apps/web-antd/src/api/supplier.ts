@@ -1,3 +1,10 @@
+import {
+  listSuppliers,
+  removeSupplier,
+  saveSupplier,
+  saveSuppliers,
+} from './system-settings-repo';
+
 export interface Supplier {
   supplierId: string;
   supplierName: string;
@@ -10,35 +17,64 @@ export interface Supplier {
   settlementType?: string;
 }
 
-async function invokeIpc<T>(channel: string, ...args: any[]): Promise<T> {
-  const result = await window.ipcRenderer.invoke(channel, ...args);
-  if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
-    if (result.code === 0) {
-      return result.data;
-    }
-    throw new Error(result.message || 'IPC Operation Failed');
-  }
-  return result;
+function normalizeSupplier(data: Partial<Supplier>): Supplier {
+  return {
+    address: `${data.address || ''}`.trim(),
+    contact: `${data.contact || ''}`.trim(),
+    minOrder: `${data.minOrder || ''}`.trim(),
+    phone: `${data.phone || ''}`.trim(),
+    settlementType: `${data.settlementType || ''}`.trim(),
+    status: `${data.status || ''}`.trim(),
+    supplierId: `${data.supplierId || data.supplierName || ''}`.trim(),
+    supplierName: `${data.supplierName || ''}`.trim(),
+    type: `${data.type || ''}`.trim(),
+  };
+}
+
+function includesIgnoreCase(value: string, keyword: string) {
+  return value.toLowerCase().includes(keyword.toLowerCase());
 }
 
 export async function getSupplierList(params: any) {
-  return invokeIpc<Supplier[]>('get-suppliers', params);
+  const suppliers = await listSuppliers();
+  const query = params?.data ?? params ?? {};
+  const supplierName = `${query?.supplierName || ''}`.trim();
+  const supplierId = `${query?.supplierId || ''}`.trim();
+
+  return suppliers.filter((item) => {
+    const matchName = !supplierName || includesIgnoreCase(item.supplierName || '', supplierName);
+    const matchId = !supplierId || includesIgnoreCase(item.supplierId || '', supplierId);
+    return matchName && matchId;
+  });
 }
 
 export async function addSupplier(data: Supplier) {
-  return invokeIpc('add-supplier', data);
+  const supplier = normalizeSupplier(data);
+  if (!supplier.supplierId) {
+    throw new Error('供应商ID不能为空');
+  }
+
+  return saveSupplier(supplier);
 }
 
 export async function updateSupplier(data: Supplier) {
-  return invokeIpc('update-supplier', data);
+  const supplier = normalizeSupplier(data);
+  if (!supplier.supplierId) {
+    throw new Error('供应商ID不能为空');
+  }
+  const existing = (await listSuppliers()).find((item) => item.supplierId === supplier.supplierId);
+  return saveSupplier({ ...(existing || {}), ...supplier });
 }
 
 export async function deleteSupplier(id: string) {
-  return invokeIpc('delete-supplier', { supplierId: id });
+  await removeSupplier(id);
+  return listSuppliers();
 }
 
-// Batch add if needed.
 export async function addSuppliers(data: Supplier[]) {
-  // Assuming the backend accepts an array for batch add, similar to the previous implementation
-  return Promise.all(data.map(item => invokeIpc('add-supplier', item)));
+  const suppliers = data
+    .map((item) => normalizeSupplier(item))
+    .filter((item) => item.supplierId || item.supplierName);
+  await saveSuppliers(suppliers);
+  return suppliers;
 }

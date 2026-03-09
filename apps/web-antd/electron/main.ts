@@ -12,6 +12,7 @@ import pkg from '../package.json';
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
+import { withdrawalTaskFeature } from './features/withdrawal-task/index';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
 import { StoreMasterFeature } from './features/store-master/index';
@@ -21,10 +22,8 @@ import {
   supplierStorage,
   taskStorage,
   merchantStorage,
+  withdrawalTaskStorage,
 } from './shared/storage';
-import { authFeature, User } from './features/auth/index';
-
-let currentUser: User | null = null;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -137,31 +136,8 @@ app.on('activate', async () => {
 
 // 注册 IPC 处理器
 function registerIpcHandlers() {
-  const requireAuth = () => {
-    if (!currentUser) {
-      throw new Error('Unauthorized: Please login first');
-    }
-    return currentUser;
-  };
-
-  // Auth Handlers
-  ipcMain.handle('login', async (_, { username, password }) => {
-    const user = await authFeature.login(username, password);
-    if (user) {
-      currentUser = user;
-      return { success: true, user };
-    }
-    return { success: false, message: 'Invalid credentials' };
-  });
-
-  ipcMain.handle('logout', async () => {
-    currentUser = null;
-    return { success: true };
-  });
-
-  ipcMain.handle('get-current-user', async () => {
-    return currentUser;
-  });
+  // Electron 仅负责本地数据处理，认证交由 HTTP 接口处理。
+  const requireAuth = () => ({ role: 'super_admin' as const });
   /**
    * 生成饿了么活动报名表
    */
@@ -337,6 +313,35 @@ function registerIpcHandlers() {
     return await ProcurementTaskRunner.executeTask(task);
   });
 
+  ipcMain.handle('get-withdrawal-tasks', async () => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.list(user);
+  });
+  ipcMain.handle('get-withdrawal-task-detail', async (_event, taskId) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.getDetail(taskId, user);
+  });
+  ipcMain.handle('add-withdrawal-task', async (_event, item) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.create(item, user);
+  });
+  ipcMain.handle('update-withdrawal-task', async (_event, item) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.update(item, user);
+  });
+  ipcMain.handle('delete-withdrawal-task', async (_event, taskId) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.delete(taskId, user);
+  });
+  ipcMain.handle('run-withdrawal-task', async (_event, taskId) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.run(taskId, user);
+  });
+  ipcMain.handle('retry-withdrawal-task', async (_event, taskId) => {
+    const user = requireAuth();
+    return withdrawalTaskFeature.retryFailed(taskId, user);
+  });
+
   // --- Storage Management Handlers ---
 
   // Merchants
@@ -422,18 +427,24 @@ function registerIpcHandlers() {
     const user = requireAuth();
     return taskStorage.delete(id, user);
   });
+
+  // Withdrawal Tasks
+  ipcMain.handle('save-withdrawal-tasks', async (_event, data) => {
+    const user = requireAuth();
+    return withdrawalTaskStorage.save(data, user);
+  });
 }
 
 app.whenReady().then(async () => {
-  await authFeature.init();
   setupMenu();
   registerIpcHandlers();
+  withdrawalTaskFeature.startScheduler();
   await createWindow();
 });
 
 function setupMenu() {
   const isMac = process.platform === 'darwin';
-  const appName = 'Oby商家工具';
+  const appName = '前端小工具';
 
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac

@@ -14,12 +14,13 @@ export const MOCK_USERS: UserInfo[] = [
     realName: 'Vben',
     roles: ['super'],
     username: 'vben',
+    homePath: '/workspace',
   },
   {
     id: 1,
-    password: '123456',
+    password: 'password',
     realName: 'Admin',
-    roles: ['admin'],
+    roles: ['super_admin'],
     username: 'admin',
     homePath: '/workspace',
   },
@@ -40,8 +41,8 @@ export const MOCK_CODES = [
     username: 'vben',
   },
   {
-    // admin
-    codes: ['AC_100010', 'AC_100020', 'AC_100030'],
+    // admin(super_admin)
+    codes: ['AC_100100', 'AC_100110', 'AC_100120', 'AC_100010'],
     username: 'admin',
   },
   {
@@ -177,7 +178,7 @@ export const MOCK_MENUS = [
     username: 'vben',
   },
   {
-    menus: [...dashboardMenus, ...createDemosMenus('admin')],
+    menus: [...dashboardMenus, ...createDemosMenus('super')],
     username: 'admin',
   },
   {
@@ -388,4 +389,3 @@ export function getMenuIds(menus: any[]) {
   });
   return ids;
 }
-

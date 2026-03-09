@@ -4,7 +4,7 @@ export interface User {
   id: string;
   username: string;
   password?: string; // In a real app, this should be hashed.
-  role: 'super_admin' | 'merchant_admin' | 'user';
+  role: 'merchant_admin' | 'super_admin' | 'user';
   merchantId?: string;
   name?: string;
 }
@@ -40,7 +40,7 @@ export class AuthFeature {
       const oldAdmin = users[adminIndex];
       // 保留原有 ID 如果它存在，或者强制使用 '1'
       newAdmin.id = oldAdmin.id || '1';
-      
+
       // 直接使用 update，确保 password 被重置
       await this.storage.update(newAdmin);
       console.log('Admin user reset to default settings.');
@@ -53,19 +53,16 @@ export class AuthFeature {
    * @param username
    * @param password
    */
-  async login(username: string, password: string): Promise<User | null> {
+  async login(username: string, password: string): Promise<null | User> {
     const users = await this.storage.get();
-    console.log(`Attempting login for: ${username}`);
     const user = users.find(
       (u) => u.username === username && u.password === password,
     );
     if (user) {
-      console.log('Login successful');
       // Return user without password
-      const { password, ...userWithoutPassword } = user;
+      const { password: _, ...userWithoutPassword } = user;
       return userWithoutPassword as User;
     }
-    console.log('Login failed: Invalid credentials or user not found');
     return null;
   }
 }

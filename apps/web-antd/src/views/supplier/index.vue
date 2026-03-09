@@ -9,6 +9,7 @@ import {
   getSupplierList,
   updateSupplier,
 } from '#/api/supplier';
+import { parseSupplierImportExcel } from '#/api/system-settings-import';
 
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
@@ -86,31 +87,18 @@ const columns = [
 
 const handleUpload = async (file: File) => {
   try {
-    const buffer = await file.arrayBuffer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (window as any).ipcRenderer.invoke(
-      'import-suppliers',
-      {
-        fileBuffer: buffer,
-      },
-    );
-
-    if (
-      !response ||
-      !response.success ||
-      !Array.isArray(response.data) ||
-      response.data.length === 0
-    ) {
-      message.warning(response?.message || '未解析到数据或数据为空');
+    const suppliers = await parseSupplierImportExcel(await file.arrayBuffer());
+    if (!Array.isArray(suppliers) || suppliers.length === 0) {
+      message.warning('未解析到数据或数据为空');
       return false;
     }
 
-    await addSuppliers(response.data);
-    message.success('导入成功');
+    await addSuppliers(suppliers);
+    message.success(`导入成功，共 ${suppliers.length} 条`);
     tableRef.value?.search();
   } catch (error) {
     console.error(error);
-    message.error('导入失败');
+    message.error((error as Error)?.message || '导入失败');
   }
   return false;
 };

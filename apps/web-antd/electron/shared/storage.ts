@@ -1,6 +1,6 @@
 import { app } from 'electron';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 export interface StorageUserContext {
   role: string;
@@ -186,3 +186,4 @@ export const storeStorage = new JSONStorage<any>('stores.json');
 export const supplierStorage = new JSONStorage<any>('suppliers.json');
 export const taskStorage = new JSONStorage<any>('tasks.json');
 export const merchantStorage = new JSONStorage<any>('merchants.json');
+export const withdrawalTaskStorage = new JSONStorage<any>('withdrawal-tasks.json');

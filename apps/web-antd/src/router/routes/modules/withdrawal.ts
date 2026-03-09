@@ -29,6 +29,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'WithdrawalTask',
+        path: '/withdrawal/task',
+        component: () => import('#/views/withdrawal/task.vue'),
+        meta: {
+          icon: 'lucide:list-checks',
+          title: '提现任务',
+        },
+      },
+      {
         name: 'WithdrawalLogs',
         path: '/withdrawal/logs',
         component: () => import('#/views/withdrawal/logs.vue'),

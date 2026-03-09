@@ -199,7 +199,7 @@ export default {
           <Button
             v-if="child.renderType === 'search'"
             :key="`${child.label}search`"
-            v-bind.prop="child"
+            v-bind="child"
             class="mr-2"
             @click.stop="onSearch"
           >
@@ -208,7 +208,7 @@ export default {
           <Button
             v-if="child.renderType === 'reset'"
             :key="`${child.label}reset`"
-            v-bind.prop="child"
+            v-bind="child"
             class="mr-2"
             @click.stop="onReset"
           >
@@ -219,11 +219,20 @@ export default {
               child.renderType === 'export' || child.renderType === 'exportAll'
             "
             :key="`${child.label}export`"
-            v-bind.prop="child"
+            v-bind="child"
             class="mr-2"
             @click.stop="onExport(child)"
           >
             {{ child.label || '导出报表' }}
+          </Button>
+          <Button
+            v-if="child.renderType === 'collapse'"
+            :key="`${child.label}collapse`"
+            v-bind="child"
+            class="mr-2"
+            @click.stop="onCollaps"
+          >
+            {{ child.label || (collapsed ? '展开' : '收起') }}
           </Button>
           <Button
             v-if="child.renderType === 'button'"

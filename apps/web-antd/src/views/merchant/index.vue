@@ -17,7 +17,24 @@ import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 const userStore = useUserStore();
-const isAdmin = computed(() => userStore.userInfo?.username === 'admin');
+const isAdmin = computed(() => {
+  const userInfo = (userStore.userInfo || {}) as Record<string, any>;
+  const roleList = Array.isArray(userInfo.roles)
+    ? userInfo.roles
+    : userInfo.role
+      ? [userInfo.role]
+      : [];
+
+  const normalizedRoles = roleList
+    .map((role) => String(role).toLowerCase())
+    .filter(Boolean);
+
+  return (
+    String(userInfo.username || '').toLowerCase() === 'admin' ||
+    normalizedRoles.includes('super_admin') ||
+    normalizedRoles.includes('admin')
+  );
+});
 
 // 搜索配置
 const searchFormItems = [

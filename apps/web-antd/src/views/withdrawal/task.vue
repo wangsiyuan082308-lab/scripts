@@ -1,4 +1,4 @@
-<script lang="ts" setup>
+<script lang="tsx" setup>
 import type {
   CreateWithdrawalTaskPayload,
   WithdrawalTask,
@@ -16,6 +16,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Space,
   Table,
   Tag,
   TimePicker,
@@ -59,19 +60,6 @@ const searchModel = ref({
   taskId: '',
 });
 
-const summary = computed(() => {
-  const total = tasks.value.length;
-  const running = tasks.value.filter(
-    (task) => task.status === 'running',
-  ).length;
-  const pending = tasks.value.filter(
-    (task) => task.status === 'pending' || task.status === 'paused',
-  ).length;
-  const success = tasks.value.filter(
-    (task) => task.status === 'success' || task.status === 'partial_success',
-  ).length;
-  return { pending, running, success, total };
-});
 
 const statusMap: Record<
   WithdrawalTask['status'],
@@ -156,67 +144,11 @@ function showStoreNames(task: WithdrawalTask) {
   return `${preview} 等 ${task.storeNames.length} 家`;
 }
 
-function renderSummaryItem(title: string, value: number, valueClass: string) {
-  return h(
-    'span',
-    { class: 'shrink-0 whitespace-nowrap text-sm text-gray-500' },
-    [
-      h('span', `${title} `),
-      h('span', { class: `font-semibold ${valueClass}` }, `${value}`),
-    ],
-  );
-}
 
 const headerOptions = computed(() => [
   {
     renderType: 'render',
-    render: () =>
-      h('div', { class: 'w-full' }, [
-        h(
-          'div',
-          {
-            class:
-              'mb-4 flex flex-nowrap items-center gap-6 overflow-x-auto py-1',
-          },
-          [
-            renderSummaryItem(
-              '任务总数',
-              summary.value.total,
-              'text-gray-900 dark:text-gray-100',
-            ),
-            renderSummaryItem('执行中', summary.value.running, 'text-blue-500'),
-            renderSummaryItem(
-              '待处理/暂停',
-              summary.value.pending,
-              'text-amber-500',
-            ),
-            renderSummaryItem(
-              '已完成',
-              summary.value.success,
-              'text-green-500',
-            ),
-          ],
-        ),
-        h('div', { class: 'flex items-center gap-2' }, [
-          h(
-            Button,
-            {
-              type: 'primary',
-              loading: submitLoading.value,
-              onClick: openCreateTaskModal,
-            },
-            { default: () => '创建任务' },
-          ),
-          h(
-            Button,
-            {
-              loading: submitLoading.value,
-              onClick: refreshAll,
-            },
-            { default: () => '刷新' },
-          ),
-        ]),
-      ]),
+    label: '任务总数',
   },
 ]);
 
@@ -433,18 +365,6 @@ async function serveMethods(params: any) {
   };
 }
 
-async function refreshAll() {
-  submitLoading.value = true;
-  try {
-    await fetchStores();
-    tableRef.value?.search();
-  } catch (error: any) {
-    console.error(error);
-    message.error(error.message || '刷新失败');
-  } finally {
-    submitLoading.value = false;
-  }
-}
 
 function resetCreateForm() {
   selectedStoreIds.value = [];
@@ -452,10 +372,6 @@ function resetCreateForm() {
   scheduleTime.value = undefined;
 }
 
-function openCreateTaskModal() {
-  resetCreateForm();
-  createTaskVisible.value = true;
-}
 
 function closeCreateTaskModal() {
   createTaskVisible.value = false;

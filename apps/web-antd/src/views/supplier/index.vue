@@ -1,6 +1,4 @@
-<script lang="ts" setup>
-import { h, ref } from 'vue';
-import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
+<script lang="tsx" setup>
 import type { Supplier } from '#/api/supplier';
 import {
   addSupplier,
@@ -10,16 +8,20 @@ import {
   updateSupplier,
 } from '#/api/supplier';
 import { parseSupplierImportExcel } from '#/api/system-settings-import';
+import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
+import { h, ref } from 'vue';
 
-import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
+import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 // 搜索配置
 const searchFormItems = [
   {
     label: '供应商名称',
-    renderType: 'input',
-    valueKey: 'supplierName',
+    child:{
+      valueKey: 'supplierName',
+      renderType:'input'
+    }
   },
   {
     renderType: 'suffixButton',
@@ -44,10 +46,10 @@ const columns = [
   { dataIndex: 'type', title: '类型', width: 100 },
   { dataIndex: 'contact', title: '联系人', width: 100 },
   { dataIndex: 'phone', title: '电话', width: 120 },
-  { dataIndex: 'status', title: '状态', width: 80 },
   { dataIndex: 'minOrder', title: '起订值', width: 100 },
   { dataIndex: 'settlementType', title: '结算方式', width: 100 },
   { dataIndex: 'address', title: '地址', minWidth: 150 },
+  { dataIndex: 'status', title: '状态', width: 80, render: (text: string) => text === '启用' ? '启用' : '禁用' },
   {
     title: '操作',
     width: 150,
@@ -148,51 +150,72 @@ const tableRef = ref();
 const formItems = ref([
   {
     label: '供应商ID',
-    renderType: 'input',
-    valueKey: 'supplierId',
-    rules: [{ required: true, message: '请输入供应商ID' }],
-    disabled: false,
+    show:isUpdate.value,
+    child:{
+      valueKey: 'supplierId',
+      renderType:'input'
+    }
   },
   {
     label: '供应商名称',
-    renderType: 'input',
-    valueKey: 'supplierName',
-    rules: [{ required: true, message: '请输入供应商名称' }],
+    child:{
+      valueKey: 'supplierName',
+      renderType:'input'
+    }
   },
   {
     label: '类型',
-    renderType: 'input',
-    valueKey: 'type',
+    child:{
+      valueKey: 'type',
+      renderType:'input'
+    }
   },
   {
     label: '联系人',
-    renderType: 'input',
-    valueKey: 'contact',
+    child:{
+      valueKey: 'contact',
+      renderType:'input'
+    }
   },
   {
     label: '电话',
-    renderType: 'input',
-    valueKey: 'phone',
+    child:{
+      valueKey: 'phone',
+      renderType:'input'
+    }
   },
-  {
-    label: '状态',
-    renderType: 'input',
-    valueKey: 'status',
-  },
+
   {
     label: '起订值',
-    renderType: 'input',
-    valueKey: 'minOrder',
+    child:{
+      valueKey: 'minOrder',
+      renderType:'input'
+    }
   },
   {
     label: '结算方式',
-    renderType: 'input',
-    valueKey: 'settlementType',
+    child:{
+      valueKey: 'settlementType',
+      renderType:'input'
+    }
   },
   {
     label: '地址',
-    renderType: 'input',
-    valueKey: 'address',
+    child:{
+      valueKey: 'address',
+      renderType:'input'
+    }
+  },
+  {
+    label: '状态',
+    child:{
+      valueKey: 'status',
+      renderType:'radioGroup',
+      options: [
+        { label: '启用', value: '启用',  },
+        { label: '禁用', value: '禁用', },
+      ],
+    }
   },
 ]);
 
@@ -211,8 +234,6 @@ function handleAdd() {
   isUpdate.value = false;
   currentId.value = '';
   formModel.value = {};
-  // 启用供应商ID输入
-  formItems.value[0].disabled = false;
   showModal.value = true;
 }
 
@@ -220,8 +241,6 @@ function handleEdit(row: Supplier) {
   isUpdate.value = true;
   currentId.value = row.supplierId;
   formModel.value = { ...row };
-  // 禁用供应商ID输入
-  formItems.value[0].disabled = true;
   showModal.value = true;
 }
 

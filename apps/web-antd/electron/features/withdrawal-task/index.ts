@@ -6,30 +6,50 @@ import {
   WithdrawalTaskRunner,
 } from './runner';
 import type {
+  WithdrawalTaskHistory,
+  WithdrawalTaskHistoryTriggerReason,
+  WithdrawalScheduleFrequency,
   WithdrawalTask,
   WithdrawalTaskResult,
   WithdrawalTriggerMode,
 } from './runner';
 
 interface WithdrawalTaskCreateInput {
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
   storeIds: string[];
   storeNames?: string[];
   triggerMode: WithdrawalTriggerMode;
 }
 
 interface WithdrawalTaskUpdateInput {
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
+  storeIds?: string[];
+  storeNames?: string[];
   status?: WithdrawalTask['status'];
   taskId: string;
 }
 
 interface WithdrawalTaskRunOptions {
   storeIds?: string[];
+  triggerReason?: WithdrawalTaskHistoryTriggerReason;
 }
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function computeAutoRunAt(delayMs = 2000) {
+  return new Date(Date.now() + delayMs).toISOString();
+}
+
+function isPastDue(value?: string) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return !Number.isNaN(time) && time <= Date.now();
 }
 
 function createTaskId() {
@@ -79,6 +99,18 @@ function mergeTaskResults(
   ];
 }
 
+function createHistoryId() {
+  return `run_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function normalizeHistories(task: WithdrawalTask) {
+  return Array.isArray(task.histories) ? task.histories : [];
+}
+
+function appendTaskHistory(task: WithdrawalTask, history: WithdrawalTaskHistory) {
+  return [history, ...normalizeHistories(task)].slice(0, 30);
+}
+
 export class WithdrawalTaskFeature {
   private activeTaskIds = new Set<string>();
 
@@ -100,12 +132,25 @@ export class WithdrawalTaskFeature {
     return storeIds.map((storeId) => storeMap.get(storeId) || storeId);
   }
 
+  private getRunningTasks(tasks: WithdrawalTask[]) {
+    return tasks.filter((item) => item.status === 'running');
+  }
+
   private validateCreateInput(input: WithdrawalTaskCreateInput) {
     if (!Array.isArray(input.storeIds) || input.storeIds.length === 0) {
       throw new Error('请至少选择一个门店');
     }
     if (input.triggerMode === 'daily' && !formatScheduleTime(input.scheduleTime)) {
       throw new Error('请选择有效的每日执行时间');
+    }
+    if (
+      input.triggerMode === 'daily' &&
+      (input.scheduleFrequency === 'weekly' || input.scheduleWeekday !== undefined)
+    ) {
+      const weekday = input.scheduleWeekday;
+      if (typeof weekday !== 'number' || weekday < 0 || weekday > 6) {
+        throw new Error('请选择有效的每周执行日');
+      }
     }
   }
 
@@ -125,10 +170,19 @@ export class WithdrawalTaskFeature {
     const createdAt = nowIso();
     const taskId = createTaskId();
     const userTasks = await withdrawalTaskStorage.get(user);
+    const scheduleFrequency = input.triggerMode === 'daily'
+      ? input.scheduleFrequency || 'daily'
+      : undefined;
+    const scheduleWeekday =
+      input.triggerMode === 'daily' && scheduleFrequency === 'weekly'
+        ? input.scheduleWeekday ?? 1
+        : undefined;
 
     const task: WithdrawalTask = {
+      autoRunAt: input.triggerMode === 'manual' ? computeAutoRunAt() : undefined,
       createdAt,
       failedCount: 0,
+      histories: [],
       id: taskId,
       results: [],
       status: this.getTaskStatusForCreate(input.triggerMode),
@@ -139,15 +193,17 @@ export class WithdrawalTaskFeature {
       summary:
         input.triggerMode === 'daily'
           ? '等待定时调度执行'
-          : '等待手动执行',
+          : '计划已生成，等待自动执行',
       taskId,
       taskType: 'eleme_withdrawal',
       triggerMode: input.triggerMode,
       updatedAt: createdAt,
+      scheduleFrequency,
       scheduleTime: formatScheduleTime(input.scheduleTime),
+      scheduleWeekday,
       nextRunAt:
         input.triggerMode === 'daily'
-          ? computeNextRunAt(input.scheduleTime, createdAt)
+          ? computeNextRunAt(input.scheduleTime, createdAt, scheduleFrequency, scheduleWeekday)
           : undefined,
     };
 
@@ -166,11 +222,34 @@ export class WithdrawalTaskFeature {
     if (existing.status === 'running') {
       throw new Error('运行中的任务不能修改');
     }
+    if (existing.status === 'deleted') {
+      throw new Error('已删除的任务不能修改');
+    }
 
     const nextStatus = input.status || existing.status;
+    const normalizedStores =
+      input.storeIds && input.storeIds.length > 0
+        ? dedupeStores(
+            input.storeIds,
+            input.storeNames && input.storeNames.length > 0
+              ? input.storeNames
+              : await this.resolveStoreNames(input.storeIds, user),
+          )
+        : {
+            storeIds: existing.storeIds,
+            storeNames: existing.storeNames,
+          };
+    const scheduleFrequency =
+      existing.triggerMode === 'daily'
+        ? input.scheduleFrequency || existing.scheduleFrequency || 'daily'
+        : undefined;
     const scheduleTime =
       existing.triggerMode === 'daily'
         ? formatScheduleTime(input.scheduleTime || existing.scheduleTime)
+        : undefined;
+    const scheduleWeekday =
+      existing.triggerMode === 'daily' && scheduleFrequency === 'weekly'
+        ? input.scheduleWeekday ?? existing.scheduleWeekday ?? 1
         : undefined;
 
     if (existing.triggerMode === 'daily' && !scheduleTime) {
@@ -179,12 +258,22 @@ export class WithdrawalTaskFeature {
 
     const nextTask: WithdrawalTask = {
       ...existing,
+      scheduleFrequency,
       scheduleTime,
+      scheduleWeekday,
+      storeCount: normalizedStores.storeIds.length,
+      storeIds: normalizedStores.storeIds,
+      storeNames: normalizedStores.storeNames,
       status: nextStatus,
       updatedAt: nowIso(),
       nextRunAt:
         existing.triggerMode === 'daily' && nextStatus === 'pending'
-          ? computeNextRunAt(scheduleTime)
+          ? computeNextRunAt(
+              scheduleTime,
+              undefined,
+              scheduleFrequency,
+              scheduleWeekday,
+            )
           : nextStatus === 'paused' || nextStatus === 'cancelled'
             ? undefined
             : existing.nextRunAt,
@@ -205,12 +294,22 @@ export class WithdrawalTaskFeature {
     const tasks = await withdrawalTaskStorage.get(user);
     const index = tasks.findIndex((item) => item.taskId === taskId || item.id === taskId);
     if (index === -1) {
-      return tasks;
+      return sortTasks(tasks);
     }
-    if (tasks[index]?.status === 'running') {
-      throw new Error('运行中的任务不能删除');
+    const task = tasks[index]!;
+    const runningTasks = this.getRunningTasks(tasks);
+    if (runningTasks.length > 0) {
+      throw new Error(`当前有 ${runningTasks.length} 个任务正在执行中，暂不允许删除任务`);
     }
-    tasks.splice(index, 1);
+    tasks[index] = {
+      ...task,
+      autoRunAt: undefined,
+      nextRunAt: undefined,
+      status: 'deleted',
+      summary:
+        '任务已删除',
+      updatedAt: nowIso(),
+    };
     await withdrawalTaskStorage.save(tasks, user);
     return sortTasks(tasks);
   }
@@ -249,6 +348,9 @@ export class WithdrawalTaskFeature {
     }
 
     const task = tasks[index]!;
+    if (task.status === 'deleted') {
+      throw new Error('已删除的任务不能执行');
+    }
     this.ensureNoRunningStoreConflict(task, tasks);
     this.activeTaskIds.add(task.taskId);
 
@@ -260,11 +362,16 @@ export class WithdrawalTaskFeature {
         .map((storeId, idx) => ({ storeId, storeName: task.storeNames[idx] || storeId }))
         .filter((item) => runStoreIds.includes(item.storeId))
         .map((item) => item.storeName);
+      const startedAt = nowIso();
+      const triggerReason =
+        options?.triggerReason ||
+        (options?.storeIds?.length ? 'retry' : task.triggerMode === 'daily' ? 'auto' : 'manual');
 
       const runningTask: WithdrawalTask = {
         ...task,
+        autoRunAt: undefined,
         status: 'running',
-        updatedAt: nowIso(),
+        updatedAt: startedAt,
         summary: '任务执行中',
       };
       tasks[index] = runningTask;
@@ -288,10 +395,29 @@ export class WithdrawalTaskFeature {
         ...task,
         failedCount,
         finishedAt: execution.finishedAt,
+        histories: appendTaskHistory(task, {
+          failedCount,
+          finishedAt: execution.finishedAt,
+          historyId: createHistoryId(),
+          lastRunAt: execution.lastRunAt,
+          results: execution.results,
+          startedAt: execution.startedAt || startedAt,
+          status: execution.status,
+          storeIds: runStoreIds,
+          storeNames: runStoreNames,
+          successCount,
+          summary: execution.summary,
+          triggerReason,
+        }),
         lastRunAt: execution.lastRunAt,
         nextRunAt:
           task.triggerMode === 'daily' && task.status !== 'paused' && task.status !== 'cancelled'
-            ? computeNextRunAt(task.scheduleTime, execution.finishedAt)
+            ? computeNextRunAt(
+                task.scheduleTime,
+                execution.finishedAt,
+                task.scheduleFrequency,
+                task.scheduleWeekday,
+              )
             : undefined,
         results: mergedResults,
         status:
@@ -314,13 +440,16 @@ export class WithdrawalTaskFeature {
   }
 
   async run(taskId: string, user?: StorageUserContext) {
-    return this.runTaskInternal(taskId, user);
+    return this.runTaskInternal(taskId, user, { triggerReason: 'manual' });
   }
 
   async retryFailed(taskId: string, user?: StorageUserContext) {
     const task = await this.getDetail(taskId, user);
     if (!task) {
       throw new Error('任务不存在');
+    }
+    if (task.status === 'deleted') {
+      throw new Error('已删除的任务不能重试');
     }
     const failedStoreIds = task.results
       .filter((item) => item.status === 'failed')
@@ -330,29 +459,104 @@ export class WithdrawalTaskFeature {
       throw new Error('当前任务没有失败门店');
     }
 
-    return this.runTaskInternal(task.taskId, user, { storeIds: failedStoreIds });
+    return this.runTaskInternal(task.taskId, user, {
+      storeIds: failedStoreIds,
+      triggerReason: 'retry',
+    });
   }
 
   async recoverTasks() {
     const tasks = await withdrawalTaskStorage.get();
     let changed = false;
+    const recoveryTime = nowIso();
 
     const recovered = tasks.map((task) => {
-      if (task.status !== 'running') return task;
-      changed = true;
-      return {
-        ...task,
-        nextRunAt:
-          task.triggerMode === 'daily'
-            ? computeNextRunAt(task.scheduleTime)
-            : task.nextRunAt,
-        status: task.triggerMode === 'daily' ? 'pending' : 'failed',
-        summary:
-          task.triggerMode === 'daily'
-            ? '应用重启后已恢复为待执行'
-            : '应用重启导致任务中断',
-        updatedAt: nowIso(),
-      } satisfies WithdrawalTask;
+      if (task.status === 'running') {
+        changed = true;
+        return {
+          ...task,
+          autoRunAt: undefined,
+          histories: appendTaskHistory(task, {
+            failedCount: task.storeCount,
+            finishedAt: recoveryTime,
+            historyId: createHistoryId(),
+            lastRunAt: recoveryTime,
+            results: task.storeIds.map((storeId, index) => ({
+              executedAt: recoveryTime,
+              message:
+                task.triggerMode === 'daily'
+                  ? '应用重启后中断，本次执行已归档为异常记录'
+                  : '应用重启导致任务中断，请手动重新执行',
+              status: 'failed',
+              storeId,
+              storeName: task.storeNames[index] || storeId,
+            })),
+            startedAt: task.updatedAt || task.createdAt,
+            status: 'failed',
+            storeIds: task.storeIds,
+            storeNames: task.storeNames,
+            successCount: 0,
+            summary:
+              task.triggerMode === 'daily'
+                ? '应用重启后执行中断，本次执行已归档'
+                : '应用重启导致任务中断，已归档到历史记录',
+            triggerReason: 'recover',
+          }),
+          nextRunAt:
+            task.triggerMode === 'daily'
+              ? computeNextRunAt(
+                  task.scheduleTime,
+                  undefined,
+                  task.scheduleFrequency,
+                  task.scheduleWeekday,
+                )
+              : task.nextRunAt,
+          status: task.triggerMode === 'daily' ? 'pending' : 'failed',
+          summary:
+            task.triggerMode === 'daily'
+              ? '应用重启后已恢复为待执行'
+              : '应用重启导致任务中断，已置为失败，请手动重试',
+          updatedAt: nowIso(),
+        } satisfies WithdrawalTask;
+      }
+
+      if (
+        task.triggerMode === 'manual' &&
+        task.status === 'pending' &&
+        isPastDue(task.autoRunAt)
+      ) {
+        changed = true;
+        return {
+          ...task,
+          autoRunAt: undefined,
+          finishedAt: task.finishedAt || nowIso(),
+          histories: appendTaskHistory(task, {
+            failedCount: task.storeCount,
+            finishedAt: recoveryTime,
+            historyId: createHistoryId(),
+            lastRunAt: recoveryTime,
+            results: task.storeIds.map((storeId, index) => ({
+              executedAt: recoveryTime,
+              message: '立即触发任务在刷新或重启后未获得执行结果，请手动重试',
+              status: 'failed',
+              storeId,
+              storeName: task.storeNames[index] || storeId,
+            })),
+            startedAt: task.updatedAt || task.createdAt,
+            status: 'failed',
+            storeIds: task.storeIds,
+            storeNames: task.storeNames,
+            successCount: 0,
+            summary: '立即触发任务未获得执行结果，已归档到历史记录',
+            triggerReason: 'recover',
+          }),
+          status: 'failed',
+          summary: '立即触发任务在刷新或重启后未获得执行结果，已置为失败，请手动重试',
+          updatedAt: nowIso(),
+        } satisfies WithdrawalTask;
+      }
+
+      return task;
     });
 
     if (changed) {
@@ -366,15 +570,21 @@ export class WithdrawalTaskFeature {
     const dueTasks = tasks
       .filter(
         (task) =>
-          task.triggerMode === 'daily' &&
+          task.status !== 'deleted' &&
           task.status === 'pending' &&
-          task.nextRunAt &&
-          new Date(task.nextRunAt).getTime() <= now,
+          (
+            (task.triggerMode === 'daily' &&
+              task.nextRunAt &&
+              new Date(task.nextRunAt).getTime() <= now) ||
+            (task.triggerMode === 'manual' &&
+              task.autoRunAt &&
+              new Date(task.autoRunAt).getTime() <= now)
+          ),
       )
       .sort(
         (a, b) =>
-          new Date(a.nextRunAt || a.updatedAt).getTime() -
-          new Date(b.nextRunAt || b.updatedAt).getTime(),
+          new Date(a.autoRunAt || a.nextRunAt || a.updatedAt).getTime() -
+          new Date(b.autoRunAt || b.nextRunAt || b.updatedAt).getTime(),
       );
 
     for (const task of dueTasks) {

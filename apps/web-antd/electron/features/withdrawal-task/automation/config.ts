@@ -25,6 +25,10 @@ export interface AutomationMerchantConfig {
 }
 
 export interface AutomationEvolutionConfig {
+  actionHints?: {
+    confirmSubmitText?: string;
+    withdrawEntryText?: string;
+  };
   baseWaitTime: number;
   failureThreshold: number;
   maxWaitTime: number;
@@ -63,6 +67,21 @@ export interface SavedCoords {
 
 function normalizeTextValue(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+export function normalizeStoreName(value?: string) {
+  return String(value || '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/\u3000/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function getStoreAlias(value?: string) {
+  const normalized = normalizeStoreName(value);
+  const matched = normalized.match(/\(([^()]+)\)$/);
+  return matched?.[1]?.trim() || normalized;
 }
 
 function sanitizeSegment(value: string) {
@@ -133,6 +152,7 @@ export async function ensureAutomationRuntime(paths: AutomationRuntimePaths) {
 
 export async function loadEvolutionConfig(paths: AutomationRuntimePaths): Promise<AutomationEvolutionConfig> {
   const fallback: AutomationEvolutionConfig = {
+    actionHints: {},
     baseWaitTime: 1000,
     failureThreshold: 3,
     maxWaitTime: 10_000,
@@ -143,6 +163,13 @@ export async function loadEvolutionConfig(paths: AutomationRuntimePaths): Promis
     const content = await fs.readFile(paths.evolutionFile, 'utf8');
     const parsed = JSON.parse(content);
     return {
+      actionHints:
+        parsed?.actionHints && typeof parsed.actionHints === 'object'
+          ? {
+              confirmSubmitText: pickFirstString(parsed?.actionHints?.confirmSubmitText),
+              withdrawEntryText: pickFirstString(parsed?.actionHints?.withdrawEntryText),
+            }
+          : {},
       baseWaitTime: asFiniteNumber(parsed?.baseWaitTime, fallback.baseWaitTime),
       failureThreshold: asFiniteNumber(parsed?.failureThreshold, fallback.failureThreshold),
       maxWaitTime: asFiniteNumber(parsed?.maxWaitTime, fallback.maxWaitTime),
@@ -269,10 +296,22 @@ export function resolveStoreTargetName(
   fallbackStoreName: string,
   config: ResolvedAutomationConfig,
 ) {
-  return (
+  const normalizedStoreId = normalizeStoreName(storeId);
+  const normalizedFallbackName = normalizeStoreName(fallbackStoreName);
+  const mappingEntry = Object.entries(config.storeNameMappings).find(([key]) => {
+    const normalizedKey = normalizeStoreName(key);
+    return (
+      normalizedKey === normalizedStoreId ||
+      normalizedKey === normalizedFallbackName
+    );
+  });
+
+  const resolved =
     config.storeNameMappings[storeId] ||
     config.storeNameMappings[fallbackStoreName] ||
+    mappingEntry?.[1] ||
     fallbackStoreName ||
-    storeId
-  );
+    storeId;
+
+  return getStoreAlias(resolved);
 }

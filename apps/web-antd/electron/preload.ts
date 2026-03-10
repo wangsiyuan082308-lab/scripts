@@ -13,6 +13,7 @@ const INVOKE_CHANNELS = [
   'delete-withdrawal-task',
   'run-withdrawal-task',
   'retry-withdrawal-task',
+  'get-withdrawal-task-logs',
   'save-withdrawal-tasks',
   // Storage
   'get-stores',

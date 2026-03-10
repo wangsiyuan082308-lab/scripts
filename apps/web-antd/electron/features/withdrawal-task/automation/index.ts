@@ -37,12 +37,16 @@ export async function executeWithdrawalSession(
   task: WithdrawalTask,
 ): Promise<WithdrawalExecutionResult> {
   const startedAt = Date.now();
+  const sessionId = `${task.taskId}_${startedAt}`;
   const merchant = await resolveMerchant(task);
   const paths = getAutomationRuntimePaths(task.merchantId);
   await ensureAutomationRuntime(paths);
   cleanOldAutomationLogs(paths);
 
-  const bootstrapLogger = createAutomationLogger('withdrawal-session', paths);
+  const bootstrapLogger = createAutomationLogger('withdrawal-session', paths, undefined, {
+    sessionId,
+    taskId: task.taskId,
+  });
   const evolution = await loadEvolutionConfig(paths);
   const config = resolveAutomationConfig(merchant, task.triggerMode, evolution);
 
@@ -134,6 +138,7 @@ export async function executeWithdrawalSession(
     finishedAt,
     lastRunAt,
     results,
+    startedAt: new Date(startedAt).toISOString(),
     status: getStatusFromCounts(successCount, failedCount),
     successCount,
     summary: buildSummary(successCount, failedCount, results.length),

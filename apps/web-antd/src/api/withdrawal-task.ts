@@ -1,4 +1,6 @@
 export type WithdrawalTriggerMode = 'manual' | 'daily';
+export type WithdrawalScheduleFrequency = 'daily' | 'weekly';
+export type WithdrawalTaskHistoryTriggerReason = 'auto' | 'manual' | 'recover' | 'retry';
 export type WithdrawalTaskStatus =
   | 'draft'
   | 'pending'
@@ -7,7 +9,8 @@ export type WithdrawalTaskStatus =
   | 'success'
   | 'failed'
   | 'paused'
-  | 'cancelled';
+  | 'cancelled'
+  | 'deleted';
 
 export interface WithdrawalTaskResult {
   executedAt: string;
@@ -18,7 +21,24 @@ export interface WithdrawalTaskResult {
   withdrawAmount?: number;
 }
 
+export interface WithdrawalTaskHistory {
+  failedCount: number;
+  finishedAt?: string;
+  historyId: string;
+  lastRunAt?: string;
+  results: WithdrawalTaskResult[];
+  startedAt: string;
+  status: WithdrawalTaskStatus;
+  storeIds: string[];
+  storeNames: string[];
+  successCount: number;
+  summary: string;
+  triggerReason: WithdrawalTaskHistoryTriggerReason;
+}
+
 export interface WithdrawalTask {
+  autoRunAt?: string;
+  histories?: WithdrawalTaskHistory[];
   id: string;
   taskId: string;
   taskType: 'eleme_withdrawal';
@@ -34,13 +54,17 @@ export interface WithdrawalTask {
   lastRunAt?: string;
   nextRunAt?: string;
   finishedAt?: string;
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
   summary?: string;
   results: WithdrawalTaskResult[];
 }
 
 export interface CreateWithdrawalTaskPayload {
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
   storeIds: string[];
   storeNames?: string[];
   triggerMode: WithdrawalTriggerMode;
@@ -70,7 +94,11 @@ export async function createWithdrawalTask(data: CreateWithdrawalTaskPayload) {
 }
 
 export async function updateWithdrawalTask(data: {
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
+  storeIds?: string[];
+  storeNames?: string[];
   status?: WithdrawalTaskStatus;
   taskId: string;
 }) {
@@ -87,4 +115,16 @@ export async function runWithdrawalTask(taskId: string) {
 
 export async function retryWithdrawalTask(taskId: string) {
   return invokeIpc<WithdrawalTask>('retry-withdrawal-task', taskId);
+}
+
+export async function getWithdrawalTaskLogs(taskId: string, limit = 200) {
+  return invokeIpc<{ list: Array<{
+    level: string;
+    message: string;
+    module: string;
+    sessionId?: string;
+    store?: string;
+    taskId?: string;
+    timestamp: string;
+  }> }>('get-withdrawal-task-logs', taskId, limit);
 }

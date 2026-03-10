@@ -12,6 +12,7 @@ import pkg from '../package.json';
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
+import { getWithdrawalTaskLogs } from './features/withdrawal-task/logs';
 import { withdrawalTaskFeature } from './features/withdrawal-task/index';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
@@ -340,6 +341,10 @@ function registerIpcHandlers() {
   ipcMain.handle('retry-withdrawal-task', async (_event, taskId) => {
     const user = requireAuth();
     return withdrawalTaskFeature.retryFailed(taskId, user);
+  });
+  ipcMain.handle('get-withdrawal-task-logs', async (_event, taskId, limit) => {
+    const user = requireAuth();
+    return getWithdrawalTaskLogs(taskId, user, limit);
   });
 
   // --- Storage Management Handlers ---

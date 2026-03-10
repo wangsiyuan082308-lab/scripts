@@ -12,8 +12,10 @@ interface LogEntry {
   module: string;
   reason?: string;
   retryable?: boolean;
+  sessionId?: string;
   stage?: string;
   store?: string;
+  taskId?: string;
   timestamp: string;
 }
 
@@ -37,13 +39,14 @@ export function createAutomationLogger(
   moduleName: string,
   paths: AutomationRuntimePaths,
   store?: string,
+  context?: Pick<LogEntry, 'sessionId' | 'taskId'>,
 ): AutomationLogger {
   const logFile = path.join(paths.logsDir, `app_${getLocalDateStr()}.jsonl`);
   const obsFile = path.join(paths.logsDir, `obs_${getLocalDateStr()}.jsonl`);
-  const metricsFile = path.join(paths.metricsDir, `metrics_${getLocalDateStr()}.jsonl`);
 
   const write = (level: LogLevel, message: string, extra?: Partial<LogEntry>) => {
     const entry: LogEntry = {
+      ...context,
       level,
       message,
       module: moduleName,
@@ -61,7 +64,7 @@ export function createAutomationLogger(
 
   return {
     child(childStore: string) {
-      return createAutomationLogger(moduleName, paths, childStore);
+      return createAutomationLogger(moduleName, paths, childStore, context);
     },
     debug(message, extra) {
       write('DEBUG', message, extra);

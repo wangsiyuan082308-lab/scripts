@@ -2,6 +2,7 @@ import { executeWithdrawalSession } from './automation';
 
 export type WithdrawalTaskType = 'eleme_withdrawal';
 export type WithdrawalTriggerMode = 'manual' | 'daily';
+export type WithdrawalScheduleFrequency = 'daily' | 'weekly';
 export type WithdrawalTaskStatus =
   | 'draft'
   | 'pending'
@@ -10,8 +11,10 @@ export type WithdrawalTaskStatus =
   | 'success'
   | 'failed'
   | 'paused'
-  | 'cancelled';
+  | 'cancelled'
+  | 'deleted';
 export type WithdrawalTaskResultStatus = 'success' | 'failed';
+export type WithdrawalTaskHistoryTriggerReason = 'auto' | 'manual' | 'recover' | 'retry';
 
 export interface WithdrawalTaskResult {
   executedAt: string;
@@ -22,7 +25,24 @@ export interface WithdrawalTaskResult {
   withdrawAmount?: number;
 }
 
+export interface WithdrawalTaskHistory {
+  failedCount: number;
+  finishedAt?: string;
+  historyId: string;
+  lastRunAt?: string;
+  results: WithdrawalTaskResult[];
+  startedAt: string;
+  status: WithdrawalTaskStatus;
+  storeIds: string[];
+  storeNames: string[];
+  successCount: number;
+  summary: string;
+  triggerReason: WithdrawalTaskHistoryTriggerReason;
+}
+
 export interface WithdrawalTask {
+  autoRunAt?: string;
+  histories?: WithdrawalTaskHistory[];
   id: string;
   taskId: string;
   taskType: WithdrawalTaskType;
@@ -38,7 +58,9 @@ export interface WithdrawalTask {
   lastRunAt?: string;
   nextRunAt?: string;
   finishedAt?: string;
+  scheduleFrequency?: WithdrawalScheduleFrequency;
   scheduleTime?: string;
+  scheduleWeekday?: number;
   summary?: string;
   results: WithdrawalTaskResult[];
   merchantId?: string;
@@ -49,6 +71,7 @@ export interface WithdrawalExecutionResult {
   finishedAt: string;
   lastRunAt: string;
   results: WithdrawalTaskResult[];
+  startedAt?: string;
   status: WithdrawalTaskStatus;
   successCount: number;
   summary: string;
@@ -74,14 +97,44 @@ export function formatScheduleTime(value?: string) {
   return `${pad(hour)}:${pad(minute)}`;
 }
 
-export function computeNextRunAt(scheduleTime?: string, from?: Date | string) {
+export function formatScheduleFrequency(value?: WithdrawalScheduleFrequency) {
+  return value === 'weekly' ? 'weekly' : 'daily';
+}
+
+export function formatScheduleWeekday(value?: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 1;
+  if (value < 0 || value > 6) return 1;
+  return value;
+}
+
+export function computeNextRunAt(
+  scheduleTime?: string,
+  from?: Date | string,
+  scheduleFrequency?: WithdrawalScheduleFrequency,
+  scheduleWeekday?: number,
+) {
   const normalized = formatScheduleTime(scheduleTime);
   if (!normalized) return undefined;
 
   const [hour, minute] = normalized.split(':').map(Number);
   const base = toDate(from);
   const next = new Date(base);
+  const frequency = formatScheduleFrequency(scheduleFrequency);
   next.setSeconds(0, 0);
+
+  if (frequency === 'weekly') {
+    const weekday = formatScheduleWeekday(scheduleWeekday);
+    const currentDay = next.getDay();
+    let diff = weekday - currentDay;
+    if (diff < 0) diff += 7;
+    next.setDate(next.getDate() + diff);
+    next.setHours(hour, minute, 0, 0);
+    if (next.getTime() <= base.getTime()) {
+      next.setDate(next.getDate() + 7);
+    }
+    return next.toISOString();
+  }
+
   next.setHours(hour, minute, 0, 0);
   if (next.getTime() <= base.getTime()) {
     next.setDate(next.getDate() + 1);
@@ -94,4 +147,3 @@ export const WithdrawalTaskRunner = {
     return executeWithdrawalSession(task);
   },
 };
-

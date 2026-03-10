@@ -1,11 +1,13 @@
 <script lang="tsx" setup>
 import type {
   CreateWithdrawalTaskPayload,
+  WithdrawalScheduleFrequency,
+  WithdrawalTaskHistory,
   WithdrawalTask,
   WithdrawalTaskResult,
 } from '#/api/withdrawal-task';
 
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, toRaw, watch } from 'vue';
 
 import {
   Button,
@@ -15,11 +17,10 @@ import {
   message,
   Modal,
   Popconfirm,
-  Select,
   Space,
+  Spin,
   Table,
   Tag,
-  TimePicker,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -28,30 +29,100 @@ import {
   createWithdrawalTask,
   deleteWithdrawalTask,
   getWithdrawalTaskDetail,
+  getWithdrawalTaskLogs,
   getWithdrawalTaskList,
   retryWithdrawalTask,
   runWithdrawalTask,
   updateWithdrawalTask,
 } from '#/api/withdrawal-task';
+// @ts-expect-error project-wide Vue SFC typings are incomplete for this legacy base component
+import BaseForm from '#/components/base/BaseForm/BaseForm.vue';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 interface StoreOption {
+  alias: string;
+  fullLabel: string;
   label: string;
   value: string;
 }
 
+function normalizeStoreName(value?: string) {
+  return String(value || '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .replace(/\u3000/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getStoreAlias(value?: string) {
+  const normalized = normalizeStoreName(value);
+  const matched = normalized.match(/\(([^()]+)\)$/);
+  return matched?.[1]?.trim() || normalized;
+}
+
+function formatStoreOptionLabel(value?: string) {
+  const normalized = normalizeStoreName(value);
+  const alias = getStoreAlias(normalized);
+  if (!alias || alias === normalized) {
+    return {
+      alias: normalized,
+      fullLabel: normalized,
+      label: normalized,
+    };
+  }
+  return {
+    alias,
+    fullLabel: normalized,
+    label: `${alias} · ${normalized}`,
+  };
+}
+
+const weekdayOptions = [
+  { label: '周日', value: 0 },
+  { label: '周一', value: 1 },
+  { label: '周二', value: 2 },
+  { label: '周三', value: 3 },
+  { label: '周四', value: 4 },
+  { label: '周五', value: 5 },
+  { label: '周六', value: 6 },
+];
+
 const tableRef = ref<any>(null);
+const createFormRef = ref<any>(null);
 const submitLoading = ref(false);
 const actionLoading = ref<Record<string, boolean>>({});
 const tasks = ref<WithdrawalTask[]>([]);
 const storeOptions = ref<StoreOption[]>([]);
-const selectedStoreIds = ref<string[]>([]);
-const triggerMode = ref<'daily' | 'manual'>('manual');
-const scheduleTime = ref<string>();
+const editingTaskId = ref<string>();
+const createFormModel = ref<{
+  scheduleFrequency: WithdrawalScheduleFrequency;
+  scheduleTime?: string;
+  scheduleWeekday?: number;
+  storeIds: string[];
+  triggerMode: 'daily' | 'manual';
+}>({
+  scheduleFrequency: 'daily',
+  scheduleTime: '06:00',
+  scheduleWeekday: 1,
+  storeIds: [],
+  triggerMode: 'manual',
+});
 const createTaskVisible = ref(false);
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const currentDetail = ref<null | WithdrawalTask>(null);
+const liveLogVisible = ref(false);
+const liveLogLoading = ref(false);
+const liveLogTaskId = ref('');
+const liveLogSince = ref('');
+const liveLogs = ref<Array<{
+  level: string;
+  message: string;
+  store?: string;
+  timestamp: string;
+}>>([]);
+let liveLogTimer: ReturnType<typeof setInterval> | null = null;
 
 const searchModel = ref({
   page: 1,
@@ -60,46 +131,83 @@ const searchModel = ref({
   taskId: '',
 });
 
-
-const statusMap: Record<
+const statusConfig: Record<
   WithdrawalTask['status'],
-  { color: string; text: string }
+  { color: string; description: string; text: string }
 > = {
-  cancelled: { color: 'default', text: '已取消' },
-  draft: { color: 'default', text: '草稿' },
-  failed: { color: 'error', text: '失败' },
-  partial_success: { color: 'warning', text: '部分成功' },
-  paused: { color: 'default', text: '已暂停' },
-  pending: { color: 'processing', text: '待执行' },
-  running: { color: 'blue', text: '执行中' },
-  success: { color: 'success', text: '成功' },
+  cancelled: {
+    color: 'default',
+    description: '任务已取消，不会再参与调度。',
+    text: '已取消',
+  },
+  draft: {
+    color: 'default',
+    description: '任务已创建但尚未进入执行队列。',
+    text: '草稿',
+  },
+  deleted: {
+    color: 'default',
+    description: '任务已删除，仅保留记录用于状态追踪。',
+    text: '已删除',
+  },
+  failed: {
+    color: 'error',
+    description: '本次执行失败，可查看详情后重试。',
+    text: '失败',
+  },
+  partial_success: {
+    color: 'warning',
+    description: '部分门店执行成功，剩余门店需要补偿处理。',
+    text: '部分成功',
+  },
+  paused: {
+    color: 'default',
+    description: '任务已暂停，恢复后会继续参与调度。',
+    text: '已暂停',
+  },
+  pending: {
+    color: 'processing',
+    description: '任务待执行，立即触发任务会自动启动，定时任务等待调度。',
+    text: '待执行',
+  },
+  running: {
+    color: 'blue',
+    description: '任务执行中，暂不支持重复触发或删除。',
+    text: '执行中',
+  },
+  success: {
+    color: 'success',
+    description: '最近一次执行成功。',
+    text: '成功',
+  },
 };
 
 const statusFilterOptions = [
   { label: '全部状态', value: undefined },
-  { label: '待执行', value: 'pending' },
-  { label: '执行中', value: 'running' },
-  { label: '已暂停', value: 'paused' },
-  { label: '成功', value: 'success' },
-  { label: '部分成功', value: 'partial_success' },
-  { label: '失败', value: 'failed' },
-  { label: '已取消', value: 'cancelled' },
+  ...Object.entries(statusConfig).map(([value, config]) => ({
+    label: config.text,
+    value,
+  })),
 ];
 
 const searchFormItems = [
   {
     label: '任务编号',
-    renderType: 'input',
-    valueKey: 'taskId',
+    child: {
+      renderType: 'input',
+      valueKey: 'taskId',
+    },
   },
   {
     label: '状态',
-    renderType: 'select',
-    valueKey: 'status',
-    options: statusFilterOptions,
-    allowClear: true,
-    optionLabelProp: 'label',
-    optionValueProp: 'value',
+    child: {
+      renderType: 'select',
+      valueKey: 'status',
+      options: statusFilterOptions,
+      allowClear: true,
+      optionLabelProp: 'label',
+      optionValueProp: 'value',
+    },
   },
   {
     renderType: 'suffixButton',
@@ -117,13 +225,155 @@ const searchFormItems = [
   },
 ];
 
+const createFormItems = computed(() => [
+  {
+    label: '选择门店',
+    child: {
+      allowClear: true,
+      mode: 'multiple',
+      optionFilterProp: 'label',
+      options: storeOptions.value,
+      placeholder: '请选择一个或多个门店',
+      renderType: 'select',
+      showSearch: true,
+      style: { width: '100%' },
+      valueKey: 'storeIds',
+    },
+    rules: [{ message: '请选择门店', required: true }],
+  },
+  {
+    label: '触发方式',
+    child: {
+      options: [
+        { label: '立即触发', value: 'manual' },
+        { label: '定时触发', value: 'daily' },
+      ],
+      renderType: 'select',
+      style: { width: '100%' },
+      valueKey: 'triggerMode',
+    },
+    rules: [{ message: '请选择触发方式', required: true }],
+  },
+  {
+    label: '定时频率',
+    show: createFormModel.value.triggerMode === 'daily',
+    child: {
+      options: [
+        { label: '每天', value: 'daily' },
+        { label: '每周', value: 'weekly' },
+      ],
+      renderType: 'select',
+      style: { width: '100%' },
+      valueKey: 'scheduleFrequency',
+    },
+    rules:
+      createFormModel.value.triggerMode === 'daily'
+        ? [{ message: '请选择定时频率', required: true }]
+        : [],
+  },
+  {
+    label: '每周执行日',
+    show:
+      createFormModel.value.triggerMode === 'daily' &&
+      createFormModel.value.scheduleFrequency === 'weekly',
+    child: {
+      options: weekdayOptions,
+      renderType: 'select',
+      style: { width: '100%' },
+      valueKey: 'scheduleWeekday',
+    },
+    rules:
+      createFormModel.value.triggerMode === 'daily' &&
+      createFormModel.value.scheduleFrequency === 'weekly'
+        ? [{ message: '请选择每周执行日', required: true }]
+        : [],
+  },
+  {
+    label: '定时执行时间',
+    show: createFormModel.value.triggerMode === 'daily',
+    child: {
+      format: 'HH:mm',
+      renderType: 'timePicker',
+      style: { width: '100%' },
+      valueFormat: 'HH:mm',
+      valueKey: 'scheduleTime',
+    },
+    rules:
+      createFormModel.value.triggerMode === 'daily'
+        ? [{ message: '请选择定时执行时间', required: true }]
+        : [],
+  },
+]);
+
 function formatDateTime(value?: string) {
   if (!value) return '-';
   return dayjs(value).format('YYYY-MM-DD HH:mm:ss');
 }
 
+function formatTerminalLine(log: {
+  level: string;
+  message: string;
+  store?: string;
+  timestamp: string;
+}) {
+  const time = formatDateTime(log.timestamp);
+  const store = log.store ? `[${log.store}] ` : '';
+  return `${time} [${log.level.toUpperCase()}] ${store}${log.message}`;
+}
+
+function getWeekdayLabel(value?: number) {
+  return weekdayOptions.find((item) => item.value === value)?.label || '周一';
+}
+
+function formatScheduleText(task: Pick<WithdrawalTask, 'scheduleFrequency' | 'scheduleTime' | 'scheduleWeekday' | 'triggerMode'>) {
+  if (task.triggerMode !== 'daily') return '手动执行';
+  const scheduleTime = task.scheduleTime || '06:00';
+  const scheduleFrequency = task.scheduleFrequency || 'daily';
+  if (scheduleFrequency === 'weekly') {
+    return `每周 ${getWeekdayLabel(task.scheduleWeekday)} ${scheduleTime}`;
+  }
+  return `每天 ${scheduleTime}`;
+}
+
 function statusTag(status: WithdrawalTask['status']) {
-  return statusMap[status] || { color: 'default', text: status };
+  return (
+    statusConfig[status] || {
+      color: 'default',
+      description: status,
+      text: status,
+    }
+  );
+}
+
+function canRunTask(task: WithdrawalTask) {
+  if (task.status === 'running') return false;
+  if (task.triggerMode === 'daily') {
+    return !['cancelled', 'deleted', 'draft', 'paused'].includes(task.status);
+  }
+  return !['cancelled', 'deleted'].includes(task.status);
+}
+
+function canRetryTask(task: WithdrawalTask) {
+  return !['deleted', 'running'].includes(task.status) && task.failedCount > 0;
+}
+
+function canPauseTask(task: WithdrawalTask) {
+  return (
+    task.triggerMode === 'daily' &&
+    !['cancelled', 'deleted', 'paused', 'running'].includes(task.status)
+  );
+}
+
+function canResumeTask(task: WithdrawalTask) {
+  return task.triggerMode === 'daily' && task.status === 'paused';
+}
+
+function canEditTask(task: WithdrawalTask) {
+  return !['deleted', 'running'].includes(task.status);
+}
+
+function canDeleteTask(task: WithdrawalTask) {
+  return !['deleted', 'running'].includes(task.status);
 }
 
 function isActionLoading(taskId: string, action: string) {
@@ -139,7 +389,10 @@ function setActionLoading(taskId: string, action: string, value: boolean) {
 
 function showStoreNames(task: WithdrawalTask) {
   if (!task.storeNames?.length) return '-';
-  const preview = task.storeNames.slice(0, 2).join('、');
+  const preview = task.storeNames
+    .map((item) => getStoreAlias(item))
+    .slice(0, 2)
+    .join('、');
   if (task.storeNames.length <= 2) return preview;
   return `${preview} 等 ${task.storeNames.length} 家`;
 }
@@ -148,7 +401,24 @@ function showStoreNames(task: WithdrawalTask) {
 const headerOptions = computed(() => [
   {
     renderType: 'render',
-    label: '任务总数',
+    position: 'left',
+    render: () => (
+      <div class="text-sm text-gray-500">
+        <span>任务总数 </span>
+        <span class="font-medium text-gray-900">{tasks.value.length}</span>
+      </div>
+    ),
+  },
+  {
+    renderType: 'button',
+    label: '创建提现任务',
+    name: '创建提现任务',
+    type: 'primary',
+    click: () => {
+      editingTaskId.value = undefined;
+      resetCreateForm();
+      createTaskVisible.value = true;
+    },
   },
 ]);
 
@@ -158,45 +428,42 @@ const columns = [
     title: '执行方式',
     key: 'triggerMode',
     width: 120,
-    render: (_h: any, { row }: { row: WithdrawalTask }) =>
-      h('div', [
-        h(
-          Tag,
-          { color: row.triggerMode === 'daily' ? 'purple' : 'blue' },
-          {
-            default: () =>
-              row.triggerMode === 'daily' ? '每天定时' : '手动执行',
-          },
-        ),
-        row.scheduleTime
-          ? h('div', { class: 'mt-1 text-xs text-gray-400' }, row.scheduleTime)
-          : null,
-      ]),
+    render: (_h: any, { row }: { row: WithdrawalTask }) => (
+      <div>
+        <Tag color={row.triggerMode === 'daily' ? 'purple' : 'blue'}>
+          {row.triggerMode === 'daily' ? '定时触发' : '立即触发'}
+        </Tag>
+        {row.scheduleTime ? (
+          <div class="mt-1 text-xs text-gray-400">{formatScheduleText(row)}</div>
+        ) : null}
+      </div>
+    ),
   },
   {
     title: '门店',
     key: 'stores',
     width: 220,
-    render: (_h: any, { row }: { row: WithdrawalTask }) =>
-      h('div', [
-        h('div', { class: 'font-medium' }, showStoreNames(row)),
-        h(
-          'div',
-          { class: 'text-xs text-gray-400' },
-          `共 ${row.storeCount} 家门店`,
-        ),
-      ]),
+    render: (_h: any, { row }: { row: WithdrawalTask }) => (
+      <div>
+        <div class="font-medium">{showStoreNames(row)}</div>
+        <div class="text-xs text-gray-400">共 {row.storeCount} 家门店</div>
+      </div>
+    ),
   },
   {
     title: '状态',
     key: 'status',
-    width: 120,
-    render: (_h: any, { row }: { row: WithdrawalTask }) =>
-      h(
-        Tag,
-        { color: statusTag(row.status).color },
-        { default: () => statusTag(row.status).text },
-      ),
+    width: 220,
+    render: (_h: any, { row }: { row: WithdrawalTask }) => (
+      <div>
+        <Tag color={statusTag(row.status).color}>
+          {statusTag(row.status).text}
+        </Tag>
+        <div class="mt-1 text-xs text-gray-400 leading-5">
+          {statusTag(row.status).description}
+        </div>
+      </div>
+    ),
   },
   {
     title: '下次执行',
@@ -218,12 +485,13 @@ const columns = [
     title: '结果统计',
     key: 'counts',
     width: 140,
-    render: (_h: any, { row }: { row: WithdrawalTask }) =>
-      h('div', [
-        h('span', { class: 'text-green-600' }, `${row.successCount}`),
-        h('span', { class: 'mx-1 text-gray-300' }, '/'),
-        h('span', { class: 'text-red-500' }, `${row.failedCount}`),
-      ]),
+    render: (_h: any, { row }: { row: WithdrawalTask }) => (
+      <div>
+        <span class="text-green-600">{row.successCount}</span>
+        <span class="mx-1 text-gray-300">/</span>
+        <span class="text-red-500">{row.failedCount}</span>
+      </div>
+    ),
   },
   { title: '摘要', dataIndex: 'summary', key: 'summary', ellipsis: true },
   {
@@ -231,97 +499,80 @@ const columns = [
     key: 'actions',
     width: 320,
     fixed: 'right',
-    render: (_h: any, { row }: { row: WithdrawalTask }) =>
-      h(
-        Space,
-        { wrap: true },
-        {
-          default: () => [
-            h(
-              Button,
-              {
-                type: 'link',
-                size: 'small',
-                onClick: () => openDetail(row.taskId),
-              },
-              { default: () => '详情' },
-            ),
-            h(
-              Button,
-              {
-                type: 'link',
-                size: 'small',
-                loading: isActionLoading(row.taskId, 'run'),
-                disabled: row.status === 'running',
-                onClick: () => handleRun(row),
-              },
-              {
-                default: () =>
-                  row.triggerMode === 'daily' ? '立即执行' : '重新执行',
-              },
-            ),
-            row.failedCount > 0
-              ? h(
-                  Button,
-                  {
-                    type: 'link',
-                    size: 'small',
-                    loading: isActionLoading(row.taskId, 'retry'),
-                    onClick: () => handleRetry(row),
-                  },
-                  { default: () => '重试失败门店' },
-                )
-              : null,
-            row.triggerMode === 'daily' && row.status !== 'paused'
-              ? h(
-                  Button,
-                  {
-                    type: 'link',
-                    size: 'small',
-                    loading: isActionLoading(row.taskId, 'pause'),
-                    disabled: row.status === 'running',
-                    onClick: () => handlePause(row),
-                  },
-                  { default: () => '暂停' },
-                )
-              : null,
-            row.triggerMode === 'daily' && row.status === 'paused'
-              ? h(
-                  Button,
-                  {
-                    type: 'link',
-                    size: 'small',
-                    loading: isActionLoading(row.taskId, 'resume'),
-                    onClick: () => handleResume(row),
-                  },
-                  { default: () => '恢复' },
-                )
-              : null,
-            h(
-              Popconfirm,
-              {
-                title: '确认删除该任务？',
-                description: '删除后无法恢复。',
-                onConfirm: () => handleDelete(row),
-              },
-              {
-                default: () =>
-                  h(
-                    Button,
-                    {
-                      type: 'link',
-                      size: 'small',
-                      danger: true,
-                      loading: isActionLoading(row.taskId, 'delete'),
-                      disabled: row.status === 'running',
-                    },
-                    { default: () => '删除' },
-                  ),
-              },
-            ),
-          ],
-        },
-      ),
+    render: (_h: any, { row }: { row: WithdrawalTask }) => (
+      <Space wrap>
+        <Button type="link" size="small" onClick={() => openDetail(row.taskId)}>
+          详情
+        </Button>
+        {canEditTask(row) ? (
+          <Button
+            type="link"
+            size="small"
+            onClick={() => openEditModal(row)}
+          >
+            编辑
+          </Button>
+        ) : null}
+        <Button
+          type="link"
+          size="small"
+          loading={isActionLoading(row.taskId, 'run')}
+          disabled={!canRunTask(row)}
+          onClick={() => handleRun(row)}
+        >
+          {row.lastRunAt
+            ? row.triggerMode === 'daily'
+              ? '立即执行'
+              : '重新执行'
+            : '立即执行'}
+        </Button>
+        {canRetryTask(row) ? (
+          <Button
+            type="link"
+            size="small"
+            loading={isActionLoading(row.taskId, 'retry')}
+            onClick={() => handleRetry(row)}
+          >
+            重试失败门店
+          </Button>
+        ) : null}
+        {canPauseTask(row) ? (
+          <Button
+            type="link"
+            size="small"
+            loading={isActionLoading(row.taskId, 'pause')}
+            onClick={() => handlePause(row)}
+          >
+            暂停
+          </Button>
+        ) : null}
+        {canResumeTask(row) ? (
+          <Button
+            type="link"
+            size="small"
+            loading={isActionLoading(row.taskId, 'resume')}
+            onClick={() => handleResume(row)}
+          >
+            恢复
+          </Button>
+        ) : null}
+        <Popconfirm
+          title="确认删除该任务？"
+          description="删除后无法恢复。"
+          onConfirm={() => handleDelete(row)}
+        >
+          <Button
+            type="link"
+            size="small"
+            danger
+            loading={isActionLoading(row.taskId, 'delete')}
+            disabled={!canDeleteTask(row)}
+          >
+            删除
+          </Button>
+        </Popconfirm>
+      </Space>
+    ),
   },
 ];
 
@@ -333,12 +584,27 @@ const detailResultColumns = [
   { title: '结果说明', dataIndex: 'message', key: 'message' },
 ];
 
+const historyColumns = [
+  { title: '执行批次', dataIndex: 'historyId', key: 'historyId', width: 170 },
+  { title: '触发来源', key: 'triggerReason', width: 110 },
+  { title: '开始时间', key: 'startedAt', width: 180 },
+  { title: '完成时间', key: 'finishedAt', width: 180 },
+  { title: '结果', key: 'status', width: 100 },
+  { title: '统计', key: 'counts', width: 110 },
+  { title: '摘要', dataIndex: 'summary', key: 'summary' },
+];
+
 async function fetchStores() {
   const list = await getStoreList({ page: 1, pageSize: 500 });
-  storeOptions.value = list.map((item) => ({
-    label: item.storeName || item.storeId,
-    value: item.storeId,
-  }));
+  storeOptions.value = list.map((item) => {
+    const display = formatStoreOptionLabel(item.storeName || item.storeId);
+    return {
+      alias: display.alias,
+      fullLabel: display.fullLabel,
+      label: display.label,
+      value: item.storeId,
+    };
+  });
 }
 
 async function serveMethods(params: any) {
@@ -367,61 +633,116 @@ async function serveMethods(params: any) {
 
 
 function resetCreateForm() {
-  selectedStoreIds.value = [];
-  triggerMode.value = 'manual';
-  scheduleTime.value = undefined;
+  editingTaskId.value = undefined;
+  createFormModel.value = {
+    scheduleFrequency: 'daily',
+    scheduleTime: '06:00',
+    scheduleWeekday: 1,
+    storeIds: [],
+    triggerMode: 'manual',
+  };
+  createFormRef.value?.resetModel?.();
 }
 
 
 function closeCreateTaskModal() {
   createTaskVisible.value = false;
+  resetCreateForm();
 }
 
-function handleTriggerModeChange(value: 'daily' | 'manual') {
-  if (value !== 'daily') {
-    scheduleTime.value = undefined;
-  }
-}
+watch(
+  () => createFormModel.value.triggerMode,
+  (value) => {
+    if (value !== 'daily') {
+      createFormModel.value = {
+        ...createFormModel.value,
+        scheduleFrequency: 'daily',
+        scheduleTime: '06:00',
+        scheduleWeekday: 1,
+      };
+    }
+  },
+);
+
+watch(
+  () => createFormModel.value.scheduleFrequency,
+  (value) => {
+    if (value !== 'weekly') {
+      createFormModel.value = {
+        ...createFormModel.value,
+        scheduleWeekday: 1,
+      };
+    }
+  },
+);
 
 async function handleCreateTask() {
-  if (selectedStoreIds.value.length === 0) {
-    message.warning('请先选择门店');
-    return;
-  }
-  if (triggerMode.value === 'daily' && !scheduleTime.value) {
-    message.warning('请选择每日执行时间');
+  const valid = await createFormRef.value?.validate?.();
+  if (valid === false) {
+    message.warning('请检查创建表单');
     return;
   }
 
   submitLoading.value = true;
   try {
+    const rawStoreIds = Array.isArray(createFormModel.value.storeIds)
+      ? [...toRaw(createFormModel.value.storeIds)]
+      : [];
     const storeNameMap = new Map(
       storeOptions.value.map((item) => [item.value, item.label]),
     );
     const payload: CreateWithdrawalTaskPayload = {
-      scheduleTime:
-        triggerMode.value === 'daily'
-          ? (scheduleTime.value ?? undefined)
+      scheduleFrequency:
+        createFormModel.value.triggerMode === 'daily'
+          ? `${createFormModel.value.scheduleFrequency}` as WithdrawalScheduleFrequency
           : undefined,
-      storeIds: selectedStoreIds.value,
-      storeNames: selectedStoreIds.value.map(
-        (storeId) => storeNameMap.get(storeId) || storeId,
+      scheduleTime:
+        createFormModel.value.triggerMode === 'daily'
+          ? (createFormModel.value.scheduleTime
+              ? String(createFormModel.value.scheduleTime)
+              : undefined)
+          : undefined,
+      scheduleWeekday:
+        createFormModel.value.triggerMode === 'daily' &&
+        createFormModel.value.scheduleFrequency === 'weekly'
+          ? Number(createFormModel.value.scheduleWeekday)
+          : undefined,
+      storeIds: rawStoreIds.map((storeId) => String(storeId)),
+      storeNames: rawStoreIds.map(
+        (storeId) =>
+          getStoreAlias(
+            storeOptions.value.find((item) => item.value === storeId)?.fullLabel ||
+            storeNameMap.get(storeId) ||
+            storeId,
+          ),
       ),
-      triggerMode: triggerMode.value,
+      triggerMode: createFormModel.value.triggerMode === 'daily' ? 'daily' : 'manual',
     };
 
-    const task = await createWithdrawalTask(payload);
-    message.success(
-      triggerMode.value === 'daily' ? '定时任务创建成功' : '任务创建成功',
-    );
-
-    if (triggerMode.value === 'manual') {
-      await handleRun(task, true);
+    if (editingTaskId.value) {
+      await updateWithdrawalTask({
+        taskId: editingTaskId.value,
+        scheduleFrequency: payload.scheduleFrequency,
+        scheduleTime: payload.scheduleTime,
+        scheduleWeekday: payload.scheduleWeekday,
+        storeIds: payload.storeIds,
+        storeNames: payload.storeNames,
+      });
+      message.success('任务已更新');
     } else {
-      tableRef.value?.search();
+      const task = await createWithdrawalTask(payload);
+      message.success(
+        createFormModel.value.triggerMode === 'daily'
+          ? '定时任务创建成功'
+          : '任务已创建，2 秒后开始执行',
+      );
+      if (createFormModel.value.triggerMode === 'manual') {
+        openLiveLog(task.taskId);
+      }
     }
+
     closeCreateTaskModal();
-    resetCreateForm();
+    tableRef.value?.search();
   } catch (error: any) {
     console.error(error);
     message.error(error.message || '创建任务失败');
@@ -430,9 +751,69 @@ async function handleCreateTask() {
   }
 }
 
+function openEditModal(task: WithdrawalTask) {
+  editingTaskId.value = task.taskId;
+  createFormModel.value = {
+    scheduleFrequency: task.scheduleFrequency || 'daily',
+    scheduleTime: task.scheduleTime || '06:00',
+    scheduleWeekday: task.scheduleWeekday ?? 1,
+    storeIds: [...task.storeIds],
+    triggerMode: task.triggerMode,
+  };
+  createTaskVisible.value = true;
+}
+
+async function fetchLiveLogs(taskId: string) {
+  liveLogLoading.value = true;
+  try {
+    const res = await getWithdrawalTaskLogs(taskId, 200);
+    const logs = Array.isArray(res.list) ? res.list : [];
+    liveLogs.value = liveLogSince.value
+      ? logs.filter((item) => {
+          const logTime = new Date(item.timestamp || '').getTime();
+          const sinceTime = new Date(liveLogSince.value).getTime();
+          if (Number.isNaN(logTime) || Number.isNaN(sinceTime)) {
+            return false;
+          }
+          return logTime >= sinceTime;
+        })
+      : logs;
+  } catch (error) {
+    console.error(error);
+  } finally {
+    liveLogLoading.value = false;
+  }
+}
+
+function closeLiveLog() {
+  liveLogVisible.value = false;
+  liveLogTaskId.value = '';
+  liveLogSince.value = '';
+  liveLogs.value = [];
+  if (liveLogTimer) {
+    clearInterval(liveLogTimer);
+    liveLogTimer = null;
+  }
+}
+
+function openLiveLog(taskId: string, since = new Date().toISOString()) {
+  liveLogTaskId.value = taskId;
+  liveLogSince.value = since;
+  liveLogVisible.value = true;
+  void fetchLiveLogs(taskId);
+  if (liveLogTimer) {
+    clearInterval(liveLogTimer);
+  }
+  liveLogTimer = setInterval(() => {
+    if (!liveLogTaskId.value) return;
+    void fetchLiveLogs(liveLogTaskId.value);
+  }, 2000);
+}
+
 async function handleRun(task: WithdrawalTask, silent = false) {
   setActionLoading(task.taskId, 'run', true);
   try {
+    openLiveLog(task.taskId);
     await runWithdrawalTask(task.taskId);
     if (!silent) {
       message.success('任务执行完成');
@@ -452,6 +833,7 @@ async function handleRun(task: WithdrawalTask, silent = false) {
 async function handleRetry(task: WithdrawalTask) {
   setActionLoading(task.taskId, 'retry', true);
   try {
+    openLiveLog(task.taskId);
     await retryWithdrawalTask(task.taskId);
     message.success('失败门店已重新执行');
     tableRef.value?.search();
@@ -503,8 +885,13 @@ async function handleResume(task: WithdrawalTask) {
 async function handleDelete(task: WithdrawalTask) {
   setActionLoading(task.taskId, 'delete', true);
   try {
-    await deleteWithdrawalTask(task.taskId);
-    message.success('任务已删除');
+    const list = await deleteWithdrawalTask(task.taskId);
+    const runningCount = list.filter((item) => item.status === 'running').length;
+    message.success(
+      runningCount > 0
+        ? `任务已删除，当前仍有 ${runningCount} 个任务在执行`
+        : '任务已删除',
+    );
     tableRef.value?.search();
     if (currentDetail.value?.taskId === task.taskId) {
       detailVisible.value = false;
@@ -535,6 +922,23 @@ function resultColor(result: WithdrawalTaskResult['status']) {
   return result === 'success' ? 'success' : 'error';
 }
 
+function historyStatusColor(status: WithdrawalTask['status']) {
+  return statusTag(status).color;
+}
+
+function historyTriggerReasonText(reason: WithdrawalTaskHistory['triggerReason']) {
+  switch (reason) {
+    case 'retry':
+      return '失败重试';
+    case 'recover':
+      return '异常恢复';
+    case 'manual':
+      return '手动触发';
+    default:
+      return '自动触发';
+  }
+}
+
 function formatWithdrawAmount(value?: number) {
   return typeof value === 'number' ? `¥${value.toFixed(2)}` : '-';
 }
@@ -543,11 +947,22 @@ function asTaskResultRecord(record: Record<string, any>) {
   return record as WithdrawalTaskResult;
 }
 
+function asTaskHistoryRecord(record: Record<string, any>) {
+  return record as WithdrawalTaskHistory;
+}
+
 onMounted(async () => {
   try {
     await fetchStores();
   } catch (error) {
     console.error(error);
+  }
+});
+
+onUnmounted(() => {
+  if (liveLogTimer) {
+    clearInterval(liveLogTimer);
+    liveLogTimer = null;
   }
 });
 </script>
@@ -565,48 +980,47 @@ onMounted(async () => {
 
   <Modal
     v-model:open="createTaskVisible"
-    title="创建提现任务"
-    ok-text="确定创建"
+    :title="editingTaskId ? '编辑提现任务' : '创建提现任务'"
+    :ok-text="editingTaskId ? '保存修改' : '确定创建'"
     cancel-text="取消"
     :confirm-loading="submitLoading"
     @ok="handleCreateTask"
     @cancel="closeCreateTaskModal"
   >
-    <div class="space-y-4">
-      <div>
-        <div class="mb-2 text-sm text-gray-500">任务模式</div>
-        <Select
-          v-model:value="triggerMode"
-          :options="[
-            { label: '手动提现', value: 'manual' },
-            { label: '每天定时', value: 'daily' },
-          ]"
-          @change="handleTriggerModeChange"
-        />
-      </div>
+    <BaseForm
+      ref="createFormRef"
+      layout="vertical"
+      :form-items="createFormItems"
+      v-model:model="createFormModel"
+    />
+  </Modal>
 
-      <div>
-        <div class="mb-2 text-sm text-gray-500">选择门店</div>
-        <Select
-          v-model:value="selectedStoreIds"
-          mode="multiple"
-          allow-clear
-          show-search
-          :options="storeOptions"
-          option-filter-prop="label"
-          placeholder="请选择一个或多个门店"
-        />
+  <Modal
+    v-model:open="liveLogVisible"
+    title="执行日志"
+    width="900px"
+    :footer="null"
+    @cancel="closeLiveLog"
+  >
+    <div class="mb-3 flex items-center justify-between">
+      <div class="text-xs text-gray-500">
+        任务编号：{{ liveLogTaskId || '-' }}
       </div>
-
-      <div v-if="triggerMode === 'daily'">
-        <div class="mb-2 text-sm text-gray-500">每日执行时间</div>
-        <TimePicker
-          v-model:value="scheduleTime"
-          format="HH:mm"
-          value-format="HH:mm"
-          style="width: 100%"
-        />
-      </div>
+      <Button size="small" @click="liveLogTaskId && fetchLiveLogs(liveLogTaskId)">
+        刷新日志
+      </Button>
+    </div>
+    <div class="terminal-shell">
+      <Spin :spinning="liveLogLoading">
+        <div class="terminal-body">
+          <div v-if="liveLogs.length === 0" class="terminal-empty">
+            等待日志输出...
+          </div>
+          <pre v-else class="terminal-pre">{{
+            liveLogs.map(formatTerminalLine).join('\n')
+          }}</pre>
+        </div>
+      </Spin>
     </div>
   </Modal>
 
@@ -622,18 +1036,27 @@ onMounted(async () => {
           {{ currentDetail.taskId }}
         </Descriptions.Item>
         <Descriptions.Item label="执行方式">
-          {{ currentDetail.triggerMode === 'daily' ? '每天定时' : '手动执行' }}
+          {{ currentDetail.triggerMode === 'daily' ? '定时触发' : '立即触发' }}
         </Descriptions.Item>
         <Descriptions.Item label="状态">
-          <Tag :color="statusTag(currentDetail.status).color">
-            {{ statusTag(currentDetail.status).text }}
-          </Tag>
+          <Space direction="vertical" :size="4">
+            <Tag :color="statusTag(currentDetail.status).color">
+              {{ statusTag(currentDetail.status).text }}
+            </Tag>
+            <span class="text-xs text-gray-400">
+              {{ statusTag(currentDetail.status).description }}
+            </span>
+          </Space>
         </Descriptions.Item>
         <Descriptions.Item label="门店数">
           {{ currentDetail.storeCount }}
         </Descriptions.Item>
         <Descriptions.Item label="调度时间">
-          {{ currentDetail.scheduleTime || '-' }}
+          {{
+            currentDetail.triggerMode === 'daily'
+              ? formatScheduleText(currentDetail)
+              : '-'
+          }}
         </Descriptions.Item>
         <Descriptions.Item label="下次执行">
           {{ formatDateTime(currentDetail.nextRunAt) }}
@@ -654,7 +1077,11 @@ onMounted(async () => {
           {{ currentDetail.summary || '-' }}
         </Descriptions.Item>
         <Descriptions.Item label="门店列表" :span="2">
-          {{ currentDetail.storeNames.join('、') }}
+          {{
+            currentDetail.storeNames
+              .map((item) => `${getStoreAlias(item)} (${normalizeStoreName(item)})`)
+              .join('、')
+          }}
         </Descriptions.Item>
       </Descriptions>
 
@@ -688,7 +1115,110 @@ onMounted(async () => {
           </template>
         </template>
       </Table>
+
+      <div class="mt-4 mb-2 text-sm font-medium text-gray-700">历史执行记录</div>
+      <Table
+        :columns="historyColumns"
+        :data-source="currentDetail.histories || []"
+        :pagination="false"
+        size="small"
+        :row-key="
+          (record: WithdrawalTaskHistory) =>
+            `${record.historyId}`
+        "
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'triggerReason'">
+            {{ historyTriggerReasonText(asTaskHistoryRecord(record).triggerReason) }}
+          </template>
+          <template v-else-if="column.key === 'startedAt'">
+            {{ formatDateTime(asTaskHistoryRecord(record).startedAt) }}
+          </template>
+          <template v-else-if="column.key === 'finishedAt'">
+            {{ formatDateTime(asTaskHistoryRecord(record).finishedAt) }}
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <Tag :color="historyStatusColor(asTaskHistoryRecord(record).status)">
+              {{ statusTag(asTaskHistoryRecord(record).status).text }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'counts'">
+            <span class="text-green-600">
+              {{ asTaskHistoryRecord(record).successCount }}
+            </span>
+            <span class="mx-1 text-gray-300">/</span>
+            <span class="text-red-500">
+              {{ asTaskHistoryRecord(record).failedCount }}
+            </span>
+          </template>
+        </template>
+
+        <template #expandedRowRender="{ record }">
+          <Table
+            :columns="detailResultColumns"
+            :data-source="asTaskHistoryRecord(record).results"
+            :pagination="false"
+            size="small"
+            :row-key="
+              (item: WithdrawalTaskResult) =>
+                `${item.storeId}-${item.executedAt}-${asTaskHistoryRecord(record).historyId}`
+            "
+          >
+            <template #bodyCell="{ column: childColumn, record: childRecord }">
+              <template v-if="childColumn.key === 'status'">
+                <Tag :color="resultColor(asTaskResultRecord(childRecord).status)">
+                  {{
+                    asTaskResultRecord(childRecord).status === 'success'
+                      ? '成功'
+                      : '失败'
+                  }}
+                </Tag>
+              </template>
+              <template v-else-if="childColumn.key === 'withdrawAmount'">
+                {{
+                  formatWithdrawAmount(asTaskResultRecord(childRecord).withdrawAmount)
+                }}
+              </template>
+              <template v-else-if="childColumn.key === 'executedAt'">
+                {{ formatDateTime(asTaskResultRecord(childRecord).executedAt) }}
+              </template>
+            </template>
+          </Table>
+        </template>
+      </Table>
     </template>
     <Empty v-else description="暂无详情" />
   </Drawer>
 </template>
+
+<style scoped>
+.terminal-shell {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  background: #0b1220;
+  overflow: hidden;
+}
+
+.terminal-body {
+  min-height: 420px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 16px;
+}
+
+.terminal-pre {
+  margin: 0;
+  color: #d1fae5;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.terminal-empty {
+  color: #94a3b8;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+}
+</style>

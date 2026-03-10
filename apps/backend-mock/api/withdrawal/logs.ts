@@ -14,6 +14,8 @@ function parseLogLine(line: string) {
   try {
     const d = JSON.parse(line);
     return {
+      sessionId: d.sessionId || '',
+      taskId: d.taskId || '',
       timestamp: d.timestamp || '',
       level: (d.level || 'info').toLowerCase(),
       message: d.message || '',
@@ -44,6 +46,7 @@ export default defineEventHandler((event) => {
   const query = getQuery(event);
   const file = query.file as string;
   const level = query.level as string;
+  const taskId = query.taskId as string;
   const limit = Math.min(Number(query.limit) || 500, 2000);
 
   if (!existsSync(LOGS_DIR)) {
@@ -55,7 +58,7 @@ export default defineEventHandler((event) => {
     const allFiles = readdirSync(LOGS_DIR).filter(
       (f) =>
         (f.startsWith('withdrawal_') && f.endsWith('.log')) ||
-        (f.startsWith('app_') && f.endsWith('.json')),
+        (f.startsWith('app_') && f.endsWith('.jsonl')),
     );
     const logFiles = allFiles.sort().reverse();
 
@@ -82,6 +85,9 @@ export default defineEventHandler((event) => {
 
     if (level) {
       entries = entries.filter((e) => e.level === level);
+    }
+    if (taskId) {
+      entries = entries.filter((e: any) => e.taskId === taskId);
     }
 
     entries.reverse();

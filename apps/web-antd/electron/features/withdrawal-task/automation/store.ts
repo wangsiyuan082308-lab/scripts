@@ -1,7 +1,7 @@
 import type { Frame, Locator, Page } from 'playwright';
 
 import type { ResolvedAutomationConfig } from './config';
-import { loadCoords, resolveStoreTargetName, saveCoords, type AutomationRuntimePaths } from './config';
+import { getStoreAlias, loadCoords, loadEvolutionConfig, normalizeStoreName, resolveStoreTargetName, saveCoords, saveEvolutionConfig, type AutomationRuntimePaths } from './config';
 import type { AutomationLogger } from './logger';
 import { writeMetric } from './logger';
 import { delay } from './browser';
@@ -34,9 +34,36 @@ function safeFileSegment(text: string) {
 }
 
 function isProbablyCurrentStoreText(text: string, targetStoreName: string) {
-  const normalized = normalizeText(text);
+  const normalized = normalizeComparableStoreText(text);
+  const normalizedTargetStoreName = normalizeComparableStoreText(targetStoreName);
   if (!normalized) return false;
-  return normalized === targetStoreName || normalized.includes(targetStoreName) || targetStoreName.includes(normalized);
+  return (
+    normalized === normalizedTargetStoreName ||
+    normalized.includes(normalizedTargetStoreName) ||
+    normalizedTargetStoreName.includes(normalized)
+  );
+}
+
+function normalizeComparableStoreText(text: string) {
+  return normalizeStoreName(normalizeText(text));
+}
+
+function getStoreSearchCandidates(text: string) {
+  const normalized = normalizeComparableStoreText(text);
+  const alias = normalizeComparableStoreText(getStoreAlias(normalized));
+  return Array.from(new Set([alias, normalized].filter(Boolean)));
+}
+
+function buildStoreNamePattern(text: string, exact = false) {
+  const normalized = normalizeComparableStoreText(text);
+  const escaped = escapeRegExp(normalized)
+    .replace(/\\\(/g, '[\\(（]')
+    .replace(/\\\)/g, '[\\)）]');
+  return exact ? new RegExp(`^\\s*${escaped}\\s*$`) : new RegExp(escaped);
+}
+
+function buildStoreNamePatterns(text: string, exact = false) {
+  return getStoreSearchCandidates(text).map((item) => buildStoreNamePattern(item, exact));
 }
 
 async function captureDebugSnapshot(
@@ -152,6 +179,26 @@ async function firstVisible(locators: Locator[], timeout = 1000) {
   return null;
 }
 
+async function pollVisibleLocator(
+  locators: Locator[],
+  totalTimeout = 1200,
+  intervalMs = 120,
+) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < totalTimeout) {
+    for (const locator of locators) {
+      try {
+        const target = locator.first();
+        if (await target.isVisible({ timeout: Math.min(intervalMs, 200) })) {
+          return target;
+        }
+      } catch {}
+    }
+    await delay(intervalMs);
+  }
+  return null;
+}
+
 async function firstVisibleInContexts(
   page: Page,
   factory: (ctx: Frame | Page) => Locator[],
@@ -164,13 +211,49 @@ async function firstVisibleInContexts(
   return null;
 }
 
+async function isLocatorDisabled(locator: Locator) {
+  try {
+    return await locator.evaluate((el) => {
+      const element = el as HTMLElement;
+      const disabledSelf =
+        element.hasAttribute('disabled') ||
+        element.getAttribute('aria-disabled') === 'true' ||
+        element.classList.contains('disabled') ||
+        element.classList.contains('is-disabled') ||
+        element.classList.contains('ant-btn-disabled');
+      if (disabledSelf) return true;
+
+      const clickableParent = element.closest(
+        'button, [role="button"], a, .ant-btn, .el-button, .next-btn',
+      ) as HTMLElement | null;
+      if (!clickableParent) return false;
+
+      return (
+        clickableParent.hasAttribute('disabled') ||
+        clickableParent.getAttribute('aria-disabled') === 'true' ||
+        clickableParent.classList.contains('disabled') ||
+        clickableParent.classList.contains('is-disabled') ||
+        clickableParent.classList.contains('ant-btn-disabled')
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function clickLocator(locator: Locator, timeout = 1000) {
+  if (await isLocatorDisabled(locator)) {
+    return false;
+  }
   try {
     await locator.click({ timeout });
     return true;
   } catch {
     try {
       await locator.scrollIntoViewIfNeeded();
+      if (await isLocatorDisabled(locator)) {
+        return false;
+      }
       await locator.click({ timeout, force: true });
       return true;
     } catch {
@@ -197,7 +280,108 @@ async function findDialogAction(page: Page, pattern: RegExp, timeout = 1500) {
     ctx.getByText(pattern),
   ]);
 
-  return firstVisible(dialogLocators, timeout);
+  return pollVisibleLocator(dialogLocators, timeout);
+}
+
+async function findStrictDialogButton(page: Page, pattern: RegExp, timeout = 1500) {
+  const dialogLocators = getContexts(page).flatMap((ctx) => [
+    ctx.locator('.ant-modal, .ant-modal-confirm, .el-dialog, .el-message-box, [role="dialog"]')
+      .locator('button, [role="button"], a, .ant-btn, .el-button, .next-btn')
+      .filter({ hasText: pattern }),
+    ctx.getByRole('button', { name: pattern }),
+    ctx.locator('button, [role="button"], a, .ant-btn, .el-button, .next-btn').filter({ hasText: pattern }),
+  ]);
+
+  return pollVisibleLocator(dialogLocators, timeout);
+}
+
+async function hasPasswordInput(page: Page, timeout = 1200) {
+  for (const ctx of getContexts(page)) {
+    const passwordInput = await pollVisibleLocator(
+      [
+        ctx.locator('input[type="password"]'),
+        ctx.getByPlaceholder(/支付密码|请输入密码/),
+      ],
+      timeout,
+      120,
+    );
+    if (passwordInput) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function collectDialogTexts(page: Page) {
+  const snapshots: string[] = [];
+  for (const ctx of getContexts(page)) {
+    try {
+      const texts = await ctx
+        .locator('.ant-modal, .ant-modal-confirm, .el-dialog, .el-message-box, [role="dialog"]')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .slice(0, 5),
+        );
+      if (texts.length > 0) {
+        snapshots.push(...texts);
+      }
+    } catch {}
+  }
+  return snapshots;
+}
+
+async function waitForEnabledActionButton(
+  ctx: Frame | Page,
+  pattern: RegExp,
+  timeout = 2500,
+) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    const candidates = [
+      ctx.getByRole('button', { name: pattern }),
+      ctx.locator('button, [role="button"], a, .ant-btn, .el-button, .next-btn').filter({
+        hasText: pattern,
+      }),
+      ctx.getByText(pattern),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        const target = candidate.first();
+        if (!(await target.isVisible({ timeout: 120 }))) continue;
+        if (await isLocatorDisabled(target)) continue;
+        return target;
+      } catch {}
+    }
+
+    await delay(120);
+  }
+
+  return null;
+}
+
+async function waitForWithdrawAmountReady(ctx: Frame | Page, timeout = 2500) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    try {
+      const amountInput = ctx.locator('input').first();
+      const value = await amountInput.inputValue().catch(() => '');
+      if (value && Number.parseFloat(value) > 0) {
+        return true;
+      }
+    } catch {}
+
+    const enabledSubmit = await waitForEnabledActionButton(ctx, /^提现$/, 180);
+    if (enabledSubmit) {
+      return true;
+    }
+
+    await delay(120);
+  }
+
+  return false;
 }
 
 async function maybeExpandFinanceMenu(page: Page) {
@@ -230,7 +414,20 @@ async function waitForWithdrawFlowPrompt(page: Page, timeout = 2500) {
     ctx.locator('input[type="password"]'),
     ctx.locator('.ant-modal, .ant-modal-confirm, .el-dialog, .el-message-box, [role="dialog"]'),
   ]);
-  return firstVisible(locators, timeout);
+  return pollVisibleLocator(locators, timeout);
+}
+
+async function waitForStoreDropdown(page: Page) {
+  const dropdown = await firstVisibleInContexts(
+    page,
+    (ctx) => [
+      ctx.locator('.ant-dropdown, .ant-select-dropdown, .el-dropdown-menu, [role="listbox"], ul[role="menu"]'),
+      ctx.locator('input[placeholder*="搜索"], input[placeholder*="门店"], input[placeholder*="店铺"]'),
+      ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item'),
+    ],
+    2500,
+  );
+  return !!dropdown;
 }
 
 async function openStoreSwitcher(
@@ -239,40 +436,76 @@ async function openStoreSwitcher(
   targetStoreName: string,
   logger: AutomationLogger,
 ) {
-  const trigger = await firstVisibleInContexts(
+  logger.info(`正在尝试切换到门店：${targetStoreName}`);
+
+  const triggerCandidates = [
+    '.account-switch',
+    '.shop-select',
+    '.store-select',
+    '.ant-dropdown-trigger',
+    '.el-dropdown-link',
+    '[class*="shop-select"]',
+    '[class*="store-select"]',
+    '[class*="account-switch"]',
+    'header .ant-select',
+    'header [class*="select"]',
+    '.anticon-down',
+    '.el-icon-arrow-down',
+  ];
+
+  for (const selector of triggerCandidates) {
+    const trigger = await firstVisibleInContexts(
+      page,
+      (ctx) => [ctx.locator(selector).first()],
+      700,
+    );
+    if (!trigger) continue;
+
+    logger.info(`尝试点击切换按钮：${selector}`);
+    if (!(await clickLocator(trigger, 1500))) {
+      continue;
+    }
+
+    await delay(800);
+    const dropdownVisible = await page.evaluate(() => {
+      const candidates = document.querySelectorAll(
+        '.ant-dropdown, .ant-select-dropdown, .el-dropdown-menu, [role="listbox"], ul[role="menu"], .account-switch-dropdown',
+      );
+      for (const element of candidates) {
+        const style = window.getComputedStyle(element);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          return true;
+        }
+      }
+      return false;
+    }).catch(() => false);
+
+    if (dropdownVisible) {
+      logger.info('下拉菜单已展开');
+      return;
+    }
+  }
+
+  const namedTrigger = await firstVisibleInContexts(
     page,
     (ctx) => [
       ctx.getByRole('button', { name: /门店|店铺|切换/ }),
       ctx.getByText(/门店|店铺|切换/),
-      ctx.locator('.account-switch, .shop-select, .store-select, .ant-dropdown-trigger, .el-dropdown-link').first(),
-      ctx.locator('[class*="shop-select"], [class*="store-select"], [class*="account-switch"]').first(),
-      ctx.locator('header .ant-select, header [class*="select"]').first(),
-      ctx.locator('.anticon-down, .el-icon-arrow-down').first(),
       ctx.locator('header, .topbar, .navbar').locator('span, div, a').filter({ hasText: /门店|店铺/ }).first(),
     ],
-    2000,
+    1200,
   );
 
-  if (!trigger) {
-    await captureDebugSnapshot(page, paths, targetStoreName, 'store_switcher_missing', logger);
-    throw new Error('未找到门店切换入口');
+  if (namedTrigger && (await clickLocator(namedTrigger, 1500))) {
+    await delay(800);
+    if (await waitForStoreDropdown(page)) {
+      logger.info('已通过文本入口展开门店切换面板');
+      return;
+    }
   }
 
-  if (!(await clickLocator(trigger, 2000))) {
-    await captureDebugSnapshot(page, paths, targetStoreName, 'store_switcher_click_failed', logger);
-    throw new Error('门店切换入口点击失败');
-  }
-
-  await firstVisibleInContexts(
-    page,
-    (ctx) => [
-      ctx.locator('.ant-dropdown, .ant-select-dropdown, .el-dropdown-menu, [role="listbox"], ul[role="menu"]'),
-      ctx.locator('input[placeholder*="搜索"], input[placeholder*="门店"], input[placeholder*="店铺"]'),
-      ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item'),
-    ],
-    3000,
-  ).catch(() => undefined);
-  logger.info('已展开门店切换面板');
+  await captureDebugSnapshot(page, paths, targetStoreName, 'store_switcher_missing', logger);
+  throw new Error('未找到可用的门店切换入口');
 }
 
 async function searchStore(
@@ -293,9 +526,10 @@ async function searchStore(
   );
 
   if (searchInput) {
+    const [alias, fullName] = getStoreSearchCandidates(targetStoreName);
     await searchInput.fill('');
-    await searchInput.fill(targetStoreName);
-    logger.info(`已输入门店搜索词：${targetStoreName}`);
+    await searchInput.fill(alias || fullName || targetStoreName);
+    logger.info(`已输入门店搜索词：${alias || fullName || targetStoreName}`);
     return;
   }
 
@@ -303,15 +537,40 @@ async function searchStore(
   await captureDebugSnapshot(page, paths, targetStoreName, 'store_search_input_missing', logger);
 }
 
+async function collectVisibleStoreOptions(page: Page) {
+  const snapshots: string[] = [];
+  for (const ctx of getContexts(page)) {
+    try {
+      const texts = await ctx
+        .locator('li, div[role="option"], .ant-dropdown-menu-item, .el-dropdown-menu__item')
+        .evaluateAll((nodes) =>
+          nodes
+            .map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .slice(0, 12),
+        );
+      if (texts.length > 0) {
+        snapshots.push(...texts);
+      }
+    } catch {}
+  }
+  return snapshots;
+}
+
 async function isStoreVisible(page: Page, targetStoreName: string) {
-  const escaped = escapeRegExp(targetStoreName);
+  const exactPatterns = buildStoreNamePatterns(targetStoreName, true);
+  const fuzzyPatterns = buildStoreNamePatterns(targetStoreName);
   const currentStore = await firstVisibleInContexts(
     page,
     (ctx) => [
-      ctx.getByText(new RegExp(`^\\s*${escaped}\\s*$`)),
-      ctx.getByText(new RegExp(escaped)),
-      ctx.locator('header, .account-switch, .shop-select, .store-select, .topbar, .navbar').filter({ hasText: targetStoreName }),
-      ctx.locator('[title], [aria-label]').filter({ hasText: targetStoreName }),
+      ...exactPatterns.map((pattern) => ctx.getByText(pattern)),
+      ...fuzzyPatterns.map((pattern) => ctx.getByText(pattern)),
+      ...fuzzyPatterns.map((pattern) =>
+        ctx.locator('header, .account-switch, .shop-select, .store-select, .topbar, .navbar').filter({ hasText: pattern }),
+      ),
+      ...fuzzyPatterns.map((pattern) =>
+        ctx.locator('[title], [aria-label]').filter({ hasText: pattern }),
+      ),
     ],
     1200,
   );
@@ -327,25 +586,35 @@ async function isStoreVisible(page: Page, targetStoreName: string) {
 }
 
 async function findStoreOption(page: Page, targetStoreName: string) {
-  const exactName = new RegExp(`^\\s*${escapeRegExp(targetStoreName)}\\s*$`);
-  const fuzzyName = new RegExp(escapeRegExp(targetStoreName));
+  const exactNames = buildStoreNamePatterns(targetStoreName, true);
+  const fuzzyNames = buildStoreNamePatterns(targetStoreName);
 
   return firstVisibleInContexts(
     page,
-    (ctx) => [
-      ctx.getByRole('option', { name: exactName }),
-      ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item').filter({
-        hasText: exactName,
-      }),
-      ctx.getByText(exactName),
-      ctx.locator('[title]').filter({ hasText: exactName }),
-      ctx.getByRole('option', { name: fuzzyName }),
-      ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item').filter({
-        hasText: fuzzyName,
-      }),
-      ctx.getByText(fuzzyName),
-      ctx.locator('[title], [aria-label]').filter({ hasText: fuzzyName }),
-    ],
+    (ctx) => {
+      const locators: Locator[] = [];
+      for (const exactName of exactNames) {
+        locators.push(
+          ctx.getByRole('option', { name: exactName }),
+          ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item').filter({
+            hasText: exactName,
+          }),
+          ctx.getByText(exactName),
+          ctx.locator('[title]').filter({ hasText: exactName }),
+        );
+      }
+      for (const fuzzyName of fuzzyNames) {
+        locators.push(
+          ctx.getByRole('option', { name: fuzzyName }),
+          ctx.locator('[role="option"], li, .ant-dropdown-menu-item, .el-dropdown-menu__item').filter({
+            hasText: fuzzyName,
+          }),
+          ctx.getByText(fuzzyName),
+          ctx.locator('[title], [aria-label]').filter({ hasText: fuzzyName }),
+        );
+      }
+      return locators;
+    },
     5000,
   );
 }
@@ -357,10 +626,17 @@ async function switchStore(
   logger: AutomationLogger,
 ) {
   await openStoreSwitcher(page, paths, targetStoreName, logger);
+  logger.info(`正在查找目标门店选项：${targetStoreName}`);
   await searchStore(page, targetStoreName, paths, logger);
 
   let option = await findStoreOption(page, targetStoreName);
   if (!option) {
+    const candidates = await collectVisibleStoreOptions(page);
+    if (candidates.length > 0) {
+      logger.info(`当前可见门店候选 ${candidates.length} 个：${candidates.join(' | ')}`);
+    } else {
+      logger.warn('当前未采集到可见的门店候选项');
+    }
     await delay(1200);
     option = await findStoreOption(page, targetStoreName);
   }
@@ -374,9 +650,10 @@ async function switchStore(
     await captureDebugSnapshot(page, paths, targetStoreName, 'store_option_click_failed', logger);
     throw new Error(`门店选项点击失败：${targetStoreName}`);
   }
+  logger.info(`找到目标门店选项，已点击切换：${targetStoreName}`);
 
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-  await delay(800);
+  await delay(1500);
 
   if (!(await isStoreVisible(page, targetStoreName))) {
     await captureDebugSnapshot(page, paths, targetStoreName, 'store_visible_check_uncertain', logger);
@@ -505,11 +782,18 @@ async function clickWithdrawButton(
     return storedPoint;
   }
 
-  const patterns = [/^提现$/, /立即提现/, /去提现/, /申请提现/, /发起提现/];
+  const evolution = await loadEvolutionConfig(paths);
+  const preferredText = normalizeText(evolution.actionHints?.withdrawEntryText || '');
+  const candidateTexts = Array.from(
+    new Set(
+      [preferredText, '提现', '立即提现', '去提现', '申请提现', '发起提现'].filter(Boolean),
+    ),
+  );
 
   for (const ctx of getContexts(page)) {
     const candidates: Locator[] = [];
-    for (const pattern of patterns) {
+    for (const textCandidate of candidateTexts) {
+      const pattern = new RegExp(`^${escapeRegExp(textCandidate)}$`);
       candidates.push(
         ctx.getByRole('button', { name: pattern }),
         ctx.getByText(pattern),
@@ -527,11 +811,19 @@ async function clickWithdrawButton(
         if (!text || text.includes('全部提现')) continue;
 
         const box = await button.boundingBox().catch(() => null);
+        logger.info(`正在点击提现入口：${text}`);
         if (!(await clickLocator(button, 2000))) continue;
 
         const prompt = await waitForWithdrawFlowPrompt(page, 2500);
         if (prompt) {
-          logger.info(`已点击提现按钮：${text}`);
+          if (text !== preferredText) {
+            evolution.actionHints = {
+              ...(evolution.actionHints || {}),
+              withdrawEntryText: text,
+            };
+            await saveEvolutionConfig(paths, evolution).catch(() => undefined);
+          }
+          logger.info(`提现入口点击成功，已进入后续确认流程：${text}`);
           return box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null;
         }
 
@@ -545,9 +837,18 @@ async function clickWithdrawButton(
 
 async function submitPasswordIfNeeded(
   page: Page,
+  paths: AutomationRuntimePaths,
   password: string | undefined,
   logger: AutomationLogger,
 ) {
+  const evolution = await loadEvolutionConfig(paths);
+  const preferredSubmitText = normalizeText(evolution.actionHints?.confirmSubmitText || '');
+  const submitTexts = Array.from(
+    new Set(
+      [preferredSubmitText, '提现', '确定', '确认', '提交', '完成'].filter(Boolean),
+    ),
+  );
+
   for (const ctx of getContexts(page)) {
     const passwordInput = await firstVisible(
       [
@@ -565,13 +866,32 @@ async function submitPasswordIfNeeded(
     }
 
     await passwordInput.fill(password);
-    await clickFirstVisible(
-      [
-        ctx.getByRole('button', { name: /确定|确认|提现|提交|完成/ }),
-        ctx.getByText(/确定|确认|提现|提交|完成/),
-      ],
-      2000,
-    );
+    let clickedText = '';
+    for (const submitText of submitTexts) {
+      const exactPattern = new RegExp(`^${escapeRegExp(submitText)}$`);
+      const clicked = await clickFirstVisible(
+        [
+          ctx.getByRole('button', { name: exactPattern }),
+          ctx.getByText(exactPattern),
+          ctx.locator('button, [role="button"], a, .ant-btn, .el-button, .next-btn').filter({
+            hasText: exactPattern,
+          }),
+        ],
+        800,
+      );
+      if (clicked) {
+        clickedText = submitText;
+        break;
+      }
+    }
+
+    if (clickedText && clickedText !== preferredSubmitText) {
+      evolution.actionHints = {
+        ...(evolution.actionHints || {}),
+        confirmSubmitText: clickedText,
+      };
+      await saveEvolutionConfig(paths, evolution).catch(() => undefined);
+    }
     logger.info('已提交支付密码');
     return true;
   }
@@ -597,25 +917,90 @@ async function waitForWithdrawalOutcome(page: Page, timeout = 5000) {
   return {};
 }
 
-async function confirmWithdrawal(page: Page, logger: AutomationLogger) {
-  const allButton = await findDialogAction(page, /全部提现/, 3000);
-  if (!allButton) {
+async function confirmWithdrawal(
+  page: Page,
+  paths: AutomationRuntimePaths,
+  password: string | undefined,
+  logger: AutomationLogger,
+) {
+  logger.info('正在处理提现金额弹窗');
+
+  for (const ctx of getContexts(page)) {
+    const allWithdrawBtn = await pollVisibleLocator(
+      [
+        ctx.getByText(/^全部提现$/),
+        ctx.locator('button, [role="button"], a, .ant-btn, .el-button, .next-btn').filter({
+          hasText: /^全部提现$/,
+        }),
+      ],
+      1800,
+      120,
+    );
+
+    if (!allWithdrawBtn) {
+      continue;
+    }
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      logger.info(`已找到“全部提现”入口，准备回填金额（第 ${attempt} 次）`);
+      if (!(await clickLocator(allWithdrawBtn, 2000))) {
+        logger.warn(`“全部提现”入口点击失败（第 ${attempt} 次）`);
+        await delay(400);
+        continue;
+      }
+
+      logger.info(`“全部提现”入口点击成功，等待金额回填完成（第 ${attempt} 次）`);
+      if (!(await waitForWithdrawAmountReady(ctx, 2500))) {
+        logger.warn(`点击“全部提现”后金额未成功回填（第 ${attempt} 次）`);
+        await delay(500);
+        continue;
+      }
+
+      logger.info(`提现金额已回填，准备点击底部“提现”按钮（第 ${attempt} 次）`);
+      const submitButton = await waitForEnabledActionButton(ctx, /^提现$/, 1500);
+      if (!submitButton) {
+        logger.warn(`未找到可点击的底部“提现”按钮（第 ${attempt} 次）`);
+        await delay(500);
+        continue;
+      }
+
+      if (!(await clickLocator(submitButton, 2000))) {
+        logger.warn(`底部“提现”按钮点击失败（第 ${attempt} 次）`);
+        await delay(500);
+        continue;
+      }
+
+      logger.info(`底部“提现”按钮已点击（第 ${attempt} 次）`);
+
+      const passwordReady = await hasPasswordInput(page, 1500);
+      if (!passwordReady) {
+        logger.warn(`点击底部“提现”后未进入密码输入流程（第 ${attempt} 次）`);
+        await delay(500);
+        continue;
+      }
+
+      const submitted = await submitPasswordIfNeeded(page, paths, password, logger);
+      if (!submitted) {
+        logger.warn(`未检测到密码输入框或密码提交流程未完成（第 ${attempt} 次）`);
+        await delay(500);
+        continue;
+      }
+
+      logger.info('已确认全部提现');
+      return true;
+    }
+
+    logger.warn('提现金额弹窗流程已重试 5 次，当前门店仍未完成确认');
     return false;
   }
 
-  if (!(await clickLocator(allButton, 3000))) {
-    return false;
+  const dialogTexts = await collectDialogTexts(page);
+  if (dialogTexts.length > 0) {
+    logger.warn(`未找到提现金额弹窗中的“全部提现”入口，当前弹窗内容：${dialogTexts.join(' | ')}`);
+  } else {
+    logger.warn('未找到提现金额弹窗中的“全部提现”入口，当前也未检测到明确弹窗内容');
   }
-
-  await delay(500);
-
-  const confirmButton = await findDialogAction(page, /确定|确认|提现|提交/, 2500);
-  if (confirmButton) {
-    await clickLocator(confirmButton, 2500);
-  }
-
-  logger.info('已确认全部提现');
-  return true;
+  return false;
 }
 
 async function persistCoordinateIfNeeded(
@@ -676,7 +1061,7 @@ export async function executeStoreWithdrawal(
 
   await persistCoordinateIfNeeded(targetStoreName, point, paths);
 
-  const confirmed = await confirmWithdrawal(page, storeLogger);
+  const confirmed = await confirmWithdrawal(page, paths, config.paymentPassword, storeLogger);
   if (!confirmed) {
     await captureDebugSnapshot(page, paths, targetStoreName, 'confirm_dialog_missing', storeLogger);
     return {
@@ -685,8 +1070,6 @@ export async function executeStoreWithdrawal(
       status: 'failed',
     };
   }
-
-  await submitPasswordIfNeeded(page, config.paymentPassword, storeLogger);
 
   const outcome = await waitForWithdrawalOutcome(page, 6000);
   if (outcome.blocked) {

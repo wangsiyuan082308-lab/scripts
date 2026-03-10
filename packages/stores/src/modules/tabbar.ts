@@ -50,12 +50,13 @@ interface TabbarState {
 }
 
 /**
- * @zh_CN 访问权限相关
+ * @zh_CN 标签栏 Store
+ * @description 管理多标签页的打开、关闭、排序、缓存和标题更新。
  */
 export const useTabbarStore = defineStore('core-tabbar', {
   actions: {
     /**
-     * Close tabs in bulk
+     * 按 key 批量关闭标签页，并同步更新缓存列表。
      */
     async _bulkCloseByKeys(keys: string[]) {
       const keySet = new Set(keys);
@@ -78,6 +79,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
     },
     /**
      * @zh_CN 跳转到默认标签页
+     * @description 默认跳转到当前标签列表中的第一个可用标签页。
      */
     async _goToDefaultTab(router: Router) {
       if (this.getTabs.length <= 0) {
@@ -105,6 +107,9 @@ export const useTabbarStore = defineStore('core-tabbar', {
     /**
      * @zh_CN 添加标签页
      * @param routeTab
+     * @description
+     * 为标签补齐唯一 key，并根据配置控制动态标签和总标签数量上限；
+     * 若标签已存在，则只更新参数和元信息而不重复插入。
      */
     addTab(routeTab: TabDefinition): TabDefinition {
       let tab = cloneTab(routeTab);
@@ -336,6 +341,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
 
     /**
      * 刷新标签页
+     * @description 支持刷新当前激活路由，或按路由名称定向刷新指定标签页。
      */
     async refresh(router: Router | string) {
       // 如果是Router路由，那么就根据当前路由刷新
@@ -384,6 +390,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
     /**
      * 设置固定标签页
      * @param tabs
+     * @description 初始化系统预设的固定标签页列表。
      */
     setAffixTabs(tabs: RouteRecordNormalized[]) {
       for (const tab of tabs) {
@@ -427,6 +434,9 @@ export const useTabbarStore = defineStore('core-tabbar', {
         await this.updateCacheTabs();
       }
     },
+    /**
+     * 更新时间戳，供依赖时间戳监听的场景触发刷新。
+     */
     setUpdateTime() {
       this.updateTime = Date.now();
     },
@@ -478,6 +488,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
     },
     /**
      * 根据当前打开的选项卡更新缓存
+     * @description 只缓存开启了 `keepAlive` 的页面及其命中的子路由名称。
      */
     async updateCacheTabs() {
       const cacheMap = new Set<string>();
@@ -501,6 +512,9 @@ export const useTabbarStore = defineStore('core-tabbar', {
     },
   },
   getters: {
+    /**
+     * 返回按固定顺序排序后的固定标签页。
+     */
     affixTabs(): TabDefinition[] {
       const affixTabs = this.tabs.filter((tab) => isAffixTab(tab));
 
@@ -510,15 +524,30 @@ export const useTabbarStore = defineStore('core-tabbar', {
         return orderA - orderB;
       });
     },
+    /**
+     * 获取当前参与 keep-alive 的标签名称列表。
+     */
     getCachedTabs(): string[] {
       return [...this.cachedTabs];
     },
+
+    /**
+     * 获取本次刷新中需要临时排除缓存的标签名称列表。
+     */
     getExcludeCachedTabs(): string[] {
       return [...this.excludeCachedTabs];
     },
+
+    /**
+     * 获取标签页右键菜单项列表。
+     */
     getMenuList(): string[] {
       return this.menuList;
     },
+
+    /**
+     * 获取最终展示顺序的标签列表：固定标签在前，普通标签在后。
+     */
     getTabs(): TabDefinition[] {
       const normalTabs = this.tabs.filter((tab) => !isAffixTab(tab));
       return [...this.affixTabs, ...normalTabs].filter(Boolean);
@@ -561,6 +590,7 @@ if (hot) {
 /**
  * @zh_CN 克隆路由,防止路由被修改
  * @param route
+ * @description 仅保留标签栏场景所需字段，避免直接修改原始路由对象。
  */
 function cloneTab(route: TabDefinition): TabDefinition {
   if (!route) {
@@ -594,6 +624,7 @@ function isAffixTab(tab: TabDefinition) {
 /**
  * @zh_CN 是否显示标签
  * @param tab
+ * @description 同时检查当前路由及其匹配链路上是否声明 `hideInTab`。
  */
 function isTabShown(tab: TabDefinition) {
   const matched = tab?.matched ?? [];
@@ -603,6 +634,7 @@ function isTabShown(tab: TabDefinition) {
 /**
  * 从route获取tab页的key
  * @param tab
+ * @description 优先使用 `pageKey`，其次根据 `fullPathKey` 决定使用 `fullPath` 或 `path`。
  */
 function getTabKey(tab: RouteLocationNormalized | RouteRecordNormalized) {
   const {
@@ -638,7 +670,7 @@ function getTabKeyFromTab(tab: TabDefinition): string {
 }
 
 /**
- * 比较两个tab是否相等
+ * 比较两个标签页是否指向同一个页面实例。
  * @param a
  * @param b
  */
@@ -646,6 +678,9 @@ function equalTab(a: TabDefinition, b: TabDefinition) {
   return getTabKeyFromTab(a) === getTabKeyFromTab(b);
 }
 
+/**
+ * 将路由记录转换为标签栏可消费的标签结构。
+ */
 function routeToTab(route: RouteRecordNormalized) {
   return {
     meta: route.meta,

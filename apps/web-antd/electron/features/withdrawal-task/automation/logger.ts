@@ -3,8 +3,14 @@ import * as path from 'node:path';
 
 import type { AutomationRuntimePaths } from './config';
 
+/**
+ * 自动化日志级别。
+ */
 export type LogLevel = 'DEBUG' | 'ERROR' | 'INFO' | 'WARN';
 
+/**
+ * 单条结构化日志记录。
+ */
 interface LogEntry {
   code?: string;
   level: LogLevel;
@@ -19,6 +25,9 @@ interface LogEntry {
   timestamp: string;
 }
 
+/**
+ * 自动化日志记录器接口。
+ */
 export interface AutomationLogger {
   child(store: string): AutomationLogger;
   debug(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
@@ -27,6 +36,9 @@ export interface AutomationLogger {
   warn(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
 }
 
+/**
+ * 生成本地日期字符串，用于日志文件名分片。
+ */
 function getLocalDateStr() {
   const now = new Date();
   const year = now.getFullYear();
@@ -35,6 +47,9 @@ function getLocalDateStr() {
   return `${year}${month}${day}`;
 }
 
+/**
+ * 创建结构化日志记录器，同时写入主日志和观测日志。
+ */
 export function createAutomationLogger(
   moduleName: string,
   paths: AutomationRuntimePaths,
@@ -81,6 +96,9 @@ export function createAutomationLogger(
   };
 }
 
+/**
+ * 记录指标事件，供后续分析会话表现与风控情况。
+ */
 export function writeMetric(
   paths: AutomationRuntimePaths,
   event: string,
@@ -93,6 +111,9 @@ export function writeMetric(
   );
 }
 
+/**
+ * 清理过期日志、指标和调试截图。
+ */
 export function cleanOldAutomationLogs(paths: AutomationRuntimePaths, days = 7) {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   for (const dir of [paths.logsDir, paths.metricsDir, paths.debugDir]) {

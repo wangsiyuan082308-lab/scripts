@@ -3,6 +3,9 @@ import { saveEvolutionConfig } from './config';
 import { delay } from './browser';
 import type { AutomationLogger } from './logger';
 
+/**
+ * 重试与退避参数。
+ */
 export interface RetryOptions {
   backoffFactor: number;
   baseDelayMs: number;
@@ -17,6 +20,9 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
   maxRetries: 3,
 };
 
+/**
+ * 当前风控强度等级。
+ */
 export enum RiskLevel {
   NORMAL = 0,
   LEVEL1 = 1,
@@ -24,6 +30,10 @@ export enum RiskLevel {
   LEVEL3 = 3,
 }
 
+/**
+ * 风控控制器。
+ * 负责根据连续阻断次数动态提升等待时间与是否继续执行。
+ */
 export class RiskController {
   private consecutiveBlocks = 0;
 
@@ -35,6 +45,9 @@ export class RiskController {
     private logger: AutomationLogger,
   ) {}
 
+  /**
+   * 返回当前风控等级对应的延时倍率。
+   */
   getDelayMultiplier() {
     switch (this.currentRiskLevel) {
       case RiskLevel.LEVEL1:
@@ -48,10 +61,16 @@ export class RiskController {
     }
   }
 
+  /**
+   * 获取当前风控等级。
+   */
   getLevel() {
     return this.currentRiskLevel;
   }
 
+  /**
+   * 根据单次执行结果更新风控状态，并同步演化配置。
+   */
   async update(result: 'blocked' | 'fail' | 'success') {
     if (result === 'success') {
       if (this.consecutiveBlocks > 0) {
@@ -85,10 +104,16 @@ export class RiskController {
     return this.currentRiskLevel;
   }
 
+  /**
+   * 判断当前风控等级下是否允许继续执行后续门店。
+   */
   canContinue() {
     return this.currentRiskLevel !== RiskLevel.LEVEL3;
   }
 
+  /**
+   * 在中等级风控下执行一次短暂退避，降低连续触发概率。
+   */
   async cooldownIfNeeded() {
     if (this.currentRiskLevel === RiskLevel.LEVEL2) {
       this.logger.warn('检测到连续风控，本次只做短暂退避，不进行长时间阻塞等待');
@@ -98,6 +123,9 @@ export class RiskController {
   }
 }
 
+/**
+ * 以指数退避方式执行重试。
+ */
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   label: string,
@@ -121,7 +149,8 @@ export async function retryWithBackoff<T>(
         opts.maxDelayMs,
       );
       const jittered = Math.round(delayMs * (0.8 + Math.random() * 0.4));
-      logger.warn(`[${label}] 第 ${attempt} 次失败，${jittered}ms 后重试`);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`[${label}] 第 ${attempt} 次失败：${message}，${jittered}ms 后重试`);
       await delay(jittered);
     }
   }

@@ -43,6 +43,16 @@ const searchFormItems = [
 const columns = [
   { dataIndex: 'storeId', title: '门店ID', width: 100 },
   { dataIndex: 'storeName', title: '门店名称', minWidth: 150 },
+  {
+    dataIndex: 'elemeWithdrawalPassword',
+    title: '饿了么提现密码',
+    width: 140,
+    render: (_h: any, ctx: { record?: Store; row?: Store }) => {
+      const row = ctx?.row || ctx?.record;
+      const hasPassword = !!`${row?.elemeWithdrawalPassword || row?.withdrawalPassword || ''}`.trim();
+      return hasPassword ? '已配置' : '未配置';
+    },
+  },
   { dataIndex: 'platform', title: '平台', width: 120 },
   { dataIndex: 'contact', title: '联系人', width: 100 },
   { dataIndex: 'address', title: '地址', minWidth: 150 },
@@ -177,6 +187,13 @@ const formItems = ref([
     child:{
       valueKey: 'phone',
       renderType:'input'
+    }
+  },
+  {
+    label: '饿了么提现密码',
+    child:{
+      valueKey: 'elemeWithdrawalPassword',
+      renderType:'password'
     }
   },
 ]);

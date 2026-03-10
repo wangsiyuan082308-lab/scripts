@@ -15,7 +15,10 @@ export interface InitStoreOptions {
 }
 
 /**
- * @zh_CN 初始化pinia
+ * @zh_CN 初始化 pinia
+ * @description
+ * 创建全局 Pinia 实例，并注册持久化插件。
+ * 开发环境直接使用 `localStorage`，生产环境通过 `secure-ls` 加密存储。
  */
 export async function initStores(app: App, options: InitStoreOptions) {
   const { createPersistedState } = await import('pinia-plugin-persistedstate');
@@ -48,6 +51,9 @@ export async function initStores(app: App, options: InitStoreOptions) {
   return pinia;
 }
 
+/**
+ * 重置当前 Pinia 实例中已注册的所有 Store。
+ */
 export function resetAllStores() {
   if (!pinia) {
     console.error('Pinia is not installed');

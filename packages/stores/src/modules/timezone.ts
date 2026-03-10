@@ -42,12 +42,17 @@ const getDefaultTimezoneHandler = (): TimezoneHandler => {
  * 自定义时区处理模块
  */
 let customTimezoneHandler: null | Partial<TimezoneHandler> = null;
+
+/**
+ * 注册业务侧自定义的时区读写实现。
+ */
 const setTimezoneHandler = (handler: Partial<TimezoneHandler>) => {
   customTimezoneHandler = handler;
 };
 
 /**
  * 获取时区处理模块
+ * @description 默认实现与业务自定义实现合并后返回，业务实现优先级更高。
  */
 const getTimezoneHandler = () => {
   return {
@@ -58,6 +63,7 @@ const getTimezoneHandler = () => {
 
 /**
  * timezone支持模块
+ * @description 负责初始化、切换和持久化当前应用时区。
  */
 const useTimezoneStore = defineStore(
   'core-timezone',

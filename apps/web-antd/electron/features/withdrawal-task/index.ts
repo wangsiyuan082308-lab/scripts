@@ -132,6 +132,7 @@ export class WithdrawalTaskFeature {
     return storeIds.map((storeId) => storeMap.get(storeId) || storeId);
   }
 
+
   private getRunningTasks(tasks: WithdrawalTask[]) {
     return tasks.filter((item) => item.status === 'running');
   }
@@ -366,6 +367,7 @@ export class WithdrawalTaskFeature {
       const triggerReason =
         options?.triggerReason ||
         (options?.storeIds?.length ? 'retry' : task.triggerMode === 'daily' ? 'auto' : 'manual');
+
 
       const runningTask: WithdrawalTask = {
         ...task,

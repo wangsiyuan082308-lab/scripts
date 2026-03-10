@@ -13,6 +13,10 @@ import { defineStore } from 'pinia';
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
+/**
+ * 认证 Store。
+ * 负责登录、登出、恢复用户信息以及同步权限相关状态。
+ */
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
   const userStore = useUserStore();
@@ -105,6 +109,10 @@ export const useAuthStore = defineStore('auth', () => {
     };
   }
 
+  /**
+   * 退出登录并清空所有 Store 状态。
+   * 默认会跳回登录页，并带上当前页面地址用于登录后回跳。
+   */
   async function logout(redirect: boolean = true) {
     try {
       await logoutApi();
@@ -125,6 +133,10 @@ export const useAuthStore = defineStore('auth', () => {
     });
   }
 
+  /**
+   * 获取当前用户信息。
+   * 优先读取本地 Store；若为空则通过接口恢复用户信息与权限码。
+   */
   async function fetchUserInfo() {
     let userInfo = userStore.userInfo;
     if (userInfo) {
@@ -159,6 +171,9 @@ export const useAuthStore = defineStore('auth', () => {
     return userInfo;
   }
 
+  /**
+   * 重置认证 Store 的瞬时状态。
+   */
   function $reset() {
     loginLoading.value = false;
   }

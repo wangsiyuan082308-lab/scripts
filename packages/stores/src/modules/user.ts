@@ -24,7 +24,7 @@ interface BasicUserInfo {
   username: string;
 }
 
-interface AccessState {
+interface UserState {
   /**
    * 用户信息
    */
@@ -36,10 +36,14 @@ interface AccessState {
 }
 
 /**
- * @zh_CN 用户信息相关
+ * @zh_CN 用户信息 Store
+ * @description 负责维护当前登录用户的基础信息及角色列表。
  */
 export const useUserStore = defineStore('core-user', {
   actions: {
+    /**
+     * 更新用户信息，并同步刷新角色列表。
+     */
     setUserInfo(userInfo: BasicUserInfo | null) {
       // 设置用户信息
       this.userInfo = userInfo;
@@ -47,11 +51,15 @@ export const useUserStore = defineStore('core-user', {
       const roles = userInfo?.roles ?? [];
       this.setUserRoles(roles);
     },
+
+    /**
+     * 单独更新用户角色列表。
+     */
     setUserRoles(roles: string[]) {
       this.userRoles = roles;
     },
   },
-  state: (): AccessState => ({
+  state: (): UserState => ({
     userInfo: null,
     userRoles: [],
   }),

@@ -1,4 +1,4 @@
-import { merchantStorage } from '../../../shared/storage';
+import { merchantStorage, storeStorage } from '../../../shared/storage';
 import type { WithdrawalExecutionResult, WithdrawalTask, WithdrawalTaskResult } from '../runner';
 
 import {
@@ -6,12 +6,16 @@ import {
   getAutomationRuntimePaths,
   loadEvolutionConfig,
   resolveAutomationConfig,
+  resolveStorePaymentPassword,
 } from './config';
 import { closeBrowserSession, ensureBrowserAlive, launchBrowserSession, navigateAndEnsureLogin } from './browser';
 import { createAutomationLogger, writeMetric, cleanOldAutomationLogs } from './logger';
-import { RiskController, retryWithBackoff } from './retry';
+import { RiskController } from './retry';
 import { executeStoreWithdrawal } from './store';
 
+/**
+ * 根据成功/失败数量生成本次执行摘要。
+ */
 function buildSummary(successCount: number, failedCount: number, total: number) {
   if (total === 0) return '暂无执行记录';
   if (successCount === total) return `全部 ${total} 家门店提现成功`;
@@ -19,12 +23,18 @@ function buildSummary(successCount: number, failedCount: number, total: number) 
   return `${successCount} 家成功，${failedCount} 家失败`;
 }
 
+/**
+ * 根据执行统计推导整体任务状态。
+ */
 function getStatusFromCounts(successCount: number, failedCount: number) {
   if (successCount > 0 && failedCount === 0) return 'success' as const;
   if (successCount > 0 && failedCount > 0) return 'partial_success' as const;
   return 'failed' as const;
 }
 
+/**
+ * 根据任务中的商户 ID 解析商户配置。
+ */
 async function resolveMerchant(task: WithdrawalTask) {
   if (!task.merchantId) {
     return undefined;
@@ -33,12 +43,28 @@ async function resolveMerchant(task: WithdrawalTask) {
   return merchants.find((item) => item.id === task.merchantId);
 }
 
+
+async function resolveStoreMap(task: WithdrawalTask) {
+  const stores = await storeStorage.get({ role: 'super_admin' });
+  const scopedStores = task.merchantId
+    ? stores.filter((item) => item.merchantId === task.merchantId)
+    : stores;
+  return new Map(
+    scopedStores.map((item) => [String(item.storeId || item.id || '').trim(), item]),
+  );
+}
+
+/**
+ * 执行一整次提现会话。
+ * 包括运行时初始化、浏览器登录校验、逐门店提现、风控退避与结果汇总。
+ */
 export async function executeWithdrawalSession(
   task: WithdrawalTask,
 ): Promise<WithdrawalExecutionResult> {
   const startedAt = Date.now();
   const sessionId = `${task.taskId}_${startedAt}`;
   const merchant = await resolveMerchant(task);
+  const storeMap = await resolveStoreMap(task);
   const paths = getAutomationRuntimePaths(task.merchantId);
   await ensureAutomationRuntime(paths);
   cleanOldAutomationLogs(paths);
@@ -79,23 +105,32 @@ export async function executeWithdrawalSession(
 
       try {
         await ensureBrowserAlive(page, config, bootstrapLogger);
-        const storeResult = await retryWithBackoff(
-          () =>
-            executeStoreWithdrawal(page, {
-              config,
-              logger: bootstrapLogger.child(storeName),
-              paths,
-              storeId,
-              storeName,
-            }),
+        const storeRecord = storeMap.get(storeId);
+        const paymentPassword = resolveStorePaymentPassword(storeRecord);
+
+        if (!paymentPassword) {
+          bootstrapLogger.child(storeName).warn('当前门店未配置饿了么提现密码，已跳过本次提现');
+          results.push({
+            executedAt: new Date().toISOString(),
+            message: '当前门店未配置饿了么提现密码，已跳过本次提现',
+            status: 'failed',
+            storeId,
+            storeName,
+          });
+          continue;
+        }
+
+        const storeConfig = {
+          ...config,
+          paymentPassword,
+        };
+        const storeResult = await executeStoreWithdrawal(page, {
+          config: storeConfig,
+          logger: bootstrapLogger.child(storeName),
+          paths,
+          storeId,
           storeName,
-          bootstrapLogger.child(storeName),
-          {
-            baseDelayMs: Math.round(config.baseWaitTime * risk.getDelayMultiplier()),
-            maxDelayMs: config.maxWaitTime,
-            maxRetries: 3,
-          },
-        );
+        });
 
         await risk.update(storeResult.blocked ? 'blocked' : storeResult.status === 'success' ? 'success' : 'fail');
         results.push({

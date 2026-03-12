@@ -71,12 +71,17 @@ async function createWindow() {
 
   // 检查更新
   if (!VITE_DEV_SERVER_URL) {
-    autoUpdater.checkForUpdatesAndNotify();
+    // 延迟 3 秒检查更新，避免阻塞启动
+    setTimeout(() => {
+      autoUpdater.logger = console;
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 3000);
   }
 }
 
 // 自动更新事件监听
 autoUpdater.on('update-available', (info) => {
+  console.log('[AutoUpdater] Update available:', info.version);
   win?.webContents.send('update-available', {
     version: info.version,
     releaseDate: info.releaseDate,
@@ -84,6 +89,7 @@ autoUpdater.on('update-available', (info) => {
 });
 
 autoUpdater.on('download-progress', (progress) => {
+  console.log(`[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}%`);
   win?.webContents.send('update-download-progress', {
     percent: progress.percent,
     bytesPerSecond: progress.bytesPerSecond,
@@ -93,6 +99,7 @@ autoUpdater.on('download-progress', (progress) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
+  console.log('[AutoUpdater] Update downloaded:', info.version);
   win?.webContents.send('update-downloaded', {
     version: info.version,
   });

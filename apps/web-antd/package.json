@@ -10,6 +10,7 @@
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
   "build": {
     "appId": "com.oby.merchant-tools",
+    "productName": "前端小工具",
     "directories": {
       "output": "release/${version}"
     },
@@ -49,7 +50,6 @@
       "oneClick": false,
       "perMachine": false
     },
-    "productName": "前端小工具",
     "win": {
       "artifactName": "${productName}-${version}-setup.${ext}",
       "target": [

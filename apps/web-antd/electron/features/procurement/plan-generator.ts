@@ -121,14 +121,15 @@ export const ProcurementPlanGenerator = {
       const name = getVal('商品名称', ['商品名称', '名称']);
       const price = getVal('采购单价(元)', ['采购单价', '单价']);
       const supplierCode = getVal('供应商编码', ['供应商']);
-      // 补货单位输入中没有，留空
+      const unit = getVal('采购单位', ['采购单位', '单位']);
 
       // 简单验证：必须有 SKU 和 数量
       if (!skuCode) return;
 
-      // 过滤购买状态为成功的
+      // 检查是否有"购买状态"字段（旧格式需要过滤）
       const status = getVal('购买状态', ['购买状态']);
-      if (status !== '成功') return;
+      // 如果存在"购买状态"字段，则只保留成功的记录
+      if (status !== undefined && status !== '成功') return;
 
       if (type === 'aoxiang') {
         wsOutput.addRow({
@@ -136,7 +137,7 @@ export const ProcurementPlanGenerator = {
           col2: skuCode,
           col3: quantity || 0,
           col4: supplierCode,
-          col5: '',
+          col5: unit || '',
           col6: price,
         });
       } else {

@@ -114,8 +114,9 @@ const processExcelFile = async (file: File, initialStock: number) => {
       <div class="mb-4 text-gray-500">
         <p>功能说明：</p>
         <ul class="list-inside list-disc">
-          <li>上传Excel文件，自动提取“条码”、“活动价上限”、“是否组包”、“组包件数”列。</li>
-          <li>自动生成符合饿了么爆好价活动报名要求的Excel文件。</li>
+          <li>上传Excel文件，自动提取"条码"、"活动价上限"、"是否组包"、"组包件数"列。</li>
+          <li>自动查询商品总表的采购价，过滤采购价 > 活动价的商品。</li>
+          <li>生成两个Sheet：报名商品 + 排除商品（含排除原因）。</li>
         </ul>
       </div>
       <Form />

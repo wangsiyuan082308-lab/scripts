@@ -208,7 +208,38 @@ export class ElemeBaohaojiaAnalyzer {
       excludedRows.forEach(row => wsExcluded.addRow(row));
     }
 
+    // Sheet 3: 采购价为0警告（如有）
+    const zeroCostRows = processedRows.filter(r => r.procurementCost === 0);
+    if (zeroCostRows.length > 0) {
+      const wsZeroCost = wbOutput.addWorksheet('⚠️采购价为0');
+      wsZeroCost.columns = [
+        { header: '条码', key: 'upc', width: 20 },
+        { header: '商品名称', key: 'productName', width: 40 },
+        { header: '活动价', key: 'price', width: 12 },
+        { header: '采购价', key: 'procurementCost', width: 12 },
+        { header: '风险', key: 'risk', width: 20 },
+      ];
+      zeroCostRows.forEach(row => {
+        wsZeroCost.addRow({
+          ...row,
+          risk: '采购价未设置，无法判断利润',
+        });
+      });
+      
+      // 设置警告色
+      wsZeroCost.getRow(1).eachCell(cell => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFCC00' },
+        };
+      });
+    }
+
     const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
+    
+    // 统计采购价为0的商品
+    const zeroCostCount = processedRows.filter(r => r.procurementCost === 0).length;
     
     // 生成摘要
     const total = processedRows.length + excludedRows.length;
@@ -218,8 +249,10 @@ export class ElemeBaohaojiaAnalyzer {
 ❌ 排除: ${excludedRows.length} (采购价 > 活动价)
 🔍 未找到: ${notFoundRows.length} (商品总表中无记录)
 ⚠️ 无活动价: ${noPriceRows.length}
+⚠️ 采购价为0: ${zeroCostCount} (需核实)
 
-${excludedRows.length > 0 ? '详情请查看"排除商品"Sheet' : ''}`;
+${excludedRows.length > 0 ? '详情请查看"排除商品"Sheet' : ''}
+${zeroCostCount > 0 ? '⚠️ 采购价为0的商品请查看"⚠️采购价为0"Sheet' : ''}`;
 
     return { buffer: buffer as Buffer, summary };
   }

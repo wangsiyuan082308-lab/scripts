@@ -135,31 +135,29 @@ export const ProcurementAnalyzer = {
         const comparisonValue =
           normalizedMode === 'month' ? ref30Days : ref7Days;
 
-        // 如果建议补货量大于参考量（周销7天或月销30天），就减少一半
-        if (originalQty > comparisonValue) {
-          const result = purchaseQty / 2;
-          finalQty = result < 1 ? 1 : Math.floor(result);
-          bgColor = 'FFFF0000'; // Red
-          console.log(
-            `[Halved] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Comp: ${comparisonValue}, Final: ${finalQty}`,
-          );
-        } else {
-          finalQty = purchaseQty;
-        }
-
         // 检查起订量逻辑
-        // 如果起订量大于建议补货量，则强制使用起订量
         const minOrderQtyKey = Object.keys(refRow).find(
           (k) => k.includes('起订量') && k.includes('采购单位'),
         );
         let minOrderQty = minOrderQtyKey ? Number(refRow[minOrderQtyKey]) : 0;
         if (isNaN(minOrderQty)) minOrderQty = 0;
-        // 如果起订量大于建议补货量，要么就是起订量
-        if (minOrderQty > finalQty) {
+
+        // 新逻辑：直接使用周销量，如果小于起订量则使用起订量
+        finalQty = comparisonValue;
+        if (finalQty < minOrderQty) {
           finalQty = minOrderQty;
           console.log(
-            `[MinOrder] SKU: ${row['商品SKU']}, Final adjusted to MinOrder: ${minOrderQty}`,
+            `[MinOrder] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, MinOrder: ${minOrderQty}, Final: ${finalQty}`,
           );
+        } else {
+          console.log(
+            `[Normal] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, Final: ${finalQty}`,
+          );
+        }
+
+        // 标记：如果原采购量远大于实际销量，可以标红提醒
+        if (purchaseQty > comparisonValue * 1.5) {
+          bgColor = 'FFFF00'; // 黄色标记，仅提醒不做修改
         }
       } else {
         finalQty = purchaseQty;

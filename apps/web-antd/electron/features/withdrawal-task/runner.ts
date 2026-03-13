@@ -1,4 +1,8 @@
-import { executeWithdrawalSession } from './automation';
+// 使用桥接层调用现有提现脚本
+import { executeWithdrawalSessionViaBridge } from './automation-bridge';
+
+// 原有的自动化实现（备用）
+// import { executeWithdrawalSession } from './automation';
 
 export type WithdrawalTaskType = 'eleme_withdrawal';
 export type WithdrawalTriggerMode = 'manual' | 'daily';
@@ -144,6 +148,6 @@ export function computeNextRunAt(
 
 export const WithdrawalTaskRunner = {
   async executeTask(task: WithdrawalTask): Promise<WithdrawalExecutionResult> {
-    return executeWithdrawalSession(task);
+    return executeWithdrawalSessionViaBridge(task);
   },
 };

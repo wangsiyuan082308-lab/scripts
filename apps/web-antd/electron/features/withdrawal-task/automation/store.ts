@@ -368,38 +368,39 @@ export async function handleWithdrawal(
   
   for (const frame of page.frames()) {
     try {
-      // 查找所有账户金额元素
-      const amountElements = await frame.locator('.account__body__amount').all();
-      for (let i = 0; i < amountElements.length; i++) {
-        const el = amountElements[i];
-        const amountText = await el.innerText();
-        const n = Number.parseFloat(amountText.trim().replaceAll(',', ''));
-        if (!Number.isNaN(n)) {
-          // 尝试识别账户名称（查找相邻的账户标签）
-          let accountName = `账户${i + 1}`;
+      // 方法1: 通过账户名称定位，然后找同一行的余额和提现按钮
+      const accountNames = ['主资金账户', '网商云资金账户', '网商云账户'];
+      
+      for (const accName of accountNames) {
+        const accLocator = frame.getByText(new RegExp(accName), { exact: false });
+        const count = await accLocator.count();
+        
+        for (let i = 0; i < count; i++) {
           try {
-            const parentText = await el.evaluate((node) => {
-              // 向上查找账户容器
-              let p = node.parentElement;
-              for (let j = 0; j < 5 && p; j++) {
-                const text = p.textContent || '';
-                if (text.includes('网商云') || text.includes('网商')) {
-                  return '网商云账户';
-                }
-                if (text.includes('主资金') || text.includes('主账户')) {
-                  return '主资金账户';
-                }
-                p = p.parentElement;
+            const accElement = accLocator.nth(i);
+            if (!await accElement.isVisible()) continue;
+            
+            // 找到账户名称后，在同一个父容器内查找余额
+            const container = accElement.locator('xpath=ancestor::*[local-name()="div" or local-name()="tr"][1]');
+            const containerText = await container.innerText().catch(() => '');
+            
+            // 提取余额（数字格式，可能带逗号）
+            const amountMatch = containerText.match(/(\d[0-9,]*\.?\d*)/);
+            if (amountMatch) {
+              const amount = Number.parseFloat(amountMatch[1].replaceAll(',', ''));
+              if (!Number.isNaN(amount) && amount >= 0) {
+                // 标准化账户名称
+                const normalizedName = accName.includes('主资金') ? '主资金账户' : '网商云账户';
+                
+                accounts.push({ 
+                  name: normalizedName, 
+                  amount, 
+                  element: accElement 
+                });
+                storeLog.info(`【多账户】发现 ${normalizedName}: ¥${amount}`);
               }
-              return '';
-            });
-            if (parentText) {
-              accountName = parentText;
             }
           } catch {}
-          
-          accounts.push({ name: accountName, amount: n, element: el });
-          storeLog.info(`【多账户】发现 ${accountName}: ¥${n}`);
         }
       }
     } catch {}
@@ -545,96 +546,66 @@ async function clickWithdrawForAccount(
   
   for (const frame of frames) {
     try {
-      // 先找到账户金额，然后在同一行找提现按钮
-      const amountText = account.amount.toFixed(2);
-      const amountLocator = frame.getByText(amountText).first();
+      // 尝试多种金额格式匹配
+      const amountFormats = [
+        account.amount.toFixed(2),                    // "2928.03"
+        account.amount.toLocaleString('zh-CN'),      // "2,928.03"
+        account.amount.toLocaleString(),             // "2,928.03"
+        `¥${account.amount.toFixed(2)}`,             // "¥2928.03"
+        `¥${account.amount.toLocaleString()}`,       // "¥2,928.03"
+      ];
       
-      if (await amountLocator.isVisible({ timeout: 2000 })) {
-        storeLog.info(`【定位】找到金额 ${amountText}`);
-        
-        // 在金额元素附近找提现按钮
-        const parentLocator = amountLocator.locator('xpath=..');
-        const withdrawBtn = parentLocator.getByText('提现').first();
-        
-        if (await withdrawBtn.isVisible({ timeout: 2000 })) {
-          storeLog.info(`【点击】${account.name} 的提现按钮`);
-          await withdrawBtn.click();
-          await delay(1500);
+      for (const amountText of amountFormats) {
+        try {
+          const amountLocator = frame.getByText(amountText, { exact: false }).first();
           
-          // 处理提现弹窗
-          return await handleWithdrawalPopupWithLog(page, page.mainFrame(), storeLog, storeName, account.amount);
-        }
+          if (await amountLocator.isVisible({ timeout: 1000 })) {
+            storeLog.info(`【定位】找到金额 ${amountText}`);
+            
+            // 在金额元素的父容器内找提现按钮
+            const parentContainer = amountLocator.locator('xpath=ancestor::*[local-name()="div" or local-name()="tr" or local-name()="section"][1]');
+            const withdrawBtn = parentContainer.getByText('提现', { exact: true }).first();
+            
+            if (await withdrawBtn.isVisible({ timeout: 1000 })) {
+              storeLog.info(`【点击】${account.name} 的提现按钮`);
+              await withdrawBtn.click();
+              await delay(1500);
+              
+              // 处理提现弹窗
+              return await handleWithdrawalPopupWithLog(page, frame, storeLog, storeName, account.amount);
+            }
+          }
+        } catch {}
       }
     } catch {}
   }
 
-  // 方法3: 如果还是找不到，使用最后一个提现按钮（通常是网商云）
-  storeLog.info(`【备用】尝试最后一个提现按钮...`);
+  // 方法3: 简化逻辑 - 找到所有提现按钮，点击第一个可见的
+  storeLog.info(`【简化】查找页面上的提现按钮...`);
   for (const frame of frames) {
     try {
-      const withdrawBtns = await frame.getByText('提现').all();
-      if (withdrawBtns.length > 0) {
-        // 点击最后一个提现按钮
-        const lastBtn = withdrawBtns[withdrawBtns.length - 1];
-        if (await lastBtn.isVisible() && await lastBtn.isEnabled()) {
-          storeLog.info(`【点击】最后一个提现按钮（共${withdrawBtns.length}个）`);
-          await lastBtn.click();
-          
-          // 等待弹窗出现 - 缩短等待时间，快速进入下一步
-          await delay(1500);
-          
-          // 检查提现弹窗是否出现（通过检测特定元素）
-          let withdrawalPopupFound = false;
-          const allFrames = page.frames();
-          for (const f of allFrames) {
-            try {
-              // 检测提现相关的元素，而不是通知
-              const popupContent = await f.locator('body').innerText().catch(() => '');
-              if (popupContent.includes('全部提现') || popupContent.includes('提现金额') || popupContent.includes('确认提现') || popupContent.includes('输入密码')) {
-                storeLog.info('【成功】检测到提现弹窗元素');
-                withdrawalPopupFound = true;
-                break;
-              }
-            } catch {}
-          }
-          
-          // 如果没找到提现弹窗，但有通知，刷新页面重试
-          if (!withdrawalPopupFound) {
-            let hasNotification = false;
-            for (const f of allFrames) {
-              try {
-                const content = await f.locator('body').innerText().catch(() => '');
-                if (content.includes('致商户伙伴') && !content.includes('提现')) {
-                  hasNotification = true;
-                  break;
-                }
-              } catch {}
-            }
+      // 获取所有包含"提现"文字的元素
+      const allElements = await frame.locator('*:has-text("提现")').all();
+      storeLog.info(`【调试】frame 中找到 ${allElements.length} 个包含"提现"的元素`);
+      
+      for (const el of allElements) {
+        try {
+          const text = await el.textContent();
+          // 只匹配纯"提现"按钮，不匹配"全部提现"等
+          if (text?.trim() === '提现' && await el.isVisible()) {
+            storeLog.info(`【点击】找到提现按钮，正在点击...`);
+            await el.click();
+            await delay(2000);
             
-            if (hasNotification) {
-              storeLog.info('【刷新】发现通知阻挡，刷新页面后重试...');
-              await page.reload({ waitUntil: 'networkidle' });
-              await delay(2000);
-              
-              // 重新查找提现按钮
-              const retryBtns = await page.getByText('提现').all();
-              for (const retryBtn of retryBtns) {
-                if (await retryBtn.isVisible() && await retryBtn.isEnabled()) {
-                  storeLog.info('【重试】刷新后再次点击提现按钮...');
-                  await retryBtn.click();
-                  await delay(1500);
-                  break;
-                }
-              }
-            }
+            // 处理提现弹窗
+            return await handleWithdrawalPopupWithLog(page, frame, storeLog, storeName, account.amount);
           }
-          
-          return await handleWithdrawalPopupWithLog(page, frame, storeLog, storeName, account.amount);
-        }
+        } catch {}
       }
     } catch {}
   }
 
+  storeLog.warn(`【失败】无法找到 ${account.name} 的提现按钮`);
   return false;
 }
 

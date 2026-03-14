@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import 'dotenv/config';
 
@@ -41,13 +42,63 @@ export function saveEvolutionConfig(config: any) {
 // 全局进化配置（可变，运行时可更新）
 export const evolutionConfig = loadEvolutionConfig();
 
+// --- Scripts 门店配置读取 ---
+interface ScriptStore {
+  id: string;
+  storeId: string;
+  storeName: string;
+  elemeWithdrawalPassword?: string;
+  withdrawalPassword?: string;
+}
+
+function getScriptsStoresPath(): string {
+  // macOS: ~/Library/Application Support/前端小工具/stores.json
+  return path.join(os.homedir(), 'Library', 'Application Support', '前端小工具', 'stores.json');
+}
+
+function loadScriptsStores(): ScriptStore[] {
+  const storesPath = getScriptsStoresPath();
+  if (fs.existsSync(storesPath)) {
+    try {
+      const data = fs.readFileSync(storesPath, 'utf8');
+      return JSON.parse(data);
+    } catch (error) {
+      console.error('读取 Scripts 门店配置失败:', error);
+    }
+  }
+  return [];
+}
+
+export function getStorePassword(storeName: string): string {
+  // 优先从 Scripts 门店配置读取
+  const stores = loadScriptsStores();
+  const store = stores.find(s => s.storeName === storeName || s.storeName?.includes(storeName));
+  if (store?.elemeWithdrawalPassword || store?.withdrawalPassword) {
+    return store.elemeWithdrawalPassword || store.withdrawalPassword || '';
+  }
+  // 回退到环境变量或默认密码
+  return process.env.ELEME_PASSWORD || '130816';
+}
+
+export function getTargetStores(): string[] {
+  // 优先从 Scripts 门店配置读取
+  const stores = loadScriptsStores();
+  if (stores.length > 0) {
+    return stores.map(s => s.storeName).filter(Boolean);
+  }
+  // 回退到环境变量或默认门店
+  return process.env.ELEME_TARGET_STORES
+    ? process.env.ELEME_TARGET_STORES.split(',')
+    : ['Oby便利超市(安吉店)', 'Oby便利超市(长兴店)'];
+}
+
 // --- 应用配置 ---
 export const CONFIG = {
   url: 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/orderProcessingPc/tab',
-  password: process.env.ELEME_PASSWORD || '130816',
+  password: process.env.ELEME_PASSWORD || '130816', // 兜底密码，实际使用 getStorePassword()
   targetStores: process.env.ELEME_TARGET_STORES
     ? process.env.ELEME_TARGET_STORES.split(',')
-    : ['Oby便利超市(安吉店)', 'Oby便利超市(长兴店)'],
+    : ['Oby便利超市(安吉店)', 'Oby便利超市(长兴店)'], // 兜底门店，实际使用 getTargetStores()
   userDataDir: path.join(process.cwd(), 'user_data'),
   coordsFile: path.join(process.cwd(), 'coords.json'),
   baseWaitTime: evolutionConfig.baseWaitTime,

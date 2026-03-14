@@ -1,129 +1,245 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { AutomationRuntimePaths } from './config';
+// Shared logger is optional — resolve path dynamically to avoid compile-time breakage
+let createSharedLogger: any = null;
+try {
+  const sharedPath = path.resolve(__dirname, '..', '..', '..', 'shared-libs', 'logger', 'src');
+  if (fs.existsSync(sharedPath)) {
+    createSharedLogger = require(sharedPath).createLogger;
+  }
+} catch {}
 
-/**
- * 自动化日志级别。
- */
-export type LogLevel = 'DEBUG' | 'ERROR' | 'INFO' | 'WARN';
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
-/**
- * 单条结构化日志记录。
- */
+export type ObsStage =
+  | 'main.run'
+  | 'store.switch'
+  | 'finance.navigate'
+  | 'withdrawal.handle'
+  | 'retry.backoff'
+  | 'risk.control';
+
+export interface ObsFields {
+  stage: ObsStage;
+  code: string;
+  reason: string;
+  retryable: boolean;
+}
+
 interface LogEntry {
-  code?: string;
+  timestamp: string;
   level: LogLevel;
-  message: string;
   module: string;
+  store?: string;
+  message: string;
+  duration?: number;
+  error?: string;
+  stage?: ObsStage;
+  code?: string;
   reason?: string;
   retryable?: boolean;
-  sessionId?: string;
-  stage?: string;
-  store?: string;
-  taskId?: string;
-  timestamp: string;
 }
 
-/**
- * 自动化日志记录器接口。
- */
-export interface AutomationLogger {
-  child(store: string): AutomationLogger;
-  debug(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
-  error(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
-  info(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
-  warn(message: string, extra?: Omit<Partial<LogEntry>, 'level' | 'message' | 'module' | 'timestamp'>): void;
+const LOG_DIR = path.join(process.cwd(), 'logs');
+
+// 共享结构化日志实例（可选）
+let _sharedLogger: any = null;
+function getSharedLogger(): any {
+  if (!_sharedLogger && createSharedLogger) {
+    try {
+      _sharedLogger = createSharedLogger('eleme-withdrawal', { console: false });
+    } catch {}
+  }
+  return _sharedLogger;
 }
 
-/**
- * 生成本地日期字符串，用于日志文件名分片。
- */
-function getLocalDateStr() {
+/** 获取本地日期字符串 YYYYMMDD（避免UTC时区导致日期错位） */
+function getLocalDateStr(): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
 }
 
-/**
- * 创建结构化日志记录器，同时写入主日志和观测日志。
- */
-export function createAutomationLogger(
-  moduleName: string,
-  paths: AutomationRuntimePaths,
-  store?: string,
-  context?: Pick<LogEntry, 'sessionId' | 'taskId'>,
-): AutomationLogger {
-  const logFile = path.join(paths.logsDir, `app_${getLocalDateStr()}.jsonl`);
-  const obsFile = path.join(paths.logsDir, `obs_${getLocalDateStr()}.jsonl`);
+const LOG_FILE = path.join(LOG_DIR, `app_${getLocalDateStr()}.json`);
+const OBS_FILE = path.join(LOG_DIR, `obs_${getLocalDateStr()}.jsonl`);
 
-  const write = (level: LogLevel, message: string, extra?: Partial<LogEntry>) => {
+// 确保日志目录存在
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+function writeObsNormalized(entry: LogEntry) {
+  if (!entry.timestamp || !entry.stage || !entry.code || entry.reason === undefined || entry.retryable === undefined) return;
+
+  const obsLine = {
+    timestamp: entry.timestamp,
+    stage: entry.stage,
+    code: entry.code,
+    reason: entry.reason,
+    retryable: entry.retryable,
+    level: entry.level,
+    module: entry.module,
+    store: entry.store,
+    message: entry.message,
+  };
+  fs.appendFileSync(OBS_FILE, JSON.stringify(obsLine) + '\n');
+}
+
+function writeLogEntry(entry: LogEntry) {
+  const line = JSON.stringify(entry);
+  fs.appendFileSync(LOG_FILE, line + '\n');
+  writeObsNormalized(entry);
+
+  // 同步写入共享结构化日志（可选）
+  const sl = getSharedLogger();
+  if (sl) {
+    const level = entry.level === 'ERROR' ? 'error' : entry.level === 'WARN' ? 'warn' : 'info';
+    sl[level]('log', { module: entry.module, store: entry.store, message: entry.message, duration: entry.duration });
+  }
+}
+
+export function createLogger(module: string, store?: string) {
+  const log = (level: LogLevel, message: string, extra?: Partial<LogEntry>) => {
     const entry: LogEntry = {
-      ...context,
-      level,
-      message,
-      module: moduleName,
-      store,
       timestamp: new Date().toISOString(),
+      level,
+      module,
+      store,
+      message,
       ...extra,
     };
-    fs.appendFileSync(logFile, `${JSON.stringify(entry)}\n`);
-    if (entry.stage || entry.code) {
-      fs.appendFileSync(obsFile, `${JSON.stringify(entry)}\n`);
-    }
-    const prefix = store ? `[${moduleName}][${store}]` : `[${moduleName}]`;
-    console[level === 'ERROR' ? 'error' : level === 'WARN' ? 'warn' : 'log'](`${prefix} ${message}`);
+
+    // 控制台输出（保持原有风格）
+    const prefix = store ? `[${module}][${store}]` : `[${module}]`;
+    const icon = level === 'ERROR' ? '❌' : level === 'WARN' ? '⚠️' : '';
+    console.log(`${icon} ${prefix} ${message}`);
+
+    // 写入结构化日志文件
+    writeLogEntry(entry);
   };
 
   return {
-    child(childStore: string) {
-      return createAutomationLogger(moduleName, paths, childStore, context);
-    },
-    debug(message, extra) {
-      write('DEBUG', message, extra);
-    },
-    error(message, extra) {
-      write('ERROR', message, extra);
-    },
-    info(message, extra) {
-      write('INFO', message, extra);
-    },
-    warn(message, extra) {
-      write('WARN', message, extra);
-    },
+    info: (msg: string, extra?: Partial<LogEntry>) => log('INFO', msg, extra),
+    warn: (msg: string, extra?: Partial<LogEntry>) => log('WARN', msg, extra),
+    error: (msg: string, extra?: Partial<LogEntry>) => log('ERROR', msg, extra),
+    debug: (msg: string, extra?: Partial<LogEntry>) => log('DEBUG', msg, extra),
+    obs: (level: LogLevel, message: string, obs: ObsFields, extra?: Partial<LogEntry>) =>
+      log(level, message, { ...obs, ...extra }),
+    child: (childStore: string) => createLogger(module, childStore),
   };
 }
 
-/**
- * 记录指标事件，供后续分析会话表现与风控情况。
- */
-export function writeMetric(
-  paths: AutomationRuntimePaths,
-  event: string,
-  payload: Record<string, any>,
-) {
-  const metricsFile = path.join(paths.metricsDir, `metrics_${getLocalDateStr()}.jsonl`);
-  fs.appendFileSync(
-    metricsFile,
-    `${JSON.stringify({ event, timestamp: new Date().toISOString(), ...payload })}\n`,
-  );
+// --- 业务埋点系统 ---
+
+const METRICS_DIR = path.join(process.cwd(), 'logs', 'metrics');
+if (!fs.existsSync(METRICS_DIR)) {
+  fs.mkdirSync(METRICS_DIR, { recursive: true });
 }
 
-/**
- * 清理过期日志、指标和调试截图。
- */
-export function cleanOldAutomationLogs(paths: AutomationRuntimePaths, days = 7) {
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  for (const dir of [paths.logsDir, paths.metricsDir, paths.debugDir]) {
-    if (!fs.existsSync(dir)) continue;
-    for (const file of fs.readdirSync(dir)) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      if (stat.isFile() && stat.mtimeMs < cutoff) {
-        fs.unlinkSync(filePath);
+const METRICS_FILE = path.join(METRICS_DIR, `metrics_${getLocalDateStr()}.jsonl`);
+
+export interface MetricEvent {
+  event: string;
+  timestamp: string;
+  store?: string;
+  [key: string]: any;
+}
+
+function writeMetric(event: MetricEvent) {
+  fs.appendFileSync(METRICS_FILE, JSON.stringify(event) + '\n');
+  // 同步写入共享结构化日志（业务埋点，可选）
+  const sl = getSharedLogger();
+  if (sl && typeof sl.track === 'function') {
+    sl.track(event.event, event);
+  }
+}
+
+export const metrics = {
+  /** 门店切换埋点 */
+  storeSwitch(store: string, success: boolean, durationMs: number) {
+    writeMetric({
+      event: 'store_switch',
+      timestamp: new Date().toISOString(),
+      store,
+      success,
+      durationMs,
+    });
+  },
+
+  /** 余额检测埋点 */
+  balanceCheck(store: string, amount: number | null) {
+    writeMetric({
+      event: 'balance_check',
+      timestamp: new Date().toISOString(),
+      store,
+      amount,
+    });
+  },
+
+  /** 提现操作埋点 */
+  withdrawalAttempt(store: string, amount: number | null, result: 'success' | 'fail' | 'blocked' | 'skipped', reason?: string) {
+    writeMetric({
+      event: 'withdrawal_attempt',
+      timestamp: new Date().toISOString(),
+      store,
+      amount,
+      result,
+      reason,
+    });
+  },
+
+  /** 风控触发埋点 */
+  riskControl(level: number, trigger: string, action: string) {
+    writeMetric({
+      event: 'risk_control',
+      timestamp: new Date().toISOString(),
+      level,
+      trigger,
+      action,
+    });
+  },
+
+  /** 选择器命中埋点 */
+  selectorHit(store: string, selector: string, hit: boolean) {
+    writeMetric({
+      event: 'selector_hit',
+      timestamp: new Date().toISOString(),
+      store,
+      selector,
+      hit,
+    });
+  },
+
+  /** 整体执行摘要埋点 */
+  sessionSummary(total: number, success: number, fail: number, blocked: number, durationMs: number) {
+    writeMetric({
+      event: 'session_summary',
+      timestamp: new Date().toISOString(),
+      total,
+      success,
+      fail,
+      blocked,
+      durationMs,
+    });
+  },
+};
+
+// 清理旧日志（保留7天）
+export function cleanOldLogs(days = 7) {
+  try {
+    for (const dir of [LOG_DIR, METRICS_DIR]) {
+      const files = fs.readdirSync(dir);
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      for (const file of files) {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.mtimeMs < cutoff) {
+          fs.unlinkSync(filePath);
+        }
       }
     }
-  }
+  } catch {}
 }

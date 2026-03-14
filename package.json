@@ -87,6 +87,7 @@
     "playwright": "catalog:",
     "rimraf": "catalog:",
     "tailwindcss": "catalog:",
+    "tsx": "^4.21.0",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "unbuild": "catalog:",

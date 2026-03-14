@@ -1,147 +1,121 @@
 /**
- * 提现自动化桥接层
+ * 提现自动化 - 内置版
  * 
- * 调用现有的 eleme-auto-withdrawal 脚本，复用稳定的提现流程
- * 同时利用 Scripts 的 UI 优势
+ * 直接执行提现流程，不依赖外部脚本
  */
-import { spawn } from 'child_process';
-import type { WithdrawalExecutionResult, WithdrawalTask, WithdrawalTaskResult } from '../runner';
+import type { WithdrawalExecutionResult, WithdrawalTask, WithdrawalTaskResult } from './runner';
+import { launchBrowser, navigateAndLogin, closeBrowser } from './automation/browser';
+import { switchStore, navigateToFinance, handleWithdrawal } from './automation/store';
+import { CONFIG } from './automation/config';
+import { updateRiskLevel, getDelayMultiplier } from './automation/retry';
+import { createLogger } from './automation/logger';
 
-// 现有提现脚本路径
-const WITHDRAWAL_SCRIPT_DIR = '/Users/mac/.openclaw/skills-pool/business/eleme-auto-withdrawal';
+const log = createLogger('withdrawal');
 
 /**
- * 执行提现会话（调用现有脚本）
+ * 执行提现会话
  */
-export async function executeWithdrawalSessionViaBridge(
+export async function executeWithdrawalSession(
   task: WithdrawalTask,
 ): Promise<WithdrawalExecutionResult> {
   const startedAt = Date.now();
-  
-  // 构建参数
-  const storeArgs = task.storeIds.join(',');
-  const storeNameArgs = task.storeNames.join(',');
-  
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      'npx',
-      ['ts-node', 'src/bridge-run.ts', '--stores', storeArgs, '--names', storeNameArgs],
-      {
-        cwd: WITHDRAWAL_SCRIPT_DIR,
-        env: {
-          ...process.env,
-          NODE_ENV: 'production',
-        },
-      }
-    );
-    
-    let stdout = '';
-    let stderr = '';
-    
-    child.stdout.on('data', (data) => {
-      const text = data.toString();
-      stdout += text;
-      // 可以在这里发送进度更新到UI
-      console.log('[withdrawal]', text.trim());
-    });
-    
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    child.on('close', (code) => {
-      if (code === 0) {
-        try {
-          // 解析执行结果
-          const result = parseExecutionResult(stdout, task, startedAt);
-          resolve(result);
-        } catch (error) {
-          reject(new Error(`解析结果失败: ${error}`));
-        }
-      } else {
-        reject(new Error(`提现脚本执行失败: ${stderr || stdout}`));
-      }
-    });
-    
-    child.on('error', (error) => {
-      reject(new Error(`启动提现脚本失败: ${error.message}`));
-    });
-  });
-}
-
-/**
- * 解析执行结果
- */
-function parseExecutionResult(
-  output: string,
-  task: WithdrawalTask,
-  startedAt: number,
-): WithdrawalExecutionResult {
   const results: WithdrawalTaskResult[] = [];
   
-  // 尝试从JSON结果中解析
-  const jsonMatch = output.match(/=== JSON_RESULT ===\n([\s\S]*?)\n=== END_JSON_RESULT ===/);
+  log.info('=== 提现自动化启动 ===');
+  log.info(`门店: ${task.storeNames.join(', ')}`);
   
-  if (jsonMatch) {
-    try {
-      const jsonResults = JSON.parse(jsonMatch[1]);
-      for (const r of jsonResults) {
-        results.push({
-          executedAt: new Date().toISOString(),
-          message: r.message,
-          status: r.status === 'success' ? 'success' : 'failed',
-          storeId: r.storeId,
-          storeName: r.storeName,
-          withdrawAmount: r.withdrawAmount,
-        });
-      }
-    } catch (e) {
-      console.error('解析JSON结果失败:', e);
-    }
-  }
-  
-  // 如果没有解析到结果，使用回退逻辑
-  if (results.length === 0) {
-    const lines = output.split('\n');
+  try {
+    // 1. 启动浏览器并登录
+    const { context, page } = await launchBrowser();
+    await navigateAndLogin(page);
     
+    // 2. 逐个门店处理
     for (let i = 0; i < task.storeIds.length; i++) {
       const storeId = task.storeIds[i];
       const storeName = task.storeNames[i] || storeId;
       
-      const resultLine = lines.find(line => 
-        line.includes(storeName) || line.includes(storeId)
-      );
+      log.info(`\n=== 处理门店: ${storeName} ===`);
       
-      let status: 'success' | 'failed' = 'failed';
-      let message = '';
-      
-      if (resultLine) {
-        if (resultLine.includes('✅') || resultLine.includes('success')) {
+      try {
+        // 切换门店
+        await switchStore(page, storeName);
+        
+        // 进入财务页面
+        await navigateToFinance(page);
+        
+        // 执行提现
+        const result = await handleWithdrawal(page, storeName);
+        
+        let status: 'success' | 'failed' = 'failed';
+        let message = '';
+        let withdrawAmount: number | undefined;
+        
+        if (result === 'success') {
           status = 'success';
           message = '提现成功';
-        } else if (resultLine.includes('❌') || resultLine.includes('fail')) {
-          status = 'failed';
-          message = '提现失败';
-        } else if (resultLine.includes('⚠️') || resultLine.includes('blocked')) {
+          updateRiskLevel('success');
+        } else if (result === 'blocked') {
           status = 'failed';
           message = '风控拦截';
+          updateRiskLevel('blocked');
+        } else {
+          status = 'failed';
+          message = '提现失败';
+          updateRiskLevel('fail');
         }
-      } else {
-        message = '未找到执行结果';
+        
+        results.push({
+          executedAt: new Date().toISOString(),
+          message,
+          status,
+          storeId,
+          storeName,
+          withdrawAmount,
+        });
+        
+        log.info(`门店 ${storeName}: ${status}`);
+        
+      } catch (error: any) {
+        results.push({
+          executedAt: new Date().toISOString(),
+          message: error.message || '执行失败',
+          status: 'failed',
+          storeId,
+          storeName,
+        });
+        log.error(`门店 ${storeName} 失败: ${error.message}`);
       }
       
-      results.push({
-        executedAt: new Date().toISOString(),
-        message,
-        status,
-        storeId,
-        storeName,
-      });
+      // 门店间等待
+      await new Promise(resolve => setTimeout(resolve, CONFIG.baseWaitTime * getDelayMultiplier()));
+    }
+    
+    // 3. 关闭浏览器
+    await closeBrowser(context);
+    
+  } catch (error: any) {
+    log.error(`提现会话失败: ${error.message}`);
+    
+    // 如果整体失败，标记所有门店为失败
+    if (results.length === 0) {
+      for (let i = 0; i < task.storeIds.length; i++) {
+        results.push({
+          executedAt: new Date().toISOString(),
+          message: error.message || '会话失败',
+          status: 'failed',
+          storeId: task.storeIds[i],
+          storeName: task.storeNames[i] || task.storeIds[i],
+        });
+      }
     }
   }
   
+  // 生成摘要
   const successCount = results.filter(r => r.status === 'success').length;
   const failedCount = results.length - successCount;
+  
+  log.info('\n=== 执行摘要 ===');
+  log.info(`成功: ${successCount}, 失败: ${failedCount}`);
   
   return {
     failedCount,
@@ -165,3 +139,6 @@ function buildSummary(successCount: number, failedCount: number, total: number) 
   if (failedCount === total) return `全部 ${total} 家门店提现失败`;
   return `${successCount} 家成功，${failedCount} 家失败`;
 }
+
+// 导出兼容接口
+export const executeWithdrawalSessionViaBridge = executeWithdrawalSession;

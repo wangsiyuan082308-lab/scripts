@@ -1,135 +1,31 @@
-import type { AutomationEvolutionConfig, AutomationRuntimePaths } from './config';
-import { saveEvolutionConfig } from './config';
+import { createLogger } from './logger';
+import { evolutionConfig, saveEvolutionConfig } from './config';
 import { delay } from './browser';
-import type { AutomationLogger } from './logger';
 
-/**
- * 重试与退避参数。
- */
+const log = createLogger('retry');
+
+// --- 指数退避重试 ---
+
 export interface RetryOptions {
-  backoffFactor: number;
+  maxRetries: number;
   baseDelayMs: number;
   maxDelayMs: number;
-  maxRetries: number;
+  backoffFactor: number;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
-  backoffFactor: 2,
-  baseDelayMs: 1500,
-  maxDelayMs: 20_000,
   maxRetries: 3,
+  baseDelayMs: 2000,
+  maxDelayMs: 30_000,
+  backoffFactor: 2,
 };
 
 /**
- * 当前风控强度等级。
- */
-export enum RiskLevel {
-  NORMAL = 0,
-  LEVEL1 = 1,
-  LEVEL2 = 2,
-  LEVEL3 = 3,
-}
-
-/**
- * 风控控制器。
- * 负责根据连续阻断次数动态提升等待时间与是否继续执行。
- */
-export class RiskController {
-  private consecutiveBlocks = 0;
-
-  private currentRiskLevel = RiskLevel.NORMAL;
-
-  constructor(
-    private evolution: AutomationEvolutionConfig,
-    private paths: AutomationRuntimePaths,
-    private logger: AutomationLogger,
-  ) {}
-
-  /**
-   * 返回当前风控等级对应的延时倍率。
-   */
-  getDelayMultiplier() {
-    switch (this.currentRiskLevel) {
-      case RiskLevel.LEVEL1:
-        return 1.5;
-      case RiskLevel.LEVEL2:
-        return 2.5;
-      case RiskLevel.LEVEL3:
-        return 4;
-      default:
-        return 1;
-    }
-  }
-
-  /**
-   * 获取当前风控等级。
-   */
-  getLevel() {
-    return this.currentRiskLevel;
-  }
-
-  /**
-   * 根据单次执行结果更新风控状态，并同步演化配置。
-   */
-  async update(result: 'blocked' | 'fail' | 'success') {
-    if (result === 'success') {
-      if (this.consecutiveBlocks > 0) {
-        this.consecutiveBlocks = Math.max(0, this.consecutiveBlocks - 1);
-      }
-      if (this.consecutiveBlocks === 0) {
-        this.currentRiskLevel = RiskLevel.NORMAL;
-      }
-      return this.currentRiskLevel;
-    }
-
-    if (result !== 'blocked') {
-      return this.currentRiskLevel;
-    }
-
-    this.consecutiveBlocks += 1;
-    if (this.consecutiveBlocks >= 3) {
-      this.currentRiskLevel = RiskLevel.LEVEL3;
-    } else if (this.consecutiveBlocks >= 2) {
-      this.currentRiskLevel = RiskLevel.LEVEL2;
-    } else {
-      this.currentRiskLevel = RiskLevel.LEVEL1;
-    }
-
-    this.evolution.baseWaitTime = Math.min(
-      (this.evolution.baseWaitTime || 1000) + 1000 * this.consecutiveBlocks,
-      this.evolution.maxWaitTime || 10_000,
-    );
-    await saveEvolutionConfig(this.paths, this.evolution);
-    this.logger.warn(`风控等级提升为 ${RiskLevel[this.currentRiskLevel]}`);
-    return this.currentRiskLevel;
-  }
-
-  /**
-   * 判断当前风控等级下是否允许继续执行后续门店。
-   */
-  canContinue() {
-    return this.currentRiskLevel !== RiskLevel.LEVEL3;
-  }
-
-  /**
-   * 在中等级风控下执行一次短暂退避，降低连续触发概率。
-   */
-  async cooldownIfNeeded() {
-    if (this.currentRiskLevel === RiskLevel.LEVEL2) {
-      this.logger.warn('检测到连续风控，本次只做短暂退避，不进行长时间阻塞等待');
-      await delay(Math.min(this.evolution.baseWaitTime * 3, 10_000));
-    }
-    return this.canContinue();
-  }
-}
-
-/**
- * 以指数退避方式执行重试。
+ * 带指数退避的重试执行器
  */
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   label: string,
-  logger: AutomationLogger,
   options: Partial<RetryOptions> = {},
 ): Promise<T> {
   const opts = { ...DEFAULT_RETRY_OPTIONS, ...options };
@@ -140,20 +36,134 @@ export async function retryWithBackoff<T>(
       return await fn();
     } catch (error) {
       lastError = error;
-      if (attempt >= opts.maxRetries) {
-        break;
-      }
+      if (attempt >= opts.maxRetries) break;
 
       const delayMs = Math.min(
         opts.baseDelayMs * Math.pow(opts.backoffFactor, attempt - 1),
         opts.maxDelayMs,
       );
-      const jittered = Math.round(delayMs * (0.8 + Math.random() * 0.4));
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`[${label}] 第 ${attempt} 次失败：${message}，${jittered}ms 后重试`);
-      await delay(jittered);
+      // 加入随机抖动（±20%），避免多实例同时重试
+      const jitter = delayMs * (0.8 + Math.random() * 0.4);
+
+      log.warn(`[${label}] 第${attempt}次失败，${Math.round(jitter)}ms 后重试...`);
+      log.obs('WARN', '触发指数退避重试', {
+        stage: 'retry.backoff',
+        code: 'EAW_RT_BACKOFF_RETRY',
+        reason: error instanceof Error ? error.message : String(error),
+        retryable: true,
+      }, { duration: Math.round(jitter) });
+      await delay(jitter);
     }
   }
 
   throw lastError;
+}
+
+// --- 风控降级系统 ---
+
+export enum RiskLevel {
+  NORMAL = 0,   // 正常运行
+  LEVEL1 = 1,   // 增加操作间隔 +50%
+  LEVEL2 = 2,   // 暂停 30 分钟
+  LEVEL3 = 3,   // 停止运行，通知人工介入
+}
+
+let currentRiskLevel = RiskLevel.NORMAL;
+let consecutiveBlocks = 0;
+
+/**
+ * 获取当前风控等级
+ */
+export function getRiskLevel(): RiskLevel {
+  return currentRiskLevel;
+}
+
+/**
+ * 根据执行结果更新风控等级
+ */
+export function updateRiskLevel(result: 'success' | 'fail' | 'blocked'): RiskLevel {
+  if (result === 'blocked') {
+    consecutiveBlocks++;
+    if (consecutiveBlocks >= 3) {
+      currentRiskLevel = RiskLevel.LEVEL3;
+      log.error(`风控升级至 LEVEL3：连续 ${consecutiveBlocks} 次被拦截，建议人工介入`);
+      log.obs('ERROR', '风控升级至LEVEL3', {
+        stage: 'risk.control',
+        code: 'EAW_RISK_LEVEL3_STOP',
+        reason: `连续${consecutiveBlocks}次拦截`,
+        retryable: false,
+      });
+    } else if (consecutiveBlocks >= 2) {
+      currentRiskLevel = RiskLevel.LEVEL2;
+      log.warn(`风控升级至 LEVEL2：连续 ${consecutiveBlocks} 次被拦截，暂停 30 分钟`);
+      log.obs('WARN', '风控升级至LEVEL2', {
+        stage: 'risk.control',
+        code: 'EAW_RISK_LEVEL2_COOLDOWN',
+        reason: `连续${consecutiveBlocks}次拦截`,
+        retryable: true,
+      });
+    } else {
+      currentRiskLevel = RiskLevel.LEVEL1;
+      log.warn(`风控升级至 LEVEL1：增加操作间隔 50%`);
+      log.obs('WARN', '风控升级至LEVEL1', {
+        stage: 'risk.control',
+        code: 'EAW_RISK_LEVEL1_SLOWDOWN',
+        reason: `首次触发拦截`,
+        retryable: true,
+      });
+    }
+
+    // 进化：记录风控触发，增加基础等待时间
+    evolutionConfig.baseWaitTime = Math.min(
+      (evolutionConfig.baseWaitTime || 1000) + 1000 * consecutiveBlocks,
+      evolutionConfig.maxWaitTime || 10_000,
+    );
+    saveEvolutionConfig(evolutionConfig);
+
+  } else if (result === 'success') {
+    // 成功后逐步恢复
+    if (consecutiveBlocks > 0) {
+      consecutiveBlocks = Math.max(0, consecutiveBlocks - 1);
+      if (consecutiveBlocks === 0) {
+        currentRiskLevel = RiskLevel.NORMAL;
+        log.info('风控恢复至 NORMAL：连续成功，解除降级');
+      }
+    }
+  }
+
+  return currentRiskLevel;
+}
+
+/**
+ * 根据当前风控等级获取操作延迟倍率
+ */
+export function getDelayMultiplier(): number {
+  switch (currentRiskLevel) {
+    case RiskLevel.LEVEL1: return 1.5;
+    case RiskLevel.LEVEL2: return 3.0;
+    case RiskLevel.LEVEL3: return 5.0;
+    default: return 1.0;
+  }
+}
+
+/**
+ * 执行风控冷却等待
+ * 返回 true 表示可以继续，false 表示应该停止
+ */
+export async function cooldownIfNeeded(): Promise<boolean> {
+  switch (currentRiskLevel) {
+    case RiskLevel.NORMAL:
+    case RiskLevel.LEVEL1:
+      return true;
+
+    case RiskLevel.LEVEL2:
+      log.warn('LEVEL2 冷却：暂停 30 分钟...');
+      await delay(30 * 60 * 1000);
+      log.info('LEVEL2 冷却结束，恢复执行');
+      return true;
+
+    case RiskLevel.LEVEL3:
+      log.error('LEVEL3：已停止自动执行，需要人工介入');
+      return false;
+  }
 }

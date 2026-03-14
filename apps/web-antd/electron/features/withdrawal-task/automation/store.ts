@@ -4,7 +4,7 @@ import type { Frame, Page } from 'playwright';
 import { CONFIG, loadCoords, saveCoords } from './config';
 import { createLogger, metrics } from './logger';
 import { delay } from './browser';
-import { clickByVision } from './vision';
+import { getAccountsWithVision, clickAt } from './vision';
 
 const log = createLogger('store');
 
@@ -352,19 +352,65 @@ export async function handleWithdrawal(
   // 风控检测
   if ((await page.locator('.nc_wrapper, .sm-slider-wrapper, iframe[src*="captcha"]').count()) > 0) {
     storeLog.warn('发现滑块验证码，暂停操作！');
-    storeLog.obs('WARN', '检测到验证码风控', {
-      stage: 'withdrawal.handle',
-      code: 'EAW_WD_CAPTCHA_BLOCKED',
-      reason: '页面存在验证码组件',
-      retryable: true,
-    });
-    metrics.riskControl(1, 'captcha_detected', 'blocked');
-    metrics.withdrawalAttempt(storeName, null, 'blocked', '滑块验证码');
     return 'blocked';
   }
 
-  // ===== 多账户检测 =====
-  storeLog.info('【多账户扫描】检测所有账户（主资金、网商云）...');
+  // ===== 视觉定位优先 =====
+  storeLog.info('【视觉定位】分析财务页面...');
+  
+  try {
+    const visionAccounts = await getAccountsWithVision(page);
+    
+    if (visionAccounts.length > 0) {
+      storeLog.info(`【视觉定位】发现 ${visionAccounts.length} 个账户`);
+      
+      let successCount = 0;
+      
+      for (const account of visionAccounts) {
+        storeLog.info(`\n【处理账户】${account.name} (余额: ¥${account.amount})`);
+        
+        if (account.amount <= 0) {
+          storeLog.info(`【跳过】${account.name} 余额 ¥${account.amount} ≤ 0`);
+          successCount++;
+          continue;
+        }
+        
+        if (account.withdrawButton) {
+          storeLog.info(`【视觉定位】点击 ${account.name} 的提现按钮...`);
+          await clickAt(page, account.withdrawButton.x, account.withdrawButton.y);
+          await delay(2000);
+          
+          // 处理提现弹窗
+          const result = await handleWithdrawalPopupWithLog(page, page.mainFrame(), storeLog, storeName, account.amount);
+          
+          if (result) {
+            storeLog.info(`✅ ${account.name} 提现成功`);
+            successCount++;
+          } else {
+            storeLog.warn(`⚠️ ${account.name} 提现失败`);
+          }
+          
+          await delay(2000);
+        } else {
+          storeLog.warn(`【视觉定位】${account.name} 未找到提现按钮`);
+        }
+      }
+      
+      if (successCount === visionAccounts.length) {
+        return 'success';
+      } else if (successCount > 0) {
+        return 'success';
+      }
+      return 'fail';
+    }
+    
+    storeLog.info('【视觉定位】未检测到账户，回退到DOM定位...');
+  } catch (error) {
+    storeLog.warn(`【视觉定位】失败: ${error}，回退到DOM定位...`);
+  }
+
+  // ===== DOM 定位兜底 =====
+  storeLog.info('【DOM定位】检测所有账户...');
   const accounts: AccountInfo[] = [];
   
   for (const frame of page.frames()) {
@@ -604,22 +650,6 @@ async function clickWithdrawForAccount(
         } catch {}
       }
     } catch {}
-  }
-
-  // 方法4: 视觉定位兜底
-  storeLog.info(`【视觉定位】尝试用视觉模型定位 ${account.name} 的提现按钮...`);
-  try {
-    const targetBtn = account.name === '主资金账户' 
-      ? '主资金账户旁边的提现按钮' 
-      : '网商云账户旁边的提现按钮';
-    
-    const clicked = await clickByVision(page, targetBtn, { retries: 2, delay: 2000 });
-    if (clicked) {
-      storeLog.info(`【视觉定位】成功点击 ${account.name} 的提现按钮`);
-      return await handleWithdrawalPopupWithLog(page, page.mainFrame(), storeLog, storeName, account.amount);
-    }
-  } catch (error) {
-    storeLog.warn(`【视觉定位】失败: ${error}`);
   }
 
   storeLog.warn(`【失败】无法找到 ${account.name} 的提现按钮`);

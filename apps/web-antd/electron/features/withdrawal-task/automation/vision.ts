@@ -6,7 +6,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Page } from 'playwright';
-import { execSync } from 'node:child_process';
 
 export interface VisionPosition {
   x: number;
@@ -16,96 +15,130 @@ export interface VisionPosition {
   description?: string;
 }
 
-/**
- * 使用视觉模型定位元素
- * @param screenshotPath 截图路径
- * @param target 要定位的目标描述
- * @returns 元素位置坐标
- */
-export async function locateByVision(
-  screenshotPath: string,
-  target: string
-): Promise<VisionPosition | null> {
-  // 构建提示词
-  const prompt = `请找到"${target}"在图片中的位置。
-
-返回 JSON 格式：
-{
-  "x": 中心点X坐标,
-  "y": 中心点Y坐标,
-  "width": 宽度(可选),
-  "height": 高度(可选),
-  "description": "元素的描述"
+export interface AccountInfo {
+  name: string;
+  amount: number;
+  withdrawButton: VisionPosition | null;
 }
 
-只返回 JSON，不要其他内容。`;
+/**
+ * 使用视觉模型分析财务页面
+ */
+export async function analyzeFinancePage(
+  screenshotPath: string
+): Promise<AccountInfo[]> {
+  const prompt = `分析这个饿了么财务页面，找出所有账户信息。
+
+请返回 JSON 数组格式：
+[
+  {
+    "name": "账户名称（如：主资金账户、网商云资金账户）",
+    "amount": 余额数字,
+    "withdrawButton": {
+      "x": 提现按钮中心X坐标,
+      "y": 提现按钮中心Y坐标,
+      "description": "按钮描述"
+    }
+  }
+]
+
+注意：
+1. 只返回真实账户，不包括"账户可用总金额"等汇总项
+2. 提现按钮通常在账户金额右侧
+3. 只返回 JSON 数组，不要其他内容`;
 
   try {
-    // 调用 OpenClaw 的 image 工具（通过 npx openclaw）
-    // 或者直接调用模型 API
     const result = await callImageModel(screenshotPath, prompt);
     
     // 解析 JSON
-    const match = result.match(/\{[\s\S]*\}/);
+    const match = result.match(/\[[\s\S]*\]/);
     if (match) {
-      return JSON.parse(match[0]);
+      const accounts = JSON.parse(match[0]);
+      console.log(`[视觉分析] 发现 ${accounts.length} 个账户`);
+      return accounts;
     }
     
-    return null;
+    return [];
   } catch (error) {
-    console.error('视觉定位失败:', error);
-    return null;
+    console.error('[视觉分析] 失败:', error);
+    return [];
   }
 }
 
 /**
- * 调用图像模型
+ * 调用图像模型（使用 OpenAI 兼容接口）
  */
 async function callImageModel(imagePath: string, prompt: string): Promise<string> {
-  // 使用 fetch 调用阿里云视觉模型
+  // 重新加载环境变量
+  import('dotenv/config');
+  
   const apiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
-  const baseUrl = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+  
+  if (!apiKey) {
+    console.error('[视觉模型] 未找到 API Key');
+    throw new Error('未配置 ALIYUN_API_KEY 或 DASHSCOPE_API_KEY');
+  }
+  
+  // 使用 OpenAI 兼容的 coding 域名
+  const baseUrl = 'https://coding.dashscope.aliyuncs.com/v1/chat/completions';
   
   // 读取图片并转 base64
   const imageBuffer = fs.readFileSync(imagePath);
   const base64Image = imageBuffer.toString('base64');
   const mimeType = imagePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
   
-  const response = await fetch(baseUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'qwen-vl-plus',
-      input: {
+  try {
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'qwen3.5-plus',  // 使用支持图像的文本模型
         messages: [
           {
             role: 'user',
             content: [
-              { image: `data:${mimeType};base64,${base64Image}` },
-              { text: prompt }
+              { 
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`
+                }
+              },
+              {
+                type: 'text',
+                text: prompt
+              }
             ]
           }
         ]
-      }
-    })
-  });
-  
-  const data = await response.json() as any;
-  return data.output?.choices?.[0]?.message?.content || '';
+      })
+    });
+    
+    const data = await response.json() as any;
+    
+    if (data.error) {
+      console.error('[视觉模型] API 错误:', data.error);
+      return '';
+    }
+    
+    const content = data.choices?.[0]?.message?.content || '';
+    console.log('[视觉模型] 返回内容长度:', content.length);
+    
+    return content;
+  } catch (error) {
+    console.error('[视觉模型] 请求失败:', error);
+    return '';
+  }
 }
 
 /**
- * 截图并定位元素
+ * 截图并分析账户
  */
-export async function findElementByVision(
-  page: Page,
-  target: string,
-  options: { retries?: number } = {}
-): Promise<VisionPosition | null> {
-  const retries = options.retries || 3;
+export async function getAccountsWithVision(
+  page: Page
+): Promise<AccountInfo[]> {
   const screenshotDir = path.join(process.cwd(), 'logs', 'vision');
   
   // 确保目录存在
@@ -113,50 +146,58 @@ export async function findElementByVision(
     fs.mkdirSync(screenshotDir, { recursive: true });
   }
   
-  for (let i = 0; i < retries; i++) {
-    try {
-      // 截图
-      const screenshotPath = path.join(screenshotDir, `screenshot_${Date.now()}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: false });
-      
-      // 视觉定位
-      const position = await locateByVision(screenshotPath, target);
-      
-      // 清理截图（可选）
-      // fs.unlinkSync(screenshotPath);
-      
-      if (position) {
-        console.log(`[视觉定位] 找到 "${target}" 在 (${position.x}, ${position.y})`);
-        return position;
-      }
-    } catch (error) {
-      console.error(`[视觉定位] 第 ${i + 1} 次尝试失败:`, error);
-    }
+  try {
+    // 截图
+    const screenshotPath = path.join(screenshotDir, `finance_${Date.now()}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: false });
+    
+    console.log(`[视觉定位] 截图保存: ${screenshotPath}`);
+    
+    // 视觉分析
+    const accounts = await analyzeFinancePage(screenshotPath);
+    
+    return accounts;
+  } catch (error) {
+    console.error('[视觉定位] 获取账户失败:', error);
+    return [];
   }
-  
-  console.warn(`[视觉定位] 未能找到 "${target}"`);
-  return null;
 }
 
 /**
- * 点击目标元素
+ * 点击指定坐标
  */
-export async function clickByVision(
+export async function clickAt(
   page: Page,
-  target: string,
-  options: { retries?: number; delay?: number } = {}
-): Promise<boolean> {
-  const position = await findElementByVision(page, target, { retries: options.retries });
+  x: number,
+  y: number,
+  options: { delay?: number } = {}
+): Promise<void> {
+  await page.mouse.click(x, y);
   
-  if (position) {
-    await page.mouse.click(position.x, position.y);
-    
-    if (options.delay) {
-      await new Promise(resolve => setTimeout(resolve, options.delay));
-    }
-    
+  if (options.delay) {
+    await new Promise(resolve => setTimeout(resolve, options.delay));
+  }
+}
+
+/**
+ * 视觉定位并点击提现按钮
+ */
+export async function clickWithdrawButtonByVision(
+  page: Page,
+  accountName: string
+): Promise<boolean> {
+  const accounts = await getAccountsWithVision(page);
+  
+  const account = accounts.find(a => 
+    a.name.includes(accountName) || accountName.includes(a.name)
+  );
+  
+  if (account?.withdrawButton) {
+    console.log(`[视觉定位] 点击 ${account.name} 的提现按钮 (${account.withdrawButton.x}, ${account.withdrawButton.y})`);
+    await clickAt(page, account.withdrawButton.x, account.withdrawButton.y, { delay: 2000 });
     return true;
   }
   
+  console.warn(`[视觉定位] 未找到 ${accountName} 的提现按钮`);
   return false;
 }

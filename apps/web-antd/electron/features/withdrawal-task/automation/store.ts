@@ -4,6 +4,7 @@ import type { Frame, Page } from 'playwright';
 import { CONFIG, loadCoords, saveCoords } from './config';
 import { createLogger, metrics } from './logger';
 import { delay } from './browser';
+import { clickByVision } from './vision';
 
 const log = createLogger('store');
 
@@ -603,6 +604,22 @@ async function clickWithdrawForAccount(
         } catch {}
       }
     } catch {}
+  }
+
+  // 方法4: 视觉定位兜底
+  storeLog.info(`【视觉定位】尝试用视觉模型定位 ${account.name} 的提现按钮...`);
+  try {
+    const targetBtn = account.name === '主资金账户' 
+      ? '主资金账户旁边的提现按钮' 
+      : '网商云账户旁边的提现按钮';
+    
+    const clicked = await clickByVision(page, targetBtn, { retries: 2, delay: 2000 });
+    if (clicked) {
+      storeLog.info(`【视觉定位】成功点击 ${account.name} 的提现按钮`);
+      return await handleWithdrawalPopupWithLog(page, page.mainFrame(), storeLog, storeName, account.amount);
+    }
+  } catch (error) {
+    storeLog.warn(`【视觉定位】失败: ${error}`);
   }
 
   storeLog.warn(`【失败】无法找到 ${account.name} 的提现按钮`);

@@ -1,11 +1,12 @@
 /**
  * 饿了么活动报名 - 内置版
- * 
+ *
  * 直接执行活动报名流程，不依赖外部脚本
  */
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import ExcelJS from 'exceljs';
 
 // 从内置automation目录导入
 import { transformBaohaojia } from './automation/transform-baohao';
@@ -120,3 +121,55 @@ export const ElemeActivityRunner = {
   executeBaohaoSignup,
   transformBaohaoExcel,
 };
+
+/**
+ * 饿了么活动报名表生成器
+ */
+export class ElemeActivityGenerator {
+  /**
+   * 生成饿了么活动报名 Excel
+   * @param inputString 分号分割的UPC条码字符串
+   * @returns Excel Buffer
+   */
+  static async run(inputString: string): Promise<Buffer> {
+    // 解析输入，支持中英文分号、逗号、空白字符分割
+    const storeIds = [
+      ...new Set(
+        inputString
+          .split(/[;；,，\s\n]+/)
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0),
+      ),
+    ];
+
+    if (storeIds.length === 0) {
+      throw new Error('未找到有效的商品UPC数据');
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('活动报名表');
+
+    // 设置说明行
+    worksheet.mergeCells('A1:B1');
+    const noteCell = worksheet.getCell('A1');
+    noteCell.value = '说明： \n 1、不要删除表头 \n 2、商品条形码：必填。';
+    noteCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+    noteCell.font = { bold: true, color: { argb: 'FFFF0000' } };
+    worksheet.getRow(1).height = 60;
+    worksheet.getColumn(1).width = 30;
+
+    // 设置表头
+    const headerRow = worksheet.getRow(2);
+    headerRow.values = ['商品条形码（必填）'];
+    headerRow.font = { bold: true };
+    headerRow.alignment = { horizontal: 'center' };
+
+    // 填充数据
+    storeIds.forEach((id) => {
+      worksheet.addRow([id]);
+    });
+
+    const buffer = (await workbook.xlsx.writeBuffer()) as Buffer;
+    return Buffer.from(buffer);
+  }
+}

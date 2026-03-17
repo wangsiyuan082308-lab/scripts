@@ -12,8 +12,6 @@ import pkg from '../package.json';
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
-import { getWithdrawalTaskLogs } from './features/withdrawal-task/logs';
-import { withdrawalTaskFeature } from './features/withdrawal-task/index';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
 import { StoreMasterFeature } from './features/store-master/index';
@@ -23,7 +21,6 @@ import {
   supplierStorage,
   taskStorage,
   merchantStorage,
-  withdrawalTaskStorage,
 } from './shared/storage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -321,39 +318,6 @@ function registerIpcHandlers() {
     return await ProcurementTaskRunner.executeTask(task);
   });
 
-  ipcMain.handle('get-withdrawal-tasks', async () => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.list(user);
-  });
-  ipcMain.handle('get-withdrawal-task-detail', async (_event, taskId) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.getDetail(taskId, user);
-  });
-  ipcMain.handle('add-withdrawal-task', async (_event, item) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.create(item, user);
-  });
-  ipcMain.handle('update-withdrawal-task', async (_event, item) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.update(item, user);
-  });
-  ipcMain.handle('delete-withdrawal-task', async (_event, taskId) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.delete(taskId, user);
-  });
-  ipcMain.handle('run-withdrawal-task', async (_event, taskId) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.run(taskId, user);
-  });
-  ipcMain.handle('retry-withdrawal-task', async (_event, taskId) => {
-    const user = requireAuth();
-    return withdrawalTaskFeature.retryFailed(taskId, user);
-  });
-  ipcMain.handle('get-withdrawal-task-logs', async (_event, taskId, limit) => {
-    const user = requireAuth();
-    return getWithdrawalTaskLogs(taskId, user, limit);
-  });
-
   // --- Storage Management Handlers ---
 
   // Merchants
@@ -439,18 +403,11 @@ function registerIpcHandlers() {
     const user = requireAuth();
     return taskStorage.delete(id, user);
   });
-
-  // Withdrawal Tasks
-  ipcMain.handle('save-withdrawal-tasks', async (_event, data) => {
-    const user = requireAuth();
-    return withdrawalTaskStorage.save(data, user);
-  });
 }
 
 app.whenReady().then(async () => {
   setupMenu();
   registerIpcHandlers();
-  withdrawalTaskFeature.startScheduler();
   await createWindow();
 });
 

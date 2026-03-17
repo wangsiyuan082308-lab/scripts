@@ -135,23 +135,30 @@ export const ProcurementAnalyzer = {
         const comparisonValue =
           normalizedMode === 'month' ? ref30Days : ref7Days;
 
-        // 检查起订量逻辑
+        // 读取换算关系（1采购单位 = N个最小单位）
+        const conversionKey = Object.keys(refRow).find(
+          (k) => k.includes('换算关系'),
+        );
+        let conversionRate = conversionKey ? Number(refRow[conversionKey]) : 1;
+        if (isNaN(conversionRate) || conversionRate <= 0) conversionRate = 1;
+
+        // 检查起订量逻辑（起订量已经是采购单位）
         const minOrderQtyKey = Object.keys(refRow).find(
           (k) => k.includes('起订量') && k.includes('采购单位'),
         );
         let minOrderQty = minOrderQtyKey ? Number(refRow[minOrderQtyKey]) : 0;
         if (isNaN(minOrderQty)) minOrderQty = 0;
 
-        // 新逻辑：直接使用周销量，如果小于起订量则使用起订量
-        finalQty = comparisonValue;
+        // 周销/月销是最小单位，需要换算为采购单位（向上取整）
+        finalQty = Math.ceil(comparisonValue / conversionRate);
         if (finalQty < minOrderQty) {
           finalQty = minOrderQty;
           console.log(
-            `[MinOrder] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, MinOrder: ${minOrderQty}, Final: ${finalQty}`,
+            `[MinOrder] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, Conversion: ${conversionRate}, Converted: ${Math.ceil(comparisonValue / conversionRate)}, MinOrder: ${minOrderQty}, Final: ${finalQty}`,
           );
         } else {
           console.log(
-            `[Normal] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, Final: ${finalQty}`,
+            `[Normal] SKU: ${row['商品SKU']}, Week/Month: ${comparisonValue}, Conversion: ${conversionRate}, Final: ${finalQty}`,
           );
         }
 

@@ -1,5 +1,32 @@
 import { defineConfig } from '@vben/vite-config';
 import electron from 'vite-plugin-electron/simple';
+import type { Plugin } from 'vite';
+
+/**
+ * Inject __dirname / __filename polyfill into ESM electron main process output.
+ * Many feature files use bare `__dirname` which is not available in ESM scope.
+ */
+function esmDirnamePlugin(): Plugin {
+  return {
+    name: 'inject-esm-dirname',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const polyfill = [
+        `import { fileURLToPath as _gftu } from 'node:url';`,
+        `import { dirname as _gdn } from 'node:path';`,
+        `const __filename = _gftu(import.meta.url);`,
+        `const __dirname = _gdn(__filename);`,
+        '',
+      ].join('\n');
+
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type === 'chunk' && chunk.fileName.endsWith('.js')) {
+          chunk.code = polyfill + chunk.code;
+        }
+      }
+    },
+  };
+}
 
 const AUTOMATION_EXTERNAL_PACKAGES = ['playwright', 'playwright-core', 'chromium-bidi'];
 
@@ -65,6 +92,7 @@ export default defineConfig(async () => {
           main: {
             entry: 'electron/main.ts',
             vite: {
+              plugins: [esmDirnamePlugin()],
               build: {
                 rollupOptions: {
                   external: (id) => isAutomationRuntimeExternal(id),

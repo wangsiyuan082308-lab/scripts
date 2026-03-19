@@ -13,6 +13,7 @@ import {
   getMerchantList,
   updateMerchant,
 } from '#/api/merchant';
+// @ts-expect-error no .vue type declaration
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 

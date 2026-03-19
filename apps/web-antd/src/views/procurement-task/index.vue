@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, h, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Button, message, Popconfirm, Tag } from 'ant-design-vue';
 import type { ProcurementTask } from '#/api/procurement-task';
 import {
@@ -12,6 +12,7 @@ import { getStoreList } from '#/api/store';
 import { getSupplierList } from '#/api/supplier';
 
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
+// @ts-expect-error no .vue type declaration
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 
 interface SupplierOption {

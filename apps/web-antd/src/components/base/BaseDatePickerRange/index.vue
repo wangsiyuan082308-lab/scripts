@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import { RangePicker } from 'ant-design-vue';
 
 // 定义props
@@ -40,11 +39,9 @@ const props = withDefaults(
 // 定义事件
 const emit = defineEmits(['update:beginTime', 'update:endTime', 'change']);
 
-const datePickerRef = ref(null);
-
 // 使用defineModel定义双向绑定
-const timeDate = defineModel<Array<string>>({
-  default: () => [],
+const timeDate = defineModel<[string, string]>({
+  default: (): [string, string] => ['', ''],
 });
 </script>
 

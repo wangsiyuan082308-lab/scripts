@@ -1,4 +1,3 @@
-import dayjs from 'dayjs';
 import { cloneDeep, isEqual } from 'lodash-es';
 
 // RenderDom
@@ -34,7 +33,7 @@ export function getPropByPath(
   let i = 0;
   for (i; i < keyArr.length - 1; i++) {
     if (!tempObj && !strict) break;
-    const key = keyArr[i];
+    const key = keyArr[i]!;
 
     if (key in tempObj) {
       tempObj = tempObj[key];
@@ -47,8 +46,8 @@ export function getPropByPath(
   }
   return {
     o: tempObj,
-    k: keyArr[i],
-    v: tempObj?.[keyArr[i]],
+    k: keyArr[i]!,
+    v: tempObj?.[keyArr[i]!],
   };
 }
 
@@ -133,12 +132,12 @@ export function parseTime(
   const time_str = format.replaceAll(
     /\{([ymdhisa])+\}/g,
     (result: string, key: string): string => {
-      let value: number | string = formatObj[key];
+      let value: number | string = formatObj[key] ?? 0;
       // Note: getDay() returns 0 on Sunday
       if (key === 'a') {
-        return ['日', '一', '二', '三', '四', '五', '六'][value];
+        return ['日', '一', '二', '三', '四', '五', '六'][value as number] ?? '';
       }
-      if (result.length > 0 && value < 10) {
+      if (result.length > 0 && (value as number) < 10) {
         value = `0${value}`;
       }
       return (value || 0).toString();

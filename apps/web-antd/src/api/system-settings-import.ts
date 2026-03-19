@@ -3,8 +3,6 @@ import ExcelJS from 'exceljs';
 import type { Store } from './store';
 import type { Supplier } from './supplier';
 
-type AliasMap = Record<string, string[]>;
-
 function normalizeHeader(text: string) {
   return text.replace(/\*/g, '').replace(/\s+/g, '').trim();
 }
@@ -84,7 +82,7 @@ export async function parseStoreImportExcel(file: ArrayBuffer | File | Uint8Arra
     throw new Error('Excel 文件中没有工作表');
   }
 
-  const aliases: AliasMap = {
+  const aliases = {
     address: ['详细地址', '地址'],
     contact: ['联系人', '负责人'],
     phone: ['联系电话', '电话', '联系方式'],
@@ -140,7 +138,7 @@ export async function parseSupplierImportExcel(file: ArrayBuffer | File | Uint8A
     throw new Error('Excel 文件中没有工作表');
   }
 
-  const aliases: AliasMap = {
+  const aliases = {
     address: ['地址', '详细地址'],
     contact: ['联系人', '负责人'],
     minOrder: ['最小起订值', '起订值', '最低起订量'],

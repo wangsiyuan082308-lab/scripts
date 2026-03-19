@@ -313,7 +313,7 @@ const startUpload = async () => {
 
   // 过滤出待上传的文件（status 为 ready 的文件）
   const pendingFiles = fileList.value.filter(
-    (file) => file.status === 'ready' || !file.status,
+    (file) => !file.status,
   );
 
   if (pendingFiles.length === 0) {
@@ -349,7 +349,7 @@ const startUpload = async () => {
           },
         };
 
-        handleCustomRequest(options);
+        handleCustomRequest(options as any);
       });
     }),
   );
@@ -385,7 +385,7 @@ const validateFileList = () => {
   if (!props.autoUpload) {
     // 获取已选择的文件（status 为 ready 或有 originFileObj）
     const selectedFiles = fileList.value.filter(
-      (file) => file.status === 'ready' || file.originFileObj,
+      (file) => !file.status || file.originFileObj,
     );
 
     // 如果有已选择的文件，验证通过（可以在表单提交时统一上传）
@@ -426,7 +426,7 @@ const validateFileList = () => {
   if (errorFiles.length > 0) {
     const result = {
       valid: false,
-      message: `文件 ${errorFiles[0].name} 上传失败，请重新上传`,
+      message: `文件 ${errorFiles[0]?.name ?? ''} 上传失败，请重新上传`,
       files: [],
     };
     if (props.autoShowMessage) {

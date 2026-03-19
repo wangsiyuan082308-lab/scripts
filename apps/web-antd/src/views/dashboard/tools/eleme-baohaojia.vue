@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { Page } from '@vben/common-ui';
 
-import { Page, useVbenForm } from '@vben/common-ui';
+import { useVbenForm } from '#/adapter/form';
 
 import { message, Modal } from 'ant-design-vue';
 
@@ -38,7 +38,6 @@ const [Form, formApi] = useVbenForm({
       rules: 'required',
     },
   ],
-  showResetButton: false,
   submitButtonOptions: {
     content: '开始处理',
   },

@@ -13,6 +13,7 @@ import { useDebounceFn } from '@vueuse/core';
 
 import { useLayoutStore } from '../../../stores/layout';
 import BaseSearchGroup from '../BaseSearchGroup/index.vue';
+// @ts-expect-error no .vue type declaration
 import BaseTableGroup from '../BaseTableGroup/index.vue';
 
 const CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT = '--vben-content-height';

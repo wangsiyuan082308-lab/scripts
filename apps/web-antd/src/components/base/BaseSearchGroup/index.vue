@@ -5,6 +5,7 @@ import { useLayoutStore } from '../../../stores/layout';
 import { cloneDeep as clone, getDate } from '../utils';
 import { vDomChange } from '../utils/domChange';
 
+// @ts-expect-error no .vue type declaration
 import BaseForm from '../BaseForm/BaseForm.vue';
 
 // 定义组件名称
@@ -209,8 +210,9 @@ const reportCompHeight = (size: { height: number }) => {
 
 <template>
   <!-- 搜索区域 -->
+  <!-- @vue-expect-error custom directive type -->
   <BaseForm
-    v-dom-change.height="autoHeight && reportCompHeight"
+    v-dom-change.height="autoHeight ? reportCompHeight : undefined"
     :form-items="formItems"
     v-bind.prop="$attrs"
     v-model:model="model"

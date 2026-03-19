@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { EChartsOption } from 'echarts';
-
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -58,7 +56,7 @@ const summary = ref<Summary>({
   latestDate: '-',
 });
 const reports = ref<PurchaseReport[]>([]);
-const chartRef = ref<InstanceType<typeof EchartsUI>>();
+const chartRef = ref();
 const { renderEcharts } = useEcharts(chartRef);
 
 const platformOptions = [
@@ -99,7 +97,7 @@ function renderChart(data: PurchaseReport[]) {
   }
   const sorted = [...dateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-  const option: EChartsOption = {
+  const option: Record<string, any> = {
     tooltip: { trigger: 'axis' },
     grid: { left: 60, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'category', data: sorted.map((d) => d[0]) },

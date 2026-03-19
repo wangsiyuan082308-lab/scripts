@@ -11,6 +11,7 @@ import { parseStoreImportExcel } from '#/api/system-settings-import';
 import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
 import { h, ref } from 'vue';
 
+// @ts-expect-error no .vue type declaration
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 

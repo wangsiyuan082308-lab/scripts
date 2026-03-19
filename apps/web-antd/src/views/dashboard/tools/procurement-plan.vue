@@ -1,7 +1,9 @@
 <script lang="ts" setup>
-import { Page, useVbenForm } from '@vben/common-ui';
+import { Page } from '@vben/common-ui';
 
-import { message, Modal } from 'ant-design-vue';
+import { Card, message, Modal } from 'ant-design-vue';
+
+import { useVbenForm } from '#/adapter/form';
 
 import { readFileAsBuffer } from '#/utils/file';
 
@@ -37,7 +39,6 @@ const [Form, formApi] = useVbenForm({
       rules: 'required',
     },
   ],
-  showResetButton: false,
   submitButtonOptions: {
     content: '生成计划',
   },

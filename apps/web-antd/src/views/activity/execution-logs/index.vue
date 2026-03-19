@@ -72,7 +72,7 @@ async function fetchLogs() {
   }
 }
 
-function toggleAutoRefresh(checked: boolean) {
+function toggleAutoRefresh(checked: boolean | string | number) {
   if (checked) {
     timer = setInterval(fetchLogs, 30_000);
   } else if (timer) {
@@ -120,7 +120,7 @@ onUnmounted(() => {
               showSizeChanger: true,
               showTotal: (t: number) => `共 ${t} 条`,
             }"
-            :row-key="(record: LogItem, index: number) => record.id ?? `log-${index}`"
+            :row-key="(record: LogItem) => record.id ?? `log-${record.id}`"
             :scroll="{ x: 700 }"
             size="middle"
           >

@@ -69,10 +69,6 @@ function onUpdateError(message: string) {
   });
 }
 
-function installUpdate() {
-  ipc?.send('install-update');
-}
-
 let listeners: Array<() => void> = [];
 
 onMounted(() => {

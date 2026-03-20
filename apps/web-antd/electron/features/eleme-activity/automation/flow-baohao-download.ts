@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import os from 'node:os';
 
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -67,7 +68,7 @@ async function main() {
       }
 
       // 检查系统下载目录
-      const downloadDir = path.join(require('os').homedir(), 'Downloads');
+      const downloadDir = path.join(os.homedir(), 'Downloads');
       const recentFiles = fs.readdirSync(downloadDir)
         .map(f => ({ name: f, time: fs.statSync(path.join(downloadDir, f)).mtimeMs }))
         .sort((a, b) => b.time - a.time)

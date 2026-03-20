@@ -9,6 +9,7 @@
 import { chromium, Page, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'node:child_process';
 
 // ============================================================
 // 配置
@@ -350,7 +351,7 @@ async function main() {
 
     if (page.url().includes('login') || page.url().includes('sso')) {
       log('warn', '需要登录！等待手动登录...');
-      try { require('child_process').execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
+      try { execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
       await page.waitForFunction(
         () => !window.location.href.includes('login') && !window.location.href.includes('sso'),
         null,

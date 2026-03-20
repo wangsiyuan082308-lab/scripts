@@ -6,6 +6,7 @@ import { chromium, Frame, Page, Download } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as ExcelJS from 'exceljs';
+import { execSync } from 'node:child_process';
 import { getTargetFrame, clickSignupButton, selectStoresAndNext } from './shared-utils';
 import { transformBaohaojia } from './transform-baohao';
 
@@ -55,7 +56,7 @@ async function ensureActivityPage(page: Page): Promise<void> {
 
   if (page.url().includes('login') || page.url().includes('sso')) {
     log('warn', '检测到未登录，等待手动登录');
-    try { require('child_process').execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
+    try { execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
     await page.waitForFunction(() => !window.location.href.includes('login') && !window.location.href.includes('sso'), { timeout: 300000 });
     await page.waitForTimeout(3000);
   }

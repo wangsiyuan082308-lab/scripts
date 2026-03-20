@@ -1,11 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
 // Shared logger is optional — resolve path dynamically to avoid compile-time breakage
 let createSharedLogger = null;
 try {
     const sharedPath = path.resolve(__dirname, '..', '..', '..', 'shared-libs', 'logger', 'src');
     if (fs.existsSync(sharedPath)) {
-        createSharedLogger = require(sharedPath).createLogger;
+        createSharedLogger = createRequire(import.meta.url)(sharedPath).createLogger;
     }
 }
 catch { }

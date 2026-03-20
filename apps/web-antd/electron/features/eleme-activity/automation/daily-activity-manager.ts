@@ -13,6 +13,7 @@
 import { chromium, BrowserContext, Page, Frame } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'node:child_process';
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const today = new Date().toISOString().split('T')[0];
@@ -215,7 +216,6 @@ async function main() {
     if (newCategoryCoupons.length > 0) {
       log('info', `发现${newCategoryCoupons.length}个新品类红包，启动自动报名...`);
       // 调用v4脚本
-      const { execSync } = require('child_process');
       try {
         execSync('npx ts-node src/signup-category-v4.ts', {
           cwd: path.join(__dirname, '..'),

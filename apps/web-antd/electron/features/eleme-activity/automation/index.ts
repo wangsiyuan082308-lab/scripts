@@ -7,6 +7,7 @@
 import puppeteer from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'node:child_process';
 import { dispatchSignup, classifyActivity as classifyActivityType, type ActivityType, type SignupResult as DispatchResult } from './signup-dispatcher';
 import { createLogger as createSharedLogger } from '@oby/logger';
 import { sendMessage, buildUnifiedOpsReport } from '@oby/feishu-notify';
@@ -673,7 +674,6 @@ class ActivityScraper {
         log('warn', '检测到需要登录！等待用户手动登录...');
         
         try {
-          const { execSync } = require('child_process');
           execSync('say "请登录饿了么"', { stdio: 'ignore' });
         } catch {}
         

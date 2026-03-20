@@ -4,6 +4,7 @@
 
 import { chromium } from 'playwright';
 import * as path from 'path';
+import { execSync } from 'node:child_process';
 
 const USER_DATA_DIR = path.join(__dirname, '..', 'user_data');
 const ACTIVITY_URL = 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/';
@@ -77,7 +78,7 @@ async function main() {
     // 检测登录
     if (page.url().includes('login') || page.url().includes('sso')) {
       console.log('需要登录，等待手动登录（最多5分钟）...');
-      try { require('child_process').execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
+      try { execSync('say "请登录饿了么"', { stdio: 'ignore' }); } catch {}
       await page.waitForFunction(
         () => !window.location.href.includes('login') && !window.location.href.includes('sso'),
         { timeout: 300000 }

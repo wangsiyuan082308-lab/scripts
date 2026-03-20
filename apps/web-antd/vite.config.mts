@@ -3,8 +3,8 @@ import electron from 'vite-plugin-electron/simple';
 import type { Plugin } from 'vite';
 
 /**
- * Inject __dirname / __filename polyfill into ESM electron main process output.
- * Many feature files use bare `__dirname` which is not available in ESM scope.
+ * Inject __dirname / __filename / require polyfill into ESM electron main process output.
+ * Many third-party dependencies use bare `require()` which is not available in ESM scope.
  */
 function esmDirnamePlugin(): Plugin {
   return {
@@ -14,8 +14,10 @@ function esmDirnamePlugin(): Plugin {
       const polyfill = [
         `import { fileURLToPath as _gftu } from 'node:url';`,
         `import { dirname as _gdn } from 'node:path';`,
+        `import { createRequire as _gcr } from 'node:module';`,
         `const __filename = _gftu(import.meta.url);`,
         `const __dirname = _gdn(__filename);`,
+        `const require = _gcr(import.meta.url);`,
         '',
       ].join('\n');
 

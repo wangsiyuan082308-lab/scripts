@@ -1,5 +1,40 @@
 # 系统更新日志
 
+## 2026-03-20
+
+### 🐛 Bug 修复
+
+#### Electron ESM 模式下 require 未定义错误修复
+
+**问题：**
+```
+ReferenceError: require is not defined in ES module scope
+```
+
+**根本原因：**
+- 项目配置为 ESM 模式（`"type": "module"`）
+- 第三方依赖（minimatch、inherits 等）打包后包含 `require()` 调用
+- ESM 作用域中 `require` 未定义，导致运行时崩溃
+
+**修复方案：**
+
+在 `vite.config.mts` 的 `esmDirnamePlugin` 中添加 `createRequire` polyfill：
+
+```typescript
+import { createRequire as _gcr } from 'node:module';
+const require = _gcr(import.meta.url);
+```
+
+**修改文件：**
+- `apps/web-antd/vite.config.mts` - 添加 require polyfill
+
+**技术说明：**
+- `createRequire` 是 Node.js 官方提供的 ESM 兼容方案
+- 允许在 ESM 模块中动态加载 CommonJS 模块
+- 打包时会注入到每个 chunk 的顶部
+
+---
+
 ## 2026-03-13
 
 ### 🎉 功能优化

@@ -43,7 +43,6 @@
     "dev": "turbo-run dev",
     "dev:antd": "pnpm -F @vben/web-antd run dev",
     "dev:antd:electron": "pnpm -F @vben/web-antd run dev:electron",
-    "dev:withdraw": "pnpm -F eleme-auto-withdraw run dev",
     "dev:docs": "pnpm -F @vben/docs run dev",
     "format": "vsh lint --format",
     "lint": "vsh lint",

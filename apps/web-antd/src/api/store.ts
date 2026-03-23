@@ -15,8 +15,6 @@ export interface Store {
   contact: string;
   phone: string;
   merchantId?: string;
-  elemeWithdrawalPassword?: string;
-  withdrawalPassword?: string;
 }
 
 function createStoreId() {
@@ -25,11 +23,9 @@ function createStoreId() {
 
 function normalizeStore(data: Partial<Store>): Store {
   const storeId = `${data.storeId || data.id || ''}`.trim() || createStoreId();
-  const elemeWithdrawalPassword = `${data.elemeWithdrawalPassword || data.withdrawalPassword || ''}`.trim();
   return {
     address: `${data.address || ''}`.trim(),
     contact: `${data.contact || ''}`.trim(),
-    elemeWithdrawalPassword,
     id: storeId,
     merchantId: `${data.merchantId || ''}`.trim() || undefined,
     phone: `${data.phone || ''}`.trim(),
@@ -37,7 +33,6 @@ function normalizeStore(data: Partial<Store>): Store {
     region: `${data.region || ''}`.trim(),
     storeId,
     storeName: `${data.storeName || ''}`.trim(),
-    withdrawalPassword: `${data.withdrawalPassword || elemeWithdrawalPassword}`.trim() || undefined,
   };
 }
 

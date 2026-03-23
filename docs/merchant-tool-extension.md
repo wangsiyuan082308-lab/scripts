@@ -25,7 +25,6 @@ apps/
         ├── auth/                # 认证相关
         ├── user/                # 用户信息
         ├── menu/                # 菜单配置
-        ├── withdrawal/          # 提现管理
         ├── procurement-task/    # 采购任务
         ├── supplier/            # 供应商
         ├── purchase/            # 采购报表
@@ -39,7 +38,6 @@ apps/
 
 **OpenClaw 技能池：** `~/.openclaw/workspace/skills/`
 - `eleme-activity-assistant` - 饿了么活动助手（爬虫 + 推送）
-- `eleme-auto-withdrawal` - 自动提现
 - `oby-finance-analyzer` - 财务分析
 - `aoixiang-auto-purchase` - 自动采购
 - 其他技能...

@@ -12,6 +12,7 @@ import { BrandActivityFallback } from './lib/brand-activity-fallback';
 import { SubmitButtonFallback } from './lib/submit-button-fallback';
 import { AIAssistantFrameGuard } from './lib/ai-assistant-frame-guard';
 import { FailureEvidenceCollector } from './lib/failure-evidence-collector';
+import { isCliEntry } from '../../../utils/is-main-module';
 
 // ============================================================
 // 日志系统
@@ -388,7 +389,7 @@ async function main() {
 }
 
 // 执行主函数
-if (require.main === module) {
+if (isCliEntry('signup-super-brand-fixed.ts', 'signup-super-brand-fixed.js', 'signup-super-brand-fixed.mjs', 'signup-super-brand-fixed.cjs')) {
   main().catch(error => {
     console.error('程序执行失败:', error);
     process.exit(1);

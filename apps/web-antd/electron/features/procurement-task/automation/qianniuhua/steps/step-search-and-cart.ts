@@ -20,6 +20,7 @@ import {
 import { exportViaTaskCenter } from '../lib/task-center';
 import { log } from '../lib/utils';
 import { saveContext, loadContext, createEmptyContext } from '../lib/context';
+import { isCliEntry } from '../../../../../utils/is-main-module';
 
 interface TableVerificationResult {
   rowCount: number;
@@ -1041,7 +1042,7 @@ async function recoverSupplierCart(page: Page, config: PurchaseConfig, supplier:
   return replenishListNo;
 }
 
-if (require.main === module) {
+if (isCliEntry('step-search-and-cart.ts', 'step-search-and-cart.js', 'step-search-and-cart.mjs', 'step-search-and-cart.cjs')) {
   const { overrides } = parseCLI();
   const config = loadConfig(overrides);
   const ctx = loadContext() || createEmptyContext(config.supplier);

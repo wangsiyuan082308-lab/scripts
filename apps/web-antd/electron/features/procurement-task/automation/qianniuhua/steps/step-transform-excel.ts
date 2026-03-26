@@ -11,6 +11,7 @@ import { ProcurementAnalyzer } from '../lib/procurement-analyzer';
 import { ensureDir } from '../lib/page-helpers';
 import { log } from '../lib/utils';
 import { saveContext, loadContext, createEmptyContext } from '../lib/context';
+import { isCliEntry } from '../../../../../utils/is-main-module';
 
 export async function stepTransformExcel(
   _page: Page, config: PurchaseConfig, ctx: StepContext,
@@ -53,7 +54,7 @@ export async function stepTransformExcel(
 }
 
 // 独立运行入口（不需要浏览器，只读文件）
-if (require.main === module) {
+if (isCliEntry('step-transform-excel.ts', 'step-transform-excel.js', 'step-transform-excel.mjs', 'step-transform-excel.cjs')) {
   const { overrides } = parseCLI();
   const config = loadConfig(overrides);
   const ctx = loadContext() || createEmptyContext(config.supplier);

@@ -10,6 +10,7 @@ import { closeModals, switchToMaxPerPage } from '../lib/page-helpers';
 import { exportViaTaskCenter } from '../lib/task-center';
 import { log } from '../lib/utils';
 import { saveContext, loadContext, createEmptyContext } from '../lib/context';
+import { isCliEntry } from '../../../../../utils/is-main-module';
 
 export async function stepCheckAndExportCart(
   page: Page, config: PurchaseConfig, ctx: StepContext,
@@ -147,7 +148,7 @@ async function attemptExport(page: Page, config: PurchaseConfig): Promise<string
 }
 
 // 独立运行入口
-if (require.main === module) {
+if (isCliEntry('step-check-and-export-cart.ts', 'step-check-and-export-cart.js', 'step-check-and-export-cart.mjs', 'step-check-and-export-cart.cjs')) {
   const { overrides } = parseCLI();
   const config = loadConfig(overrides);
   const ctx = loadContext() || createEmptyContext(config.supplier);

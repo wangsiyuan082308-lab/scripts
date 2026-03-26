@@ -13,6 +13,8 @@ import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { isCliEntry } from '../../../utils/is-main-module';
+
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const PRODUCT_MASTER_PATH = '/Users/mac/.openclaw/data/product-master.json';
 
@@ -258,7 +260,7 @@ export async function transformBaohaojia(inputPath: string, initialStock = 9999)
 }
 
 // CLI入口
-if (require.main === module) {
+if (isCliEntry('transform-baohao.ts', 'transform-baohao.js', 'transform-baohao.mjs', 'transform-baohao.cjs')) {
   const inputFile = process.argv[2];
   const stock = parseInt(process.argv[3] || '9999');
   

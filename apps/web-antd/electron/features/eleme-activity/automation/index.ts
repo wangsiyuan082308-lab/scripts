@@ -12,6 +12,8 @@ import { dispatchSignup, classifyActivity as classifyActivityType, type Activity
 import { createLogger as createSharedLogger } from '@oby/logger';
 import { sendMessage, buildUnifiedOpsReport } from '@oby/feishu-notify';
 
+import { isCliEntry } from '../../../utils/is-main-module';
+
 const _sharedLogger = createSharedLogger('eleme-activity', { console: false });
 
 const config = {
@@ -1449,6 +1451,6 @@ async function main() {
 }
 
 // 运行
-if (require.main === module) {
+if (isCliEntry('features/eleme-activity/automation/index.ts', 'features/eleme-activity/automation/index.js', 'index.ts', 'index.js', 'index.mjs', 'index.cjs')) {
   main().catch(console.error);
 }

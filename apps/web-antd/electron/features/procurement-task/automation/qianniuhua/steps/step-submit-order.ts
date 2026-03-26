@@ -20,6 +20,7 @@ import {
 import { executeOrderAction } from '../lib/order-actions';
 import { log } from '../lib/utils';
 import { sendOrderConfirmNotification } from '../lib/notify';
+import { isCliEntry } from '../../../../../utils/is-main-module';
 
 interface PendingOrder {
   orderNo: string;
@@ -1100,7 +1101,7 @@ async function compareAmounts(
   return infos;
 }
 
-if (require.main === module) {
+if (isCliEntry('step-submit-order.ts', 'step-submit-order.js', 'step-submit-order.mjs', 'step-submit-order.cjs')) {
   (async () => {
     const { loadConfig, parseCLI } = await import('../lib/config');
     const { launchBrowser } = await import('../lib/browser');

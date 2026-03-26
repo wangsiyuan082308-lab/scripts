@@ -18,6 +18,7 @@ import {
   waitForUiSettled,
 } from '../lib/page-helpers';
 import { log } from '../lib/utils';
+import { isCliEntry } from '../../../../../utils/is-main-module';
 
 const DRAWER_SELECTORS = [
   '.purchase-ant-drawer',
@@ -507,7 +508,7 @@ async function isDrawerVisible(page: Page): Promise<boolean> {
   return false;
 }
 
-if (require.main === module) {
+if (isCliEntry('step-clean-cart.ts', 'step-clean-cart.js', 'step-clean-cart.mjs', 'step-clean-cart.cjs')) {
   (async () => {
     const { loadConfig, parseCLI } = await import('../lib/config');
     const { launchBrowser } = await import('../lib/browser');

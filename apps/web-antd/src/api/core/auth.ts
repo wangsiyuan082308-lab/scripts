@@ -47,12 +47,12 @@ export async function loginApi(data: AuthApi.LoginParams) {
     }
     return {
       success: false,
-      message: payload?.error ?? payload?.message ?? 'Login failed',
+      message: payload?.error ?? payload?.message ?? '登录失败，请稍后重试。',
     } satisfies AuthApi.LoginResult;
   } catch (error: any) {
     return {
       success: false,
-      message: error?.error ?? error?.message ?? 'Login failed',
+      message: error?.error ?? error?.message ?? '登录失败，请稍后重试。',
     } satisfies AuthApi.LoginResult;
   }
 }

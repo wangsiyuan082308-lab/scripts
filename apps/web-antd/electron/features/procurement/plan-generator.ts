@@ -2,172 +2,278 @@ import { Buffer } from 'node:buffer';
 
 import * as ExcelJS from 'exceljs';
 
-import { readExcel } from '../../utils/excel-helper';
+import {
+  readExcelWithSchema,
+  type ExcelSchemaField,
+} from '../../utils/excel-helper';
 
 interface PlanOptions {
   buffers: Buffer[];
   type: 'aoxiang' | 'qianniuhua';
 }
 
+type PlanRow = {
+  logisticsNo: string;
+  message: string;
+  name: string;
+  price: number | '';
+  quantity: number;
+  skuCode: string;
+  specification: string;
+  storeCode: string;
+  supplierCode: string;
+  unit: string;
+};
+
+const INPUT_SCHEMA: ExcelSchemaField[] = [
+  { key: 'storeCode', aliases: ['*门店/仓编码', '门店/仓编码'] },
+  { key: 'skuCode', aliases: ['*SKU编码', 'SKU编码'] },
+  { key: 'quantity', aliases: ['*采购量', '采购量'] },
+  { key: 'price', aliases: ['采购单价(元)', '采购单价', '单价'], required: false },
+  { key: 'supplierCode', aliases: ['供应商编码'], required: false },
+  { key: 'unit', aliases: ['采购单位', '单位'], required: false },
+  { key: 'name', aliases: ['商品名称', '名称'], required: false },
+  { key: 'logisticsNo', aliases: ['物流单号'], required: false },
+  { key: 'arrivalDate', aliases: ['预计到货日期'], required: false },
+  { key: 'message', aliases: ['网采订单留言内容'], required: false },
+];
+
+function getRequiredKeys(
+  fieldMap: Record<string, string>,
+  requiredKeys: string[],
+  label: string,
+  headers: string[],
+) {
+  const missing = requiredKeys.filter((key) => !fieldMap[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${label}缺少必需列: ${missing.join('、')}。当前识别到的表头: [${headers.join(', ')}]`,
+    );
+  }
+}
+
+function getFieldValue(
+  row: Record<string, unknown>,
+  fieldMap: Record<string, string>,
+  key: string,
+): unknown {
+  const header = fieldMap[key];
+  return header ? row[header] : undefined;
+}
+
+function toTrimmedText(value: unknown): string {
+  return value == null ? '' : String(value).trim();
+}
+
+function parseStrictNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const text = String(value).replaceAll(/,/g, '').trim();
+  if (!text) return null;
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function createAoxiangWorksheet(workbook: ExcelJS.Workbook) {
+  const worksheet = workbook.addWorksheet('采购计划');
+
+  worksheet.columns = [
+    { header: '', key: 'col1', width: 25 },
+    { header: '', key: 'col2', width: 25 },
+    { header: '', key: 'col3', width: 25 },
+    {
+      header: '',
+      key: 'col4',
+      width: 25,
+    },
+    {
+      header: '',
+      key: 'col5',
+      width: 45,
+    },
+    {
+      header: '',
+      key: 'col6',
+      width: 27,
+    },
+    { header: '', key: 'col7', width: 27 },
+    { header: '', key: 'col8', width: 28 },
+    { header: '', key: 'col9', width: 25 },
+    { header: '', key: 'col10', width: 25 },
+    { header: '', key: 'col11', width: 25 },
+    { header: '', key: 'col12', width: 25 },
+    { header: '', key: 'col13', width: 45 },
+    { header: '', key: 'col14', width: 45 },
+  ];
+
+  worksheet.mergeCells('A1:N5');
+  worksheet.mergeCells('F6:G6');
+
+  worksheet.getCell('A6').value = '必填（可在门店管理查询）';
+  worksheet.getCell('B6').value = '必填（可在供应商管理查询）';
+  worksheet.getCell('C6').value = '必填（可在门店商品查询）';
+  worksheet.getCell('D6').value = '必填（采购数量不能小于最小起订量）';
+  worksheet.getCell('E6').value =
+    '选填（请下拉选项选择填入，不填则默认为采购单位。库存单位为最小售卖单位，采购单位为箱规，例如：农夫山泉矿泉水500ml，库存单位为瓶，采购单位为箱）';
+  worksheet.getCell('F6').value =
+    '选填（单价、金额只填其中1个，另外1个系统自动计算填入；如果2个都填写，系统只取金额；如果都不填，系统默认取最近一次采购价自动填入）';
+
+  const headerRow = worksheet.getRow(7);
+  const headerValues = [
+    '*仓库/门店编码',
+    '*供应商编码',
+    '*商品编码',
+    '*采购数量',
+    '单位',
+    '采购单价（元）',
+    '采购金额（元）',
+    '物流单号',
+    '商品名称',
+    '规格',
+    '网采订单留言',
+    '数据来源',
+    '是否创建外部订单',
+    '外部采购账号',
+  ];
+  headerValues.forEach((value, index) => {
+    worksheet.getCell(7, index + 1).value = value;
+  });
+
+  const descriptionStyle = {
+    alignment: {
+      horizontal: 'center' as const,
+      vertical: 'center' as const,
+      wrapText: true,
+    },
+    border: {
+      top: { style: 'thin' as const },
+      left: { style: 'thin' as const },
+      bottom: { style: 'thin' as const },
+      right: { style: 'thin' as const },
+    },
+    fill: {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFD3D3D3' },
+    },
+    font: { bold: true },
+  };
+
+  ['A6', 'B6', 'C6', 'D6', 'E6', 'F6'].forEach((cell) => {
+    Object.assign(worksheet.getCell(cell), descriptionStyle);
+  });
+
+  headerRow.eachCell((cell) => {
+    Object.assign(cell, descriptionStyle);
+  });
+
+  worksheet.dataValidations.add('E8:E3001', {
+    type: 'list',
+    allowBlank: true,
+    formulae: ['"采购单位,库存单位"'],
+  });
+  worksheet.dataValidations.add('M8:M3001', {
+    type: 'list',
+    allowBlank: true,
+    formulae: ['"是,否"'],
+  });
+
+  return worksheet;
+}
+
+async function readPlanRows(buffers: Buffer[]): Promise<PlanRow[]> {
+  const allData: PlanRow[] = [];
+
+  for (const buffer of buffers) {
+    const result = await readExcelWithSchema(buffer, [...INPUT_SCHEMA]);
+
+    if (result.data.length === 0) {
+      continue;
+    }
+
+    getRequiredKeys(
+      result.fieldMap,
+      ['storeCode', 'skuCode', 'quantity'],
+      '采购计划模版',
+      result.headers,
+    );
+
+    result.data.forEach((row) => {
+      const storeCode = toTrimmedText(getFieldValue(row, result.fieldMap, 'storeCode'));
+      const skuCode = toTrimmedText(getFieldValue(row, result.fieldMap, 'skuCode'));
+      const quantity = parseStrictNumber(getFieldValue(row, result.fieldMap, 'quantity'));
+      const price = parseStrictNumber(getFieldValue(row, result.fieldMap, 'price'));
+
+      if (!storeCode || !skuCode || quantity == null) {
+        return;
+      }
+
+      allData.push({
+        logisticsNo: toTrimmedText(getFieldValue(row, result.fieldMap, 'logisticsNo')),
+        message: toTrimmedText(getFieldValue(row, result.fieldMap, 'message')),
+        name: toTrimmedText(getFieldValue(row, result.fieldMap, 'name')),
+        storeCode,
+        skuCode,
+        quantity,
+        specification: '',
+        supplierCode: toTrimmedText(getFieldValue(row, result.fieldMap, 'supplierCode')),
+        unit: toTrimmedText(getFieldValue(row, result.fieldMap, 'unit')),
+        price: price ?? '',
+      });
+    });
+  }
+
+  return allData;
+}
+
 export const ProcurementPlanGenerator = {
   async run({ buffers, type }: PlanOptions) {
-    // 1. 读取所有文件
-    const allData: any[] = [];
-    for (const buffer of buffers) {
-      const data = await readExcel(buffer);
-      allData.push(...data);
+    if (type !== 'aoxiang') {
+      throw new Error('当前仅支持生成翱象采购计划');
     }
+
+    const allData = await readPlanRows(buffers);
 
     if (allData.length === 0) {
       throw new Error('未找到有效数据，请检查上传的文件内容');
     }
 
-    // 2. 创建输出 Workbook
-    const wbOutput = new ExcelJS.Workbook();
-    const wsOutput = wbOutput.addWorksheet('采购计划');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = createAoxiangWorksheet(workbook);
 
-    // 定义输出模版
-    if (type === 'aoxiang') {
-      // 第一行：必填项说明
-      wsOutput.columns = [
-        { header: '必填', key: 'col1', width: 15 },
-        { header: '', key: 'col2', width: 15 },
-        { header: '', key: 'col3', width: 12 },
-        { header: '非必填\n可通过补货建议列表导出的供应商填入，不填则默认取供货关系设置的默认供应商', key: 'col4', width: 25 },
-        { header: '非必填\n下拉选择【库存单位】，【采购单位】，不填则默认取供货关系设置的单位', key: 'col5', width: 15 },
-        { header: '非必填\n可通过补货建议列表导出的采购价填入，不填则默认取供货关系设置的采购价', key: 'col6', width: 25 },
-      ];
-      
-      // 添加真正的表头行 (第二行)
-      wsOutput.addRow({
-        col1: '*仓库/门店编码',
-        col2: '*商品编码',
-        col3: '*补货量',
-        col4: '供应商编码',
-        col5: '单位',
-        col6: '采购价',
-      });
-
-      // 合并第一行的单元格
-      // "必填" 覆盖前三列 (A1:C1)
-      wsOutput.mergeCells('A1:C1');
-      // 后面的非必填说明分别在 D1, E1, F1，不需要合并，但需要设置对齐和换行
-      ['A1', 'D1', 'E1', 'F1'].forEach(cell => {
-         wsOutput.getCell(cell).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-         // 可以加个背景色区分
-         wsOutput.getCell(cell).fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFD3D3D3' } // 浅灰色
-         };
-         // 边框
-         wsOutput.getCell(cell).border = {
-            top: {style:'thin'},
-            left: {style:'thin'},
-            bottom: {style:'thin'},
-            right: {style:'thin'}
-         };
-      });
-
-      // 第二行表头也加边框和背景
-      wsOutput.getRow(2).eachCell((cell) => {
-         cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFD3D3D3' }
-         };
-         cell.border = {
-            top: {style:'thin'},
-            left: {style:'thin'},
-            bottom: {style:'thin'},
-            right: {style:'thin'}
-         };
-         cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      });
-      
-    } else {
-      // 默认牵牛花模版
-      wsOutput.columns = [
-        { header: '*门店/仓编码', key: 'storeCode', width: 15 },
-        { header: '*SKU编码', key: 'skuCode', width: 15 },
-        { header: '补货量', key: 'quantity', width: 12 },
-        { header: '商品名称', key: 'name', width: 30 },
-        { header: '补货单价(元）', key: 'price', width: 12 },
-        { header: '供应商编码', key: 'supplierCode', width: 15 },
-        { header: '补货单位', key: 'unit', width: 10 },
-      ];
-    }
-
-    // 3. 处理数据行
-    let count = 0;
-    allData.forEach((row) => {
-      // 映射逻辑：优先完全匹配，其次模糊匹配
-      const getVal = (exact: string, partials: string[] = []) => {
-        if (row[exact] !== undefined) return row[exact];
-        // 尝试去除 * 号后匹配
-        const cleanExact = exact.replaceAll('*', '');
-        if (row[cleanExact] !== undefined) return row[cleanExact];
-
-        // 模糊匹配
-        const key = Object.keys(row).find((k) =>
-          partials.some((kw) => k.includes(kw)),
-        );
-        return key ? row[key] : undefined;
-      };
-
-      const storeCode = getVal('*门店/仓编码', ['门店', '仓编码']);
-      const skuCode = getVal('*SKU编码', ['SKU']);
-      const quantity = getVal('*采购量', ['采购量']);
-      const name = getVal('商品名称', ['商品名称', '名称']);
-      const price = getVal('采购单价(元)', ['采购单价', '单价']);
-      const supplierCode = getVal('供应商编码', ['供应商']);
-      const unit = getVal('采购单位', ['采购单位', '单位']);
-
-      // 简单验证：必须有 SKU 和 数量
-      if (!skuCode) return;
-
-      // 检查是否有"购买状态"字段（旧格式需要过滤）
-      const status = getVal('购买状态', ['购买状态']);
-      // 如果存在"购买状态"字段，则只保留成功的记录
-      if (status !== undefined && status !== '成功') return;
-
-      if (type === 'aoxiang') {
-        wsOutput.addRow({
-          col1: storeCode,
-          col2: skuCode,
-          col3: quantity || 0,
-          col4: supplierCode,
-          col5: unit || '',
-          col6: price,
-        });
-      } else {
-        wsOutput.addRow({
-          storeCode,
-          skuCode,
-          quantity: quantity || 0, // 确保有数量
-          name: '', // 商品名称留空
-          price,
-          supplierCode,
-          unit: '',
-        });
-      }
-      count++;
+    allData.forEach((row, index) => {
+      const rowNumber = index + 8;
+      worksheet.getCell(`A${rowNumber}`).value = row.storeCode;
+      worksheet.getCell(`B${rowNumber}`).value = row.supplierCode;
+      worksheet.getCell(`C${rowNumber}`).value = row.skuCode;
+      worksheet.getCell(`D${rowNumber}`).value = row.quantity;
+      worksheet.getCell(`E${rowNumber}`).value = row.unit;
+      worksheet.getCell(`F${rowNumber}`).value = row.price;
+      worksheet.getCell(`G${rowNumber}`).value = '';
+      worksheet.getCell(`H${rowNumber}`).value = row.logisticsNo;
+      worksheet.getCell(`I${rowNumber}`).value = row.name;
+      worksheet.getCell(`J${rowNumber}`).value = row.specification;
+      worksheet.getCell(`K${rowNumber}`).value = row.message;
+      worksheet.getCell(`L${rowNumber}`).value = 'PDD机器人采购';
+      worksheet.getCell(`M${rowNumber}`).value = '';
+      worksheet.getCell(`N${rowNumber}`).value = '';
     });
 
-    // 4. 导出 Buffer
-    const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
-
-    // 生成默认文件名
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const timestamp = new Date()
       .toISOString()
       .replaceAll(/[:.]/g, '-')
       .slice(0, 19);
-    const platformName = type === 'qianniuhua' ? '牵牛花' : '翱象';
-    const filename = `采购计划_${platformName}_${timestamp}.xlsx`;
+    const filename = `采购计划_翱象_${timestamp}.xlsx`;
 
     return {
-      buffer: buffer as Buffer,
-      summary: `生成成功！\n目标平台：${platformName}\n共合并 ${buffers.length} 个文件，生成 ${count} 条数据。`,
+      buffer,
+      summary: `生成成功！\n目标平台：翱象\n共合并 ${buffers.length} 个文件，生成 ${allData.length} 条数据。`,
       outputPath: filename,
     };
   },

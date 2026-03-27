@@ -44,7 +44,7 @@ const projectItems: WorkbenchProjectItem[] = [
   },
   {
     color: '#8A2BE2',
-    content: '批量生成牵牛花/翱象采购计划',
+    content: '将牵牛花采购模版批量转换为翱象采购计划',
     date: '2024-03-23',
     group: '采购计划',
     icon: 'ri:file-list-3-fill',

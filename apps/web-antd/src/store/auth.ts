@@ -90,14 +90,14 @@ export const useAuthStore = defineStore('auth', () => {
         // 登录失败提示
         notification.error({
           message: '登录失败',
-          description: errorMsg || '用户名或密码错误',
+          description: errorMsg || '登录失败，请检查输入后重试。',
           duration: 3,
         });
       }
     } catch (error: any) {
       notification.error({
         message: '登录失败',
-        description: error?.message || '用户名或密码错误',
+        description: error?.message || '登录失败，请稍后重试。',
         duration: 3,
       });
     } finally {

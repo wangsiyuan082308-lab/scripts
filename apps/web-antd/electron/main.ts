@@ -245,7 +245,7 @@ function registerIpcHandlers() {
   );
 
   /**
-   * 生成采购计划 (牵牛花/翱象)
+   * 生成采购计划 (仅翱象)
    */
   ipcMain.handle(
     'generate-procurement-plan',
@@ -261,7 +261,7 @@ function registerIpcHandlers() {
         });
 
         const { filePath, canceled } = await dialog.showSaveDialog({
-          title: `保存${type === 'qianniuhua' ? '牵牛花' : '翱象'}采购计划`,
+          title: '保存翱象采购计划',
           defaultPath,
           filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
         });

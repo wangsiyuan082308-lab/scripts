@@ -44,6 +44,7 @@
     "dev:antd": "pnpm -F @vben/web-antd run dev",
     "dev:antd:electron": "pnpm -F @vben/web-antd run dev:electron",
     "dev:docs": "pnpm -F @vben/docs run dev",
+    "dev:withdraw": "pnpm exec tsx apps/web-antd/electron/features/withdrawal-task/withdrawal-cli.ts",
     "format": "vsh lint --format",
     "lint": "vsh lint",
     "postinstall": "pnpm -r run stub --if-present",

@@ -16,6 +16,8 @@ import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
 import { StoreMasterFeature } from './features/store-master/index';
 import { SupplierMasterFeature } from './features/supplier-master/index';
+import { addLogListener } from './features/withdrawal-task/automation/logger.js';
+import { WithdrawalTaskRunner } from './features/withdrawal-task/runner.js';
 import {
   storeStorage,
   supplierStorage,
@@ -316,6 +318,49 @@ function registerIpcHandlers() {
    */
   ipcMain.handle('execute-procurement-task', async (_event, task) => {
     return await ProcurementTaskRunner.executeTask(task);
+  });
+
+  /**
+   * 执行提现任务，并将实时日志推送给当前渲染进程
+   */
+  ipcMain.handle('execute-withdrawal-task', async (event, task) => {
+    const runId =
+      task?.clientRequestId || task?.id || task?.taskId || `withdrawal_${Date.now()}`;
+    const sendLog = (entry: Record<string, any>) => {
+      event.sender.send('withdrawal-log', {
+        entry,
+        runId,
+      });
+    };
+
+    const removeListener = addLogListener((entry) => {
+      sendLog(entry);
+    });
+
+    sendLog({
+      level: 'INFO',
+      message: '提现任务已提交，开始执行。',
+      module: 'withdrawal-ui',
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      const result = await WithdrawalTaskRunner.executeTask(task);
+      return {
+        ...result,
+        runId,
+      };
+    } catch (error: any) {
+      sendLog({
+        level: 'ERROR',
+        message: error?.message || '提现任务执行失败',
+        module: 'withdrawal-ui',
+        timestamp: new Date().toISOString(),
+      });
+      throw error;
+    } finally {
+      removeListener();
+    }
   });
 
   // --- Storage Management Handlers ---

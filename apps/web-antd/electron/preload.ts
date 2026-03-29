@@ -6,6 +6,7 @@ const INVOKE_CHANNELS = [
   'process-eleme-baohaojia',
   'generate-procurement-plan',
   'execute-procurement-task',
+  'execute-withdrawal-task',
   // Storage
   'get-stores',
   'save-stores',
@@ -41,6 +42,7 @@ const ON_CHANNELS = [
   'update-error',
   'update-checking',
   'main-process-message',
+  'withdrawal-log',
 ];
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -60,8 +62,10 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
     if (!ON_CHANNELS.includes(channel)) {
       throw new Error(`IPC on not allowed: ${channel}`);
     }
-    ipcRenderer.on(channel, (_event, ...args) => listener(...args));
-    return { channel, listener };
+    const wrappedListener = (_event: unknown, ...args: any[]) =>
+      listener(...args);
+    ipcRenderer.on(channel, wrappedListener);
+    return () => ipcRenderer.off(channel, wrappedListener);
   },
   off(channel: string, listener: (...args: any[]) => void) {
     ipcRenderer.off(channel, listener);

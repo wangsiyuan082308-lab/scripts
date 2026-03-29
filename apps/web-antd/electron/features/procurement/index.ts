@@ -21,8 +21,31 @@ const LIST_SCHEMA = [
   { key: 'storeName', aliases: ['收货方名称', '门店名称', '门店/仓名称'], required: false },
   { key: 'supplierCode', aliases: ['发货方编码', '供应商编码'] },
   { key: 'purchaseUnit', aliases: ['采购单位', '补货单位'] },
-  { key: 'purchaseQty', aliases: ['采购补货量', '采购补货数量', '采购量', '采购建议补货量'] },
-  { key: 'adviceQty', aliases: ['建议补货量', '基础补货量', '建议补货数量', '基础补货数量'], required: false },
+  {
+    key: 'purchaseQty',
+    aliases: [
+      '采购补货量',
+      '采购补货数量',
+      '采购量',
+      '采购建议补货量',
+      '补货量（采购单位）',
+      '补货量(采购单位)',
+      '补货量采购单位',
+    ],
+  },
+  {
+    key: 'adviceQty',
+    aliases: [
+      '建议补货量',
+      '基础补货量',
+      '建议补货数量',
+      '基础补货数量',
+      '建议量（采购单位）',
+      '建议量(采购单位)',
+      '建议量采购单位',
+    ],
+    required: false,
+  },
 ] as const;
 
 const REF_SCHEMA = [

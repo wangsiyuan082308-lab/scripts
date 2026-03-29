@@ -103,7 +103,8 @@ async function onSubmit(values: any) {
         <ul class="list-inside list-disc">
           <li>批量上传一个或多个牵牛花采购计划模版 Excel 文件。</li>
           <li>当前仅支持生成翱象采购计划。</li>
-          <li>系统将自动合并数据并按现有翱象模版导出文件。</li>
+          <li>仅可用于 PDD 采购单转换，供应商编码会固定写入 `2168183`。</li>
+          <li>系统将自动合并数据并按当前翱象导入模板导出文件。</li>
         </ul>
       </div>
       <Form />

@@ -60,8 +60,10 @@ describe('ProcurementPlanGenerator', () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(result.buffer);
 
-    const worksheet = workbook.getWorksheet('采购计划');
+    const worksheet = workbook.getWorksheet('sheet1');
     expect(worksheet).toBeDefined();
+    expect(workbook.getWorksheet('hidden_sheet1_col_4')).toBeDefined();
+    expect(workbook.getWorksheet('hidden_sheet1_col_12')).toBeDefined();
     expect(worksheet?.getCell('A6').value).toBe('必填（可在门店管理查询）');
     expect(worksheet?.getCell('A7').value).toBe('*仓库/门店编码');
     expect(worksheet?.getCell('B7').value).toBe('*供应商编码');
@@ -73,7 +75,7 @@ describe('ProcurementPlanGenerator', () => {
     expect(worksheet?.getCell('L7').value).toBe('数据来源');
 
     expect(worksheet?.getCell('A8').value).toBe('OBYCX001');
-    expect(worksheet?.getCell('B8').value).toBe('SUP001');
+    expect(worksheet?.getCell('B8').value).toBe('2168183');
     expect(worksheet?.getCell('C8').value).toBe('1234567890123456789');
     expect(worksheet?.getCell('D8').value).toBe(8);
     expect(worksheet?.getCell('E8').value).toBe('箱');
@@ -130,7 +132,7 @@ describe('ProcurementPlanGenerator', () => {
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(result.buffer);
-    const worksheet = workbook.getWorksheet('采购计划');
+    const worksheet = workbook.getWorksheet('sheet1');
 
     expect(worksheet?.getCell('A8').value).toBe('OBYCX001');
     expect(worksheet?.getCell('C8').value).toBe('1234567890123456789');
@@ -150,5 +152,19 @@ describe('ProcurementPlanGenerator', () => {
         type: 'qianniuhua' as never,
       }),
     ).rejects.toThrow('当前仅支持生成翱象采购计划');
+  });
+
+  it('shows a clear error when an aoxiang import template is uploaded as source', async () => {
+    const inputBuffer = await createWorkbookBuffer(
+      ['*仓库/门店编码', '*供应商编码', '*商品编码', '*采购数量', '单位'],
+      [['OBYCX001', 'SUP001', '1234567890123456789', 8, '采购单位']],
+    );
+
+    await expect(
+      ProcurementPlanGenerator.run({
+        buffers: [inputBuffer],
+        type: 'aoxiang',
+      }),
+    ).rejects.toThrow('当前上传的是翱象采购导入模板，请上传牵牛花采购计划模版后再生成。');
   });
 });

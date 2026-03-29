@@ -1,4 +1,7 @@
 import { Buffer } from 'node:buffer';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import * as ExcelJS from 'exceljs';
 
@@ -25,6 +28,13 @@ type PlanRow = {
   unit: string;
 };
 
+const PDD_SUPPLIER_CODE = '2168183';
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SOURCE_TEMPLATE_PATH = path.resolve(
+  CURRENT_DIR,
+  '../../../public/templates/aoxiang-import-template.xlsx',
+);
+
 const INPUT_SCHEMA: ExcelSchemaField[] = [
   { key: 'storeCode', aliases: ['*门店/仓编码', '门店/仓编码'] },
   { key: 'skuCode', aliases: ['*SKU编码', 'SKU编码'] },
@@ -36,6 +46,13 @@ const INPUT_SCHEMA: ExcelSchemaField[] = [
   { key: 'logisticsNo', aliases: ['物流单号'], required: false },
   { key: 'arrivalDate', aliases: ['预计到货日期'], required: false },
   { key: 'message', aliases: ['网采订单留言内容'], required: false },
+];
+
+const AOXIANG_TEMPLATE_SCHEMA: ExcelSchemaField[] = [
+  { key: 'storeCode', aliases: ['*仓库/门店编码', '仓库/门店编码'] },
+  { key: 'supplierCode', aliases: ['*供应商编码', '供应商编码'] },
+  { key: 'skuCode', aliases: ['*商品编码', '商品编码'] },
+  { key: 'quantity', aliases: ['*采购数量', '采购数量'] },
 ];
 
 function getRequiredKeys(
@@ -79,111 +96,40 @@ function parseStrictNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function createAoxiangWorksheet(workbook: ExcelJS.Workbook) {
-  const worksheet = workbook.addWorksheet('采购计划');
+function resolveAoxiangTemplatePath() {
+  const runtimeTemplatePath = process.env.VITE_PUBLIC
+    ? path.join(process.env.VITE_PUBLIC, 'templates', 'aoxiang-import-template.xlsx')
+    : '';
 
-  worksheet.columns = [
-    { header: '', key: 'col1', width: 25 },
-    { header: '', key: 'col2', width: 25 },
-    { header: '', key: 'col3', width: 25 },
-    {
-      header: '',
-      key: 'col4',
-      width: 25,
-    },
-    {
-      header: '',
-      key: 'col5',
-      width: 45,
-    },
-    {
-      header: '',
-      key: 'col6',
-      width: 27,
-    },
-    { header: '', key: 'col7', width: 27 },
-    { header: '', key: 'col8', width: 28 },
-    { header: '', key: 'col9', width: 25 },
-    { header: '', key: 'col10', width: 25 },
-    { header: '', key: 'col11', width: 25 },
-    { header: '', key: 'col12', width: 25 },
-    { header: '', key: 'col13', width: 45 },
-    { header: '', key: 'col14', width: 45 },
-  ];
+  if (runtimeTemplatePath && fs.existsSync(runtimeTemplatePath)) {
+    return runtimeTemplatePath;
+  }
 
-  worksheet.mergeCells('A1:N5');
-  worksheet.mergeCells('F6:G6');
+  if (fs.existsSync(SOURCE_TEMPLATE_PATH)) {
+    return SOURCE_TEMPLATE_PATH;
+  }
 
-  worksheet.getCell('A6').value = '必填（可在门店管理查询）';
-  worksheet.getCell('B6').value = '必填（可在供应商管理查询）';
-  worksheet.getCell('C6').value = '必填（可在门店商品查询）';
-  worksheet.getCell('D6').value = '必填（采购数量不能小于最小起订量）';
-  worksheet.getCell('E6').value =
-    '选填（请下拉选项选择填入，不填则默认为采购单位。库存单位为最小售卖单位，采购单位为箱规，例如：农夫山泉矿泉水500ml，库存单位为瓶，采购单位为箱）';
-  worksheet.getCell('F6').value =
-    '选填（单价、金额只填其中1个，另外1个系统自动计算填入；如果2个都填写，系统只取金额；如果都不填，系统默认取最近一次采购价自动填入）';
+  throw new Error('未找到翱象采购导入模板文件，请检查 templates/aoxiang-import-template.xlsx 是否存在。');
+}
 
-  const headerRow = worksheet.getRow(7);
-  const headerValues = [
-    '*仓库/门店编码',
-    '*供应商编码',
-    '*商品编码',
-    '*采购数量',
-    '单位',
-    '采购单价（元）',
-    '采购金额（元）',
-    '物流单号',
-    '商品名称',
-    '规格',
-    '网采订单留言',
-    '数据来源',
-    '是否创建外部订单',
-    '外部采购账号',
-  ];
-  headerValues.forEach((value, index) => {
-    worksheet.getCell(7, index + 1).value = value;
-  });
+async function loadAoxiangTemplateWorkbook() {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(resolveAoxiangTemplatePath());
 
-  const descriptionStyle = {
-    alignment: {
-      horizontal: 'center' as const,
-      vertical: 'center' as const,
-      wrapText: true,
-    },
-    border: {
-      top: { style: 'thin' as const },
-      left: { style: 'thin' as const },
-      bottom: { style: 'thin' as const },
-      right: { style: 'thin' as const },
-    },
-    fill: {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD3D3D3' },
-    },
-    font: { bold: true },
-  };
+  const worksheet = workbook.getWorksheet('sheet1') ?? workbook.worksheets[0];
+  if (!worksheet) {
+    throw new Error('翱象采购导入模板缺少主工作表。');
+  }
 
-  ['A6', 'B6', 'C6', 'D6', 'E6', 'F6'].forEach((cell) => {
-    Object.assign(worksheet.getCell(cell), descriptionStyle);
-  });
+  return { workbook, worksheet };
+}
 
-  headerRow.eachCell((cell) => {
-    Object.assign(cell, descriptionStyle);
-  });
-
-  worksheet.dataValidations.add('E8:E3001', {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"采购单位,库存单位"'],
-  });
-  worksheet.dataValidations.add('M8:M3001', {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"是,否"'],
-  });
-
-  return worksheet;
+function clearTemplateSampleRows(worksheet: ExcelJS.Worksheet) {
+  for (let rowNumber = 8; rowNumber <= worksheet.rowCount; rowNumber++) {
+    for (let colNumber = 1; colNumber <= 14; colNumber++) {
+      worksheet.getCell(rowNumber, colNumber).value = null;
+    }
+  }
 }
 
 async function readPlanRows(buffers: Buffer[]): Promise<PlanRow[]> {
@@ -191,6 +137,13 @@ async function readPlanRows(buffers: Buffer[]): Promise<PlanRow[]> {
 
   for (const buffer of buffers) {
     const result = await readExcelWithSchema(buffer, [...INPUT_SCHEMA]);
+    const aoxiangResult = await readExcelWithSchema(buffer, [...AOXIANG_TEMPLATE_SCHEMA]);
+
+    if (Object.keys(aoxiangResult.fieldMap).length >= 4) {
+      throw new Error(
+        '当前上传的是翱象采购导入模板，请上传牵牛花采购计划模版后再生成。',
+      );
+    }
 
     if (result.data.length === 0) {
       continue;
@@ -221,7 +174,7 @@ async function readPlanRows(buffers: Buffer[]): Promise<PlanRow[]> {
         skuCode,
         quantity,
         specification: '',
-        supplierCode: toTrimmedText(getFieldValue(row, result.fieldMap, 'supplierCode')),
+        supplierCode: PDD_SUPPLIER_CODE,
         unit: toTrimmedText(getFieldValue(row, result.fieldMap, 'unit')),
         price: price ?? '',
       });
@@ -243,8 +196,8 @@ export const ProcurementPlanGenerator = {
       throw new Error('未找到有效数据，请检查上传的文件内容');
     }
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = createAoxiangWorksheet(workbook);
+    const { workbook, worksheet } = await loadAoxiangTemplateWorkbook();
+    clearTemplateSampleRows(worksheet);
 
     allData.forEach((row, index) => {
       const rowNumber = index + 8;

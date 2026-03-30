@@ -1,5 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { isCliEntry } from '../../../utils/is-main-module';
+
 import type { MetricEvent } from './logger';
 
 const METRICS_DIR = path.join(process.cwd(), 'logs', 'metrics');
@@ -219,7 +222,7 @@ export function saveWeeklyReport(): string {
 }
 
 // 直接运行时生成报告
-if (require.main === module) {
+if (isCliEntry('analytics.ts', 'analytics.js', 'analytics.mjs', 'analytics.cjs')) {
   const filepath = saveWeeklyReport();
   console.log(`周报已生成: ${filepath}`);
   console.log(generateWeeklyReport());

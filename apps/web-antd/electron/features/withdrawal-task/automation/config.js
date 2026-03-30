@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import 'dotenv/config';
 
 const EVOLUTION_FILE = path.join(process.cwd(), 'evolution.json');
+let envLoaded = false;
 
 const DEFAULT_EVOLUTION_CONFIG = {
     baseWaitTime: 1000,
@@ -10,6 +10,67 @@ const DEFAULT_EVOLUTION_CONFIG = {
     maxWaitTime: 10_000,
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 };
+
+function stripWrappingQuotes(value) {
+    if (value.length < 2) {
+        return value;
+    }
+    const first = value[0];
+    const last = value.at(-1);
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+        return value.slice(1, -1);
+    }
+    return value;
+}
+
+function parseEnvLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+        return null;
+    }
+    const matched = trimmed.match(/^([\w.-]+)\s*=\s*(.*)$/);
+    if (!matched) {
+        return null;
+    }
+    return {
+        key: matched[1],
+        value: stripWrappingQuotes(matched[2].trim()),
+    };
+}
+
+function getEnvCandidateFiles() {
+    const appRoot = path.join(__dirname, '..', '..', '..', '..');
+    return [
+        path.join(process.cwd(), '.env'),
+        path.join(process.cwd(), '.env.local'),
+        path.join(process.cwd(), 'apps', 'web-antd', '.env'),
+        path.join(process.cwd(), 'apps', 'web-antd', '.env.local'),
+        path.join(appRoot, '.env'),
+        path.join(appRoot, '.env.local'),
+    ];
+}
+
+export function ensureWithdrawalEnvLoaded() {
+    if (envLoaded) {
+        return;
+    }
+    envLoaded = true;
+    const visited = new Set();
+    for (const filePath of getEnvCandidateFiles()) {
+        if (visited.has(filePath) || !fs.existsSync(filePath)) {
+            continue;
+        }
+        visited.add(filePath);
+        const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/u);
+        for (const line of lines) {
+            const parsed = parseEnvLine(line);
+            if (!parsed || process.env[parsed.key] !== undefined) {
+                continue;
+            }
+            process.env[parsed.key] = parsed.value;
+        }
+    }
+}
 
 export function loadEvolutionConfig() {
     if (fs.existsSync(EVOLUTION_FILE)) {
@@ -39,6 +100,7 @@ export function saveEvolutionConfig(config) {
 }
 
 export const evolutionConfig = loadEvolutionConfig();
+ensureWithdrawalEnvLoaded();
 
 export const CONFIG = {
     url: 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/orderProcessingPc/tab',

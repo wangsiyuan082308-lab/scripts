@@ -1,8 +1,9 @@
-import 'dotenv/config';
+export declare function ensureWithdrawalEnvLoaded(): void;
 export declare function loadEvolutionConfig(): any;
 export declare function saveEvolutionConfig(config: any): void;
 export declare const evolutionConfig: any;
 export declare const CONFIG: {
+    financeUrl: string;
     url: string;
     password: string;
     targetStores: string[];

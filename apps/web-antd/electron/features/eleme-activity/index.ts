@@ -9,11 +9,12 @@ import * as fs from 'fs';
 import ExcelJS from 'exceljs';
 
 // 从内置automation目录导入
+import { ensureRuntimeDir } from '../../shared/runtime-paths';
 import { transformBaohaojia } from './automation/transform-baohao';
 
 // 配置
-const LOG_DIR = path.join(__dirname, 'logs');
-const DATA_DIR = path.join(__dirname, 'data');
+const LOG_DIR = ensureRuntimeDir('eleme-activity', 'logs');
+const DATA_DIR = ensureRuntimeDir('eleme-activity', 'data');
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

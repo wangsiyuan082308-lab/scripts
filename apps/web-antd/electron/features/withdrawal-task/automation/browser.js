@@ -3,6 +3,12 @@ import { chromium } from 'playwright';
 import { CONFIG, evolutionConfig } from './config';
 import { createLogger } from './logger';
 const log = createLogger('browser');
+function activateChromeWindow() {
+    try {
+        exec(`osascript -e 'tell application "Google Chrome" to activate' -e 'tell application "Google Chrome" to if (count of windows) > 0 then set index of front window to 1'`);
+    }
+    catch { }
+}
 /**
  * 启动持久化浏览器上下文
  */
@@ -15,17 +21,21 @@ export async function launchBrowser() {
         userAgent: evolutionConfig.userAgent,
         args: [
             '--disable-blink-features=AutomationControlled',
+            '--new-window',
             '--start-maximized',
             '--disable-gpu',
             '--disable-dev-shm-usage',
             '--no-sandbox',
         ],
     });
-    const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+    const existingPages = context.pages();
+    const page = existingPages.length > 0 ? existingPages[existingPages.length - 1] : await context.newPage();
     // 反爬虫：移除 webdriver 属性
     await page.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
+    await page.bringToFront().catch(() => { });
+    activateChromeWindow();
     return { context, page };
 }
 /**
@@ -35,6 +45,8 @@ export async function navigateAndLogin(page) {
     log.info(`正在打开目标 URL: ${CONFIG.url}`);
     try {
         await page.goto(CONFIG.url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+        await page.bringToFront().catch(() => { });
+        activateChromeWindow();
         await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => { });
     }
     catch (error) {
@@ -43,6 +55,8 @@ export async function navigateAndLogin(page) {
     // 检查是否需要登录
     if (page.url().includes('login') || page.url().includes('sso')) {
         log.info('检测到需要登录，请在浏览器窗口中手动完成登录...');
+        await page.bringToFront().catch(() => { });
+        activateChromeWindow();
         try {
             exec('say "请登录"');
         }

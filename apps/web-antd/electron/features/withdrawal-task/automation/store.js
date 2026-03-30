@@ -297,7 +297,7 @@ export async function switchStore(page, targetStore) {
     const uiTargetStore = targetStore;
     storeLog.info(`正在尝试切换到门店: ${targetStore}...`);
     const switchStart = Date.now();
-    const debugDir = path.join(process.cwd(), 'debug');
+    const debugDir = CONFIG.debugDir;
     if (!fs.existsSync(debugDir)) {
         try {
             fs.mkdirSync(debugDir, { recursive: true });
@@ -816,7 +816,7 @@ async function handleWithdrawalSingle(page, storeName, storeLog) {
                         await btn.click();
                         await delay(2000); // 增加等待时间
                         // 截图诊断
-                        const screenshotPath = `logs/withdrawal_popup_${storeName}_${Date.now()}.png`;
+                        const screenshotPath = path.join(CONFIG.logsDir, `withdrawal_popup_${storeName}_${Date.now()}.png`);
                         await page.screenshot({ path: screenshotPath, fullPage: true });
                         storeLog.info(`【诊断】弹窗截图已保存: ${screenshotPath}`);
                         // 步骤2-4: 处理提现弹窗（核心流程）
@@ -879,7 +879,7 @@ async function handleWithdrawalPopupWithLog(page, frame, storeLog, storeName, de
     storeLog.info(`【步骤${currentStep}/${totalSteps}】检测提现按钮...`);
     // 截图诊断
     try {
-        const screenshotPath = `logs/popup_${storeName}_${Date.now()}.png`;
+        const screenshotPath = path.join(CONFIG.logsDir, `popup_${storeName}_${Date.now()}.png`);
         await page.screenshot({ path: screenshotPath, fullPage: true });
         storeLog.info(`【诊断】弹窗截图: ${screenshotPath}`);
     }
@@ -1022,7 +1022,7 @@ async function handleWithdrawalPopupWithLog(page, frame, storeLog, storeName, de
     if (!successDetected) {
         storeLog.warn(`【步骤${currentStep}/${totalSteps}】⚠️ 未检测到成功提示，但流程已完成`);
         // 保存截图用于调试
-        const screenshotPath = path.join(process.cwd(), 'logs', 'screenshots', `${storeName}_${Date.now()}.png`);
+        const screenshotPath = path.join(CONFIG.screenshotsDir, `${storeName}_${Date.now()}.png`);
         try {
             await page.screenshot({ path: screenshotPath });
             storeLog.info(`已保存截图: ${screenshotPath}`);

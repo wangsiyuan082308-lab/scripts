@@ -1,7 +1,40 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const EVOLUTION_FILE = path.join(process.cwd(), 'evolution.json');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const APP_RUNTIME_DIRNAME = '@vben/web-antd';
+
+function resolveElectronWritableBaseDir() {
+    if (process.env.PRODUCT_MASTER_HOME?.trim()) {
+        return process.env.PRODUCT_MASTER_HOME.trim();
+    }
+    if (process.platform === 'darwin') {
+        return path.join(os.homedir(), 'Library', 'Application Support', APP_RUNTIME_DIRNAME, 'product-master');
+    }
+    if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_RUNTIME_DIRNAME, 'product-master');
+    }
+    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), APP_RUNTIME_DIRNAME, 'product-master');
+}
+
+export function getRuntimeBaseDir() {
+    if (process.versions?.electron) {
+        return resolveElectronWritableBaseDir();
+    }
+    return process.cwd();
+}
+
+export function ensureDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+    return dirPath;
+}
+
+const RUNTIME_BASE_DIR = getRuntimeBaseDir();
+const EVOLUTION_FILE = path.join(RUNTIME_BASE_DIR, 'evolution.json');
 let envLoaded = false;
 
 const DEFAULT_EVOLUTION_CONFIG = {
@@ -109,8 +142,13 @@ export const CONFIG = {
     targetStores: process.env.ELEME_TARGET_STORES
         ? process.env.ELEME_TARGET_STORES.split(',').map((store) => store.trim()).filter(Boolean)
         : ['Oby便利超市(安吉店)', 'Oby便利超市(长兴店)'],
-    userDataDir: path.join(process.cwd(), 'user_data'),
-    coordsFile: path.join(process.cwd(), 'coords.json'),
+    runtimeBaseDir: ensureDir(RUNTIME_BASE_DIR),
+    logsDir: ensureDir(path.join(RUNTIME_BASE_DIR, 'logs')),
+    metricsDir: ensureDir(path.join(RUNTIME_BASE_DIR, 'logs', 'metrics')),
+    debugDir: ensureDir(path.join(RUNTIME_BASE_DIR, 'debug')),
+    screenshotsDir: ensureDir(path.join(RUNTIME_BASE_DIR, 'logs', 'screenshots')),
+    userDataDir: ensureDir(path.join(RUNTIME_BASE_DIR, 'user_data')),
+    coordsFile: path.join(RUNTIME_BASE_DIR, 'coords.json'),
     baseWaitTime: evolutionConfig.baseWaitTime,
     minWithdrawAmount: (() => {
         const raw = process.env.MIN_WITHDRAW_AMOUNT ?? process.env.MIN_WITHDRAW_BALANCE ?? '0';

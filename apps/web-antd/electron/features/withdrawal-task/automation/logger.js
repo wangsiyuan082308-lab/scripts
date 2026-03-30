@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import { CONFIG, ensureDir } from './config.js';
 // Shared logger is optional — resolve path dynamically to avoid compile-time breakage
 let createSharedLogger = null;
 try {
@@ -10,7 +11,7 @@ try {
     }
 }
 catch { }
-const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_DIR = ensureDir(CONFIG.logsDir);
 const logListeners = new Set();
 // 共享结构化日志实例（可选）
 let _sharedLogger = null;
@@ -33,10 +34,6 @@ function getLocalDateStr() {
 }
 const LOG_FILE = path.join(LOG_DIR, `app_${getLocalDateStr()}.json`);
 const OBS_FILE = path.join(LOG_DIR, `obs_${getLocalDateStr()}.jsonl`);
-// 确保日志目录存在
-if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-}
 function writeObsNormalized(entry) {
     if (!entry.timestamp || !entry.stage || !entry.code || entry.reason === undefined || entry.retryable === undefined)
         return;
@@ -106,10 +103,7 @@ export function addLogListener(listener) {
     };
 }
 // --- 业务埋点系统 ---
-const METRICS_DIR = path.join(process.cwd(), 'logs', 'metrics');
-if (!fs.existsSync(METRICS_DIR)) {
-    fs.mkdirSync(METRICS_DIR, { recursive: true });
-}
+const METRICS_DIR = ensureDir(CONFIG.metricsDir);
 const METRICS_FILE = path.join(METRICS_DIR, `metrics_${getLocalDateStr()}.jsonl`);
 function writeMetric(event) {
     fs.appendFileSync(METRICS_FILE, JSON.stringify(event) + '\n');

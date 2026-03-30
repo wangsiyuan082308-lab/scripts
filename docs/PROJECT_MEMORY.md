@@ -274,6 +274,7 @@ Do not treat those runtime artifacts as normal source files.
 The repository currently has one release workflow:
 
 - `.github/workflows/release-electron.yml`
+- human-readable SOP: `docs/RELEASE_PROCESS.md`
 
 Observed behavior:
 

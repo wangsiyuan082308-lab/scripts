@@ -22,28 +22,34 @@ export class AuthFeature {
    */
   async init() {
     const users = await this.storage.get();
-    const adminIndex = users.findIndex((u) => u.username === 'admin');
+    const defaultUsers: User[] = [
+      {
+        id: '1',
+        username: 'admin',
+        password: 'password',
+        role: 'super_admin',
+        name: 'Super Admin',
+      },
+      {
+        id: '2',
+        username: 'vben',
+        password: '123456',
+        role: 'super_admin',
+        name: 'Vben',
+      },
+    ];
 
-    const newAdmin: User = {
-      id: '1',
-      username: 'admin',
-      password: 'password', // Default password
-      role: 'super_admin',
-      name: 'Super Admin',
-    };
-
-    if (adminIndex === -1) {
-      await this.storage.add(newAdmin);
-      console.log('Admin user created with default password.');
-    } else {
-      // 强制覆盖 admin 用户，确保所有字段（包括 ID 和密码）都是预期的
-      const oldAdmin = users[adminIndex];
-      // 保留原有 ID 如果它存在，或者强制使用 '1'
-      newAdmin.id = oldAdmin.id || '1';
-
-      // 直接使用 update，确保 password 被重置
-      await this.storage.update(newAdmin);
-      console.log('Admin user reset to default settings.');
+    for (const defaultUser of defaultUsers) {
+      const userIndex = users.findIndex((u) => u.username === defaultUser.username);
+      if (userIndex === -1) {
+        await this.storage.add(defaultUser);
+        console.log(`${defaultUser.username} user created with default password.`);
+      } else {
+        const oldUser = users[userIndex];
+        defaultUser.id = oldUser.id || defaultUser.id;
+        await this.storage.update(defaultUser);
+        console.log(`${defaultUser.username} user reset to default settings.`);
+      }
     }
   }
 

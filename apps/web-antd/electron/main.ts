@@ -14,6 +14,15 @@ import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
+import {
+  clearProductMaster,
+  getProductMasterFilterOptions,
+  getProductMasterStatus,
+  importProductMasterJson,
+  listProductMasterRecords,
+  refreshProductMasterIndex,
+} from './features/product-master/index';
+import { authFeature } from './features/auth/index';
 import { StoreMasterFeature } from './features/store-master/index';
 import { SupplierMasterFeature } from './features/supplier-master/index';
 import { addLogListener } from './features/withdrawal-task/automation/logger.js';
@@ -39,6 +48,41 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST;
 
 let win: BrowserWindow | null;
+let currentAuthUser:
+  | null
+  | {
+      id: string;
+      merchantId?: string;
+      name?: string;
+      role: 'merchant_admin' | 'super_admin' | 'user';
+      username: string;
+    } = null;
+
+function buildLocalAccessCodes(role: string) {
+  if (role === 'super_admin') {
+    return ['AC_100100', 'AC_100110', 'AC_100120', 'AC_100010'];
+  }
+  if (role === 'merchant_admin') {
+    return ['AC_100100', 'AC_100110'];
+  }
+  return ['AC_1000001', 'AC_1000002'];
+}
+
+function buildLocalUserPayload() {
+  if (!currentAuthUser) {
+    return null;
+  }
+  return {
+    accessToken: `local-${currentAuthUser.username}`,
+    id: currentAuthUser.id,
+    merchantId: currentAuthUser.merchantId,
+    realName: currentAuthUser.name || currentAuthUser.username,
+    role: currentAuthUser.role,
+    roles: [currentAuthUser.role],
+    username: currentAuthUser.username,
+    homePath: '/dashboard',
+  };
+}
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -144,7 +188,48 @@ app.on('activate', async () => {
 // 注册 IPC 处理器
 function registerIpcHandlers() {
   // Electron 仅负责本地数据处理，认证交由 HTTP 接口处理。
-  const requireAuth = () => ({ role: 'super_admin' as const });
+  const requireAuth = () => {
+    if (currentAuthUser) {
+      return currentAuthUser;
+    }
+    throw new Error('请先登录后再执行该操作。');
+  };
+
+  ipcMain.handle('local-auth-login', async (_event, { password, username }) => {
+    const user = await authFeature.login(`${username || ''}`, `${password || ''}`);
+    if (!user) {
+      return {
+        message: '用户名或密码错误。',
+        success: false,
+      };
+    }
+
+    currentAuthUser = user;
+
+    return {
+      success: true,
+      user: buildLocalUserPayload(),
+    };
+  });
+
+  ipcMain.handle('local-auth-logout', async () => {
+    currentAuthUser = null;
+    return { success: true };
+  });
+
+  ipcMain.handle('local-auth-get-user-info', async () => {
+    if (!currentAuthUser) {
+      return null;
+    }
+    return buildLocalUserPayload();
+  });
+
+  ipcMain.handle('local-auth-get-access-codes', async () => {
+    if (!currentAuthUser) {
+      return [];
+    }
+    return buildLocalAccessCodes(currentAuthUser.role);
+  });
   /**
    * 生成饿了么活动报名表
    */
@@ -313,6 +398,78 @@ function registerIpcHandlers() {
       return { success: false, message: error.message };
     }
   });
+
+  /**
+   * 获取商品总表状态
+   */
+  ipcMain.handle('get-product-master-status', async () => {
+    try {
+      const data = await getProductMasterStatus();
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('获取商品总表状态失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  /**
+   * 手动导入商品总表 JSON
+   */
+  ipcMain.handle(
+    'import-product-master',
+    async (_event, { fileBuffer, originalName }) => {
+      try {
+        const data = await importProductMasterJson(
+          Buffer.from(fileBuffer),
+          originalName || 'manual-upload.json',
+        );
+        return { success: true, data };
+      } catch (error: any) {
+        console.error('导入商品总表失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
+
+  ipcMain.handle('list-product-master-records', async (_event, params) => {
+    try {
+      const data = await listProductMasterRecords(params || {});
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('获取商品总表列表失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  ipcMain.handle('get-product-master-filter-options', async () => {
+    try {
+      const data = await getProductMasterFilterOptions();
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('获取商品总表筛选项失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  ipcMain.handle('refresh-product-master', async () => {
+    try {
+      const data = await refreshProductMasterIndex();
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('刷新商品总表失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  ipcMain.handle('clear-product-master', async () => {
+    try {
+      const data = await clearProductMaster();
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('清空商品总表失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
   /**
    * 执行采购任务
    */
@@ -451,6 +608,11 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  process.env.PRODUCT_MASTER_HOME = path.join(
+    app.getPath('userData'),
+    'product-master',
+  );
+  await authFeature.init();
   setupMenu();
   registerIpcHandlers();
   await createWindow();

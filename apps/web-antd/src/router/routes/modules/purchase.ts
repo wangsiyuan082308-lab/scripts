@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Purchase',
     path: '/purchase',
+    redirect: '/purchase/overview',
     children: [
       {
         name: 'PurchaseOverview',

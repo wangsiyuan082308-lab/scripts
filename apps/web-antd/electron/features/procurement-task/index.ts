@@ -9,13 +9,14 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 // 导入采购模块
+import { ensureRuntimeDir } from '../../shared/runtime-paths';
 import { runAoixiangPurchase } from './automation/aoixiang/auto-purchase-v4';
 import { runQianniuhuaPurchase } from './automation/qianniuhua/auto-purchase';
 import { notifyFeishu } from './automation/lib/notify';
 
 // 配置
-const LOG_DIR = path.join(__dirname, 'logs');
-const DATA_DIR = path.join(__dirname, 'data');
+const LOG_DIR = ensureRuntimeDir('procurement-task', 'logs');
+const DATA_DIR = ensureRuntimeDir('procurement-task', 'data');
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

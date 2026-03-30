@@ -327,3 +327,94 @@ Based on the current tree, the most likely ongoing custom product work is:
 - continuing Eleme activity tooling
 - improving procurement workflows
 - tightening the integration between web UI, Electron utilities, and local automation data
+
+## 13. Current architecture direction
+
+The repository should now be understood as an early-stage **即时零售运营自动化中台**, not just a collection of desktop helper scripts.
+
+The intended business split is:
+
+- **线上运营 domain**
+  - platform activity discovery
+  - activity recommendation
+  - signup gating
+  - activity-type-specific signup material generation
+  - batch signup task orchestration
+- **采购 domain**
+  - product master
+  - procurement cost
+  - supplier constraints
+  - procurement rules and suggestion logic
+- **inventory / alerting domain**
+  - inventory health
+  - shortage / oversell / stale stock warnings
+  - execution and alert closure
+
+Important boundary:
+
+- online-ops may depend on procurement and product-master data
+- but activity signup workflows still belong to online-ops, not procurement
+
+Concrete example already present in the tree:
+
+- Eleme 爆好价报名 is not only a recommendation problem
+- it uses a type-specific Excel conversion flow
+- that conversion reads product-master / procurement-cost data
+- and outputs signup material for batch activity operations
+
+Relevant files for that chain:
+
+- `apps/web-antd/electron/features/eleme-baohaojia/index.ts`
+- `apps/web-antd/electron/features/eleme-activity/automation/transform-baohao.ts`
+- `apps/web-antd/electron/features/product-master/index.ts`
+- `apps/web-antd/electron/features/eleme-activity/index.ts`
+
+## 14. AI decision layer status
+
+An initial activity decision layer now exists in backend-mock and should be treated as the first middle-platform AI module rather than a final production policy engine.
+
+Current files:
+
+- `apps/backend-mock/utils/decision/activity-catalog.ts`
+- `apps/backend-mock/utils/decision/activity-ai.ts`
+- `apps/backend-mock/utils/decision/activity-decision.ts`
+- `apps/backend-mock/api/decision/activity/recommend.post.ts`
+- `apps/web-antd/src/api/activity-decision.ts`
+
+Current behavior:
+
+- normalizes Eleme activity data and signup history
+- computes ROI and score/risk
+- applies hard gates before AI enhancement
+- outputs structured `allow / review / block`
+- suggests `auto_apply / manual_review / skip`
+
+Important implementation rule:
+
+- this decision layer should stay in **shadow / advisory / bounded** mode until it is validated against the real production behavior already used in `scripts`
+- do not replace mature execution logic with inferred rules without side-by-side comparison
+
+## 15. Operator entry layer
+
+There is now a dedicated OpenClaw + Feishu agent for this repository:
+
+- agent: `scripts-codex`
+- workspace: `/Users/mac/Documents/GitHub/scripts`
+- role: project-specific operator / copilot for the `scripts` repository
+
+The agent is intended to be the formal natural-language entrypoint for this project, but it should call structured middle-platform interfaces and task flows rather than directly turning free text into high-risk platform actions.
+
+## 16. Skill guidance
+
+For future sessions, the preferred skill split is:
+
+- `scripts-online-ops`
+  - online operations rules
+  - Eleme / Meituan platform activity and execution boundaries
+  - common online-ops middle-platform model
+- procurement skill (future / separate)
+  - cost price
+  - supplier rules
+  - procurement suggestion and purchasing constraints
+
+Do not merge online-ops and procurement into one business skill. They collaborate, but they are different domains.

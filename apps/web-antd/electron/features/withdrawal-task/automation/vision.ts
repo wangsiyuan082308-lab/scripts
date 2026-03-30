@@ -7,6 +7,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Page } from 'playwright';
 
+import { ensureWithdrawalEnvLoaded } from './config.js';
+
 export interface VisionPosition {
   x: number;
   y: number;
@@ -69,8 +71,7 @@ export async function analyzeFinancePage(
  * 调用图像模型（使用 OpenAI 兼容接口）
  */
 async function callImageModel(imagePath: string, prompt: string): Promise<string> {
-  // 重新加载环境变量
-  import('dotenv/config');
+  ensureWithdrawalEnvLoaded();
   
   const apiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
   

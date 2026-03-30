@@ -14,7 +14,11 @@ const INVOKE_CHANNELS = [
   'import-product-master',
   'list-product-master-records',
   'refresh-product-master',
+  'run-product-compare',
+  'get-product-compare-ai-config',
+  'save-product-compare-ai-config',
   'execute-procurement-task',
+  'get-execution-logs',
   'execute-withdrawal-task',
   // Storage
   'get-stores',

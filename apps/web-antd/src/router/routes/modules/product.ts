@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       icon: 'ri:archive-stack-fill',
       order: 6,
-      title: '商品管理',
+      title: '商品中心',
     },
     name: 'Product',
     path: '/product',
@@ -26,8 +26,8 @@ const routes: RouteRecordRaw[] = [
         path: '/product/compare',
         component: () => import('#/views/product/compare/index.vue'),
         meta: {
-          icon: 'ri:archive-drawer-line',
-          title: '商品对比',
+          icon: 'ri:git-merge-line',
+          title: '商品比对',
           order: 1,
         },
       },

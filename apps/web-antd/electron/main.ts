@@ -11,9 +11,15 @@ import pkg from '../package.json';
 
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
+import { getExecutionLogs } from './features/execution-logs/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
 import { ProcurementAnalyzer } from './features/procurement/index';
 import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
+import {
+  getProductCompareAiConfig,
+  runProductCompare,
+  saveProductCompareAiConfig,
+} from './features/product-compare/index';
 import {
   clearProductMaster,
   getProductMasterFilterOptions,
@@ -473,8 +479,52 @@ function registerIpcHandlers() {
   /**
    * 执行采购任务
    */
+  ipcMain.handle(
+    'run-product-compare',
+    async (_event, { referenceBuffer, sourceMode, targetBuffer }) => {
+      try {
+        const data = await runProductCompare({
+          referenceBuffer: referenceBuffer
+            ? Buffer.from(referenceBuffer)
+            : undefined,
+          sourceMode,
+          targetBuffer: Buffer.from(targetBuffer),
+        });
+        return { success: true, data };
+      } catch (error: any) {
+        console.error('商品比对失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
+
+  ipcMain.handle('get-product-compare-ai-config', async () => {
+    try {
+      const data = await getProductCompareAiConfig();
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('获取商品比对 AI 配置失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
+  ipcMain.handle('save-product-compare-ai-config', async (_event, config) => {
+    try {
+      const data = await saveProductCompareAiConfig(config || {});
+      return { success: true, data };
+    } catch (error: any) {
+      console.error('保存商品比对 AI 配置失败:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
   ipcMain.handle('execute-procurement-task', async (_event, task) => {
     return await ProcurementTaskRunner.executeTask(task);
+  });
+
+  ipcMain.handle('get-execution-logs', async (_event, params) => {
+    requireAuth();
+    return await getExecutionLogs(params || {});
   });
 
   /**

@@ -77,6 +77,22 @@ interface CartClearActionResult {
   triggerText: string;
 }
 
+const PROCUREMENT_MAX_ITEMS = 500;
+
+function resolveProcurementLimit(maxItems?: number): number {
+  if (typeof maxItems !== 'number' || !Number.isFinite(maxItems) || maxItems <= 0) {
+    return PROCUREMENT_MAX_ITEMS;
+  }
+  return Math.min(Math.floor(maxItems), PROCUREMENT_MAX_ITEMS);
+}
+
+function assertProcurementLimit(rowCount: number, maxItems?: number): void {
+  const limit = resolveProcurementLimit(maxItems);
+  if (rowCount > limit) {
+    throw new Error(`加入商品校验失败：当前采购商品数 ${rowCount}，超过最大采购上限 ${limit}`);
+  }
+}
+
 function isCartClearAccepted(options: {
   initialRowCount: number;
   cleared: boolean;
@@ -168,6 +184,7 @@ export async function stepSearchAndCart(
       enforceStatus: false,
     });
     ctx.validatedCartCount = cartVerification.rowCount;
+    assertProcurementLimit(cartVerification.rowCount, config.maxItems);
 
     return {
       step: 'search-and-cart', success: true,
@@ -518,7 +535,7 @@ async function addToCart(page: Page, config: PurchaseConfig, supplier: string, t
 
   await verifySupplierResults(page, config, supplier, '加购前结果归属校验');
 
-  const maxItems = config.maxItems;
+  const maxItems = resolveProcurementLimit(config.maxItems);
   const needSelect = maxItems > 0 && maxItems < 500;
 
   if (needSelect) {

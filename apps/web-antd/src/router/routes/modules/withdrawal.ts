@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       icon: 'lucide:wallet',
       order: 5,
-      title: '提现管理',
+      title: '财务中心',
     },
     name: 'Withdrawal',
     path: '/withdrawal',
@@ -17,7 +17,16 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/withdrawal-task/index.vue'),
         meta: {
           icon: 'ant-design:wallet-outlined',
-          title: '提现任务',
+          title: '提现管理',
+        },
+      },
+      {
+        name: 'FinancialReport',
+        path: '/withdrawal/report',
+        component: () => import('#/views/financial-report/index.vue'),
+        meta: {
+          icon: 'ant-design:file-text-outlined',
+          title: '财务报表',
         },
       },
     ],

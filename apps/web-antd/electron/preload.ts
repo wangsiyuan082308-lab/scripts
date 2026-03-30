@@ -1,10 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const INVOKE_CHANNELS = [
+  'local-auth-login',
+  'local-auth-logout',
+  'local-auth-get-user-info',
+  'local-auth-get-access-codes',
   'process-excel-buffers',
   'generate-eleme-activity',
   'process-eleme-baohaojia',
   'generate-procurement-plan',
+  'get-product-master-status',
+  'get-product-master-filter-options',
+  'import-product-master',
+  'list-product-master-records',
+  'refresh-product-master',
   'execute-procurement-task',
   'execute-withdrawal-task',
   // Storage

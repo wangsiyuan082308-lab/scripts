@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Activity',
     path: '/activity',
+    redirect: '/activity/list',
     children: [
       {
         name: 'ActivityList',

@@ -1,6 +1,7 @@
 import { defineConfig } from '@vben/vite-config';
 import electron from 'vite-plugin-electron/simple';
 import type { Plugin } from 'vite';
+import { loadEnv as loadViteEnv } from 'vite';
 
 /**
  * Inject __dirname / __filename / require polyfill into ESM electron main process output.
@@ -43,7 +44,35 @@ const isAutomationRuntimeExternal = (id: string) => {
   });
 };
 
-export default defineConfig(async () => {
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/u, '');
+}
+
+function resolveApiProxyTarget(mode: string) {
+  const env = loadViteEnv(mode, process.cwd(), '');
+  const apiUrl = `${env.VITE_GLOB_API_URL || ''}`.trim();
+  const mockEnabled = `${env.VITE_NITRO_MOCK || ''}`.trim() === 'true';
+  const configuredProxyTarget = `${env.VITE_DEV_PROXY_TARGET || ''}`.trim();
+
+  if (!apiUrl.startsWith('/')) {
+    return undefined;
+  }
+
+  if (configuredProxyTarget) {
+    return trimTrailingSlash(configuredProxyTarget);
+  }
+
+  if (mockEnabled) {
+    return 'http://localhost:5320/api';
+  }
+
+  return undefined;
+}
+
+export default defineConfig(async (config) => {
+  const isVitest = process.env.VITEST === 'true';
+  const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
+
   return {
     application: {},
     // @ts-ignore: Fix type mismatch
@@ -89,35 +118,38 @@ export default defineConfig(async () => {
         exclude: ['electron'],
         include: [],
       },
-      plugins: [
-        await electron({
-          main: {
-            entry: 'electron/main.ts',
-            vite: {
-              plugins: [esmDirnamePlugin()],
-              build: {
-                rollupOptions: {
-                  external: (id) => isAutomationRuntimeExternal(id),
+      plugins: isVitest
+        ? []
+        : [
+            await electron({
+              main: {
+                entry: 'electron/main.ts',
+                vite: {
+                  plugins: [esmDirnamePlugin()],
+                  build: {
+                    rollupOptions: {
+                      external: (id) => isAutomationRuntimeExternal(id),
+                    },
+                  },
                 },
               },
-            },
-          },
-          preload: {
-            input: 'electron/preload.ts',
-          },
-          renderer: {},
-        }),
-      ],
+              preload: {
+                input: 'electron/preload.ts',
+              },
+              renderer: {},
+            }),
+          ],
       server: {
-        proxy: {
-          '/api': {
-            changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api/, ''),
-            // mock代理目标地址（Nitro backend-mock）
-            target: 'http://localhost:5320/api',
-            ws: true,
-          },
-        },
+        proxy: proxyTarget
+          ? {
+              '/api': {
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api/, ''),
+                target: proxyTarget,
+                ws: true,
+              },
+            }
+          : undefined,
       },
     },
   };

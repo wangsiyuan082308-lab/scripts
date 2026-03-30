@@ -15,6 +15,7 @@ describe('withdrawal store rules', () => {
     expect(isCurrentStoreMatched('Oby便利超市(安吉店)', 'Oby便利超市(安吉店)')).toBe(true);
     expect(isCurrentStoreMatched('Oby便利超市(安吉店)单店', 'Oby便利超市(安吉店)')).toBe(true);
     expect(isCurrentStoreMatched('当前门店：安吉店', 'Oby便利超市(安吉店)')).toBe(true);
+    expect(isCurrentStoreMatched('当前门店：安吉店', 'Oby便利超市（安吉店）')).toBe(true);
     expect(isCurrentStoreMatched('OBy24h便利', 'Oby便利超市(安吉店)')).toBe(false);
   });
 
@@ -25,7 +26,16 @@ describe('withdrawal store rules', () => {
       '长兴店',
     ]);
 
+    expect(buildPreciseStoreSearchCandidates('Oby便利超市（长兴店）')).toEqual([
+      'Oby便利超市（长兴店）',
+      'Oby便利超市(长兴店)',
+      'Oby便利超市（长兴店）单店',
+      'Oby便利超市(长兴店)单店',
+      '长兴店',
+    ]);
+
     expect(buildStoreCandidates('Oby便利超市(长兴店)')).toContain('OBy24h便利连锁');
+    expect(buildStoreCandidates('Oby便利超市（长兴店）')).toContain('OBy24h便利连锁');
   });
 
   it('finds only precise dropdown options for the target store', () => {

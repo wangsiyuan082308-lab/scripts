@@ -1,9 +1,44 @@
 import { launchBrowser, navigateAndLogin, closeBrowser } from './automation/browser';
-import { switchStore, navigateToFinance, handleWithdrawal } from './automation/store';
+import { switchStore, handleWithdrawal, readCurrentStoreLabel } from './automation/store';
 import { CONFIG } from './automation/config';
 import { updateRiskLevel, getDelayMultiplier } from './automation/retry';
 import { createLogger } from './automation/logger';
+import { isCurrentStoreMatched } from './automation/store-rules.js';
 const log = createLogger('withdrawal');
+async function hasReadyFinanceFrame(page) {
+    for (const frame of page.frames()) {
+        if (!frame.url().includes('accountFlow')) {
+            continue;
+        }
+        const text = await frame.locator('body').innerText().catch(() => '');
+        if (text.includes('账户总览') || text.includes('提现')) {
+            return true;
+        }
+    }
+    return false;
+}
+async function ensureFinanceRouteReady(page) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await page.goto(CONFIG.financeUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 120_000,
+        }).catch(() => { });
+        await page.waitForLoadState('networkidle', {
+            timeout: 10_000,
+        }).catch(() => { });
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        if (await hasReadyFinanceFrame(page)) {
+            return true;
+        }
+        log.warn(`财务页未就绪，第 ${attempt + 1} 次重试...`);
+        await page.reload({
+            waitUntil: 'domcontentloaded',
+            timeout: 120_000,
+        }).catch(() => { });
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return false;
+}
 /**
  * 执行提现会话
  */
@@ -22,10 +57,30 @@ export async function executeWithdrawalSession(task) {
             const storeName = task.storeNames[i] || storeId;
             log.info(`\n=== 处理门店: ${storeName} ===`);
             try {
+                const currentStoreBeforeSwitch = await readCurrentStoreLabel(page);
+                if (currentStoreBeforeSwitch) {
+                    log.info(`切店前当前门店: ${currentStoreBeforeSwitch}`);
+                }
                 // 切换门店
                 await switchStore(page, storeName);
-                // 进入财务页面
-                await navigateToFinance(page);
+                const currentStoreAfterSwitch = await readCurrentStoreLabel(page);
+                if (currentStoreAfterSwitch) {
+                    log.info(`切店后当前门店: ${currentStoreAfterSwitch}`);
+                }
+                if (!isCurrentStoreMatched(currentStoreAfterSwitch, storeName)) {
+                    throw new Error(`门店切换校验失败: 目标=${storeName}，当前=${currentStoreAfterSwitch || 'unknown'}`);
+                }
+                const financeReady = await ensureFinanceRouteReady(page);
+                if (!financeReady) {
+                    throw new Error(`财务页面未就绪: ${storeName}`);
+                }
+                const currentStoreBeforeWithdrawal = await readCurrentStoreLabel(page);
+                if (currentStoreBeforeWithdrawal) {
+                    log.info(`提现前当前门店: ${currentStoreBeforeWithdrawal}`);
+                }
+                if (!isCurrentStoreMatched(currentStoreBeforeWithdrawal, storeName)) {
+                    throw new Error(`提现前门店上下文异常: 目标=${storeName}，当前=${currentStoreBeforeWithdrawal || 'unknown'}`);
+                }
                 // 执行提现
                 const result = await handleWithdrawal(page, storeName);
                 let status = 'failed';

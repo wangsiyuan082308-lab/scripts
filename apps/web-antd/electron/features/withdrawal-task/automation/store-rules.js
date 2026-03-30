@@ -3,31 +3,48 @@ export const STORE_ALIAS_MAP = new Map([
     ['Oby便利超市(长兴店)', ['OBy24h便利', 'OBy24h便利连锁']],
     ['OBy24h便利', ['OBy24h便利连锁']],
 ]);
-export function normalizeStoreName(value) {
+function canonicalizeStoreName(value) {
     return `${value ?? ''}`
         .replaceAll(/\s+/g, '')
         .replaceAll('（', '(')
-        .replaceAll('）', ')')
-        .toLowerCase();
+        .replaceAll('）', ')');
+}
+export function normalizeStoreName(value) {
+    return canonicalizeStoreName(value).toLowerCase();
+}
+function extractBranchName(targetStore) {
+    const branchMatch = canonicalizeStoreName(targetStore).match(/\(([^()]+)\)/);
+    return branchMatch?.[1]?.trim();
+}
+function getStoreAliases(targetStore) {
+    const normalizedTarget = normalizeStoreName(targetStore);
+    for (const [storeName, aliases] of STORE_ALIAS_MAP.entries()) {
+        if (normalizeStoreName(storeName) === normalizedTarget) {
+            return aliases;
+        }
+    }
+    return [];
 }
 export function buildStoreCandidates(targetStore) {
-    const candidates = [targetStore];
-    const aliases = STORE_ALIAS_MAP.get(targetStore) ?? [];
+    const candidates = [targetStore, canonicalizeStoreName(targetStore)];
+    const aliases = getStoreAliases(targetStore);
     for (const alias of aliases) {
         candidates.push(alias);
     }
-    if (`${targetStore ?? ''}`.includes('便利')) {
+    if (canonicalizeStoreName(targetStore).includes('便利')) {
         candidates.push('OBy24h便利');
         candidates.push('OBy24h便利连锁');
     }
     return [...new Set(candidates.filter(Boolean))];
 }
 export function buildStoreVerificationCandidates(targetStore) {
-    const branchMatch = `${targetStore ?? ''}`.match(/\(([^()]+)\)/);
-    const branchName = branchMatch?.[1]?.trim();
+    const canonicalTargetStore = canonicalizeStoreName(targetStore);
+    const branchName = extractBranchName(targetStore);
     return [...new Set([
             targetStore,
+            canonicalTargetStore,
             `${targetStore}单店`,
+            `${canonicalTargetStore}单店`,
             branchName,
         ].filter(Boolean).map(normalizeStoreName))];
 }
@@ -39,11 +56,13 @@ export function isCurrentStoreMatched(currentStoreText, targetStore) {
     return buildStoreVerificationCandidates(targetStore).some((candidate) => normalizedCurrent.includes(candidate));
 }
 export function buildPreciseStoreSearchCandidates(targetStore) {
-    const branchMatch = `${targetStore ?? ''}`.match(/\(([^()]+)\)/);
-    const branchName = branchMatch?.[1]?.trim();
+    const canonicalTargetStore = canonicalizeStoreName(targetStore);
+    const branchName = extractBranchName(targetStore);
     return [...new Set([
             targetStore,
+            canonicalTargetStore,
             `${targetStore}单店`,
+            `${canonicalTargetStore}单店`,
             branchName,
         ].filter(Boolean))];
 }

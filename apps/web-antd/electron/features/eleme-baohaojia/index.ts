@@ -1,51 +1,14 @@
 import * as ExcelJS from 'exceljs';
-import * as fs from 'fs';
-import * as path from 'path';
 
 import { readExcel } from '../../utils/excel-helper';
-
-// 商品总表路径
-const PRODUCT_MASTER_PATH = path.join(__dirname, '../data/product-master.json');
+import {
+  ensureProductMasterIndex,
+  findProductMasterRecord,
+} from '../product-master/index';
 
 interface BaohaojiaOptions {
   fileBuffer: Buffer;
   initialStock?: number;
-}
-
-interface ProductMaster {
-  sku: string;
-  upc: string;
-  productName: string;
-  specification: string;
-  suggestedRetailPrice: number;
-  currentRetailPrice: number;
-  procurementCost: number;  // 采购价
-  cartonSize: string;
-}
-
-// 加载商品总表
-function loadProductMaster(): Map<string, ProductMaster> {
-  try {
-    if (!fs.existsSync(PRODUCT_MASTER_PATH)) {
-      console.warn('商品总表不存在:', PRODUCT_MASTER_PATH);
-      return new Map();
-    }
-    
-    const data = JSON.parse(fs.readFileSync(PRODUCT_MASTER_PATH, 'utf-8')) as ProductMaster[];
-    const map = new Map<string, ProductMaster>();
-    
-    for (const item of data) {
-      if (item.upc) {
-        map.set(item.upc, item);
-      }
-    }
-    
-    console.log(`商品总表加载完成: ${map.size} 条记录`);
-    return map;
-  } catch (error) {
-    console.error('加载商品总表失败:', error);
-    return new Map();
-  }
 }
 
 export class ElemeBaohaojiaAnalyzer {
@@ -57,7 +20,12 @@ export class ElemeBaohaojiaAnalyzer {
     summary: string;
   }> {
     // 1. 加载商品总表
-    const productMaster = loadProductMaster();
+    const productMaster = await ensureProductMasterIndex({
+      allowLegacySource: true,
+    });
+    if (productMaster.records.length === 0) {
+      throw new Error('请先上传商品总表 JSON');
+    }
     
     // 2. 读取数据
     const rawData = await readExcel(fileBuffer);
@@ -102,7 +70,7 @@ export class ElemeBaohaojiaAnalyzer {
       const productName = productNameKey ? String(row[productNameKey] || '').trim() : '';
 
       // 查询商品总表
-      const masterProduct = productMaster.get(barcode);
+      const masterProduct = findProductMasterRecord(productMaster, { barcode });
       
       if (!masterProduct) {
         // 商品总表中未找到，保留（无法判断）
@@ -127,7 +95,7 @@ export class ElemeBaohaojiaAnalyzer {
         return;
       }
 
-      const procurementCost = masterProduct.procurementCost;
+      const procurementCost = masterProduct.procurementCost ?? null;
       
       if (isNaN(activityPrice) || activityPrice <= 0) {
         // 活动价无效，保留（让用户手动处理）
@@ -153,7 +121,7 @@ export class ElemeBaohaojiaAnalyzer {
       }
 
       // 采购价 > 活动价 → 排除
-      if (procurementCost > activityPrice) {
+      if (procurementCost != null && procurementCost > activityPrice) {
         excludedRows.push({
           upc: barcode,
           productName: productName || masterProduct.productName,

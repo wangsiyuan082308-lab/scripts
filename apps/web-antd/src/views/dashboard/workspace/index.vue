@@ -1,7 +1,5 @@
 <script lang="ts" setup>
-import type {
-  WorkbenchProjectItem,
-} from '@vben/common-ui';
+import type { WorkbenchProjectItem } from '@vben/common-ui';
 
 import { useRouter } from 'vue-router';
 
@@ -17,24 +15,6 @@ const router = useRouter();
 
 // 核心工具 (Projects)
 const projectItems: WorkbenchProjectItem[] = [
-  {
-    color: '#FF4500',
-    content: '自动抓取活动、ROI计算、智能推荐报名、实时日志',
-    date: '2026-02-20',
-    group: '活动助手',
-    icon: 'ri:shopping-cart-2-fill',
-    title: '饿了么活动助手',
-    url: '/activity/list',
-  },
-  {
-    color: '#faad14',
-    content: '自动执行饿了么门店提现，智能优化策略',
-    date: '2026-02-20',
-    group: '自动化',
-    icon: 'ri:money-cny-circle-fill',
-    title: '饿了么自动提现',
-    url: '/withdrawal/overview',
-  },
   {
     color: '#1D6F42',
     content: '一键将采购计划转换为标准Excel格式',
@@ -64,7 +44,7 @@ const projectItems: WorkbenchProjectItem[] = [
   },
   {
     color: '#8A2BE2',
-    content: '批量生成牵牛花/翱象采购计划',
+    content: '仅用于 PDD 采购单，将牵牛花采购模版转换为翱象采购计划',
     date: '2024-03-23',
     group: '采购计划',
     icon: 'ri:file-list-3-fill',

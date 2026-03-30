@@ -181,7 +181,11 @@ onMounted(fetchRecords);
             :columns="columns"
             :data-source="filteredRecords"
             :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
+<<<<<<< HEAD
             :row-key="(_record: ActivityRecord, index: number) => _record.id || _record.name + index"
+=======
+            :row-key="(_record: ActivityRecord) => _record.id || _record.name"
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
             :scroll="{ x: 900 }"
             size="middle"
           >

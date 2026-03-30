@@ -7,9 +7,21 @@ export namespace AuthApi {
     username?: string;
   }
 
-  /** 登录接口返回值 */
+  /** 登录成功返回的用户信息 */
+  export interface LoginUser {
+    accessToken?: string;
+    merchantId?: string;
+    role?: string;
+    roles?: string[];
+    username: string;
+    [key: string]: any;
+  }
+
+  /** 供 store 消费的登录结果 */
   export interface LoginResult {
-    accessToken: string;
+    message?: string;
+    success: boolean;
+    user?: LoginUser;
   }
 
   export interface RefreshTokenResult {
@@ -18,17 +30,50 @@ export namespace AuthApi {
   }
 }
 
+function hasElectronAuthBridge() {
+  return typeof window !== 'undefined' && window.ipcRenderer !== undefined;
+}
+
 /**
  * 登录
  */
 export async function loginApi(data: AuthApi.LoginParams) {
-  return requestClient.post<AuthApi.LoginResult>('/auth/login', data);
+  if (hasElectronAuthBridge()) {
+    return window.ipcRenderer.invoke('local-auth-login', data);
+  }
+  try {
+    const response = await baseRequestClient.post('/auth/login', data, {
+      withCredentials: true,
+    });
+    const payload = (response as any)?.data;
+    if (payload?.code === 0 && payload?.data) {
+      return {
+        success: true,
+        user: payload.data,
+      } satisfies AuthApi.LoginResult;
+    }
+    return {
+      success: false,
+      message: payload?.error ?? payload?.message ?? '登录失败，请稍后重试。',
+    } satisfies AuthApi.LoginResult;
+  } catch (error: any) {
+    return {
+      success: false,
+      message: error?.error ?? error?.message ?? '登录失败，请稍后重试。',
+    } satisfies AuthApi.LoginResult;
+  }
 }
 
 /**
  * 刷新accessToken
  */
 export async function refreshTokenApi() {
+  if (hasElectronAuthBridge()) {
+    return {
+      data: 'local-refresh-token',
+      status: 0,
+    } as AuthApi.RefreshTokenResult;
+  }
   return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
     withCredentials: true,
   });
@@ -38,6 +83,9 @@ export async function refreshTokenApi() {
  * 退出登录
  */
 export async function logoutApi() {
+  if (hasElectronAuthBridge()) {
+    return window.ipcRenderer.invoke('local-auth-logout');
+  }
   return baseRequestClient.post('/auth/logout', {
     withCredentials: true,
   });
@@ -47,5 +95,8 @@ export async function logoutApi() {
  * 获取用户权限码
  */
 export async function getAccessCodesApi() {
+  if (hasElectronAuthBridge()) {
+    return window.ipcRenderer.invoke('local-auth-get-access-codes');
+  }
   return requestClient.get<string[]>('/auth/codes');
 }

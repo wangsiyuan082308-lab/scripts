@@ -43,7 +43,7 @@ export function useResponseError(message: string, error: any = null) {
 
 export function forbiddenResponse(
   event: H3Event<EventHandlerRequest>,
-  message = 'Forbidden Exception',
+  message = '请求被拒绝。',
 ) {
   setResponseStatus(event, 403);
   return useResponseError(message, message);
@@ -51,7 +51,7 @@ export function forbiddenResponse(
 
 export function unAuthorizedResponse(event: H3Event<EventHandlerRequest>) {
   setResponseStatus(event, 401);
-  return useResponseError('Unauthorized Exception', 'Unauthorized Exception');
+  return useResponseError('未登录或登录已过期，请重新登录。', '未登录或登录已过期，请重新登录。');
 }
 
 export function sleep(ms: number) {

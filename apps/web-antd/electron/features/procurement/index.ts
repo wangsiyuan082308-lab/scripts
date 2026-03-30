@@ -1,5 +1,6 @@
 import * as ExcelJS from 'exceljs';
-import { readExcel } from '../../utils/excel-helper';
+
+import { readExcelWithSchema } from '../../utils/excel-helper';
 
 interface ProcurementOptions {
   listBuffer: Buffer;
@@ -7,57 +8,143 @@ interface ProcurementOptions {
   mode?: string; // 'week' | 'month' | 'none'
 }
 
-export class ProcurementAnalyzer {
-  static async run({
+type ProcurementMode = 'week' | 'month' | 'none';
+
+type RowRecord = Record<string, any>;
+
+const LIST_SCHEMA = [
+  { key: 'status', aliases: ['检查状态', '*检查状态'] },
+  { key: 'link', aliases: ['供应商商品链接', '商品链接', '供应商链接'] },
+  { key: 'upc', aliases: ['商品UPC', 'UPC', '商品条码', '条码'] },
+  { key: 'sku', aliases: ['商品SKU', 'SKU', 'SKU编码'] },
+  { key: 'storeCode', aliases: ['收货方编码', '门店编码', '门店/仓编码'] },
+  { key: 'storeName', aliases: ['收货方名称', '门店名称', '门店/仓名称'], required: false },
+  { key: 'supplierCode', aliases: ['发货方编码', '供应商编码'] },
+  { key: 'purchaseUnit', aliases: ['采购单位', '补货单位'] },
+  { key: 'purchaseQty', aliases: ['采购补货量', '采购补货数量', '采购量', '采购建议补货量'] },
+  { key: 'adviceQty', aliases: ['建议补货量', '基础补货量', '建议补货数量', '基础补货数量'], required: false },
+] as const;
+
+const REF_SCHEMA = [
+  { key: 'upc', aliases: ['商品UPC', 'UPC', '商品条码', '条码'] },
+  { key: 'weeklySales', aliases: ['周销', '7天销量', '近7天销量', '7日销量'] },
+  { key: 'monthlySales', aliases: ['月销', '30天销量', '近30天销量', '30日销量'] },
+  { key: 'conversionRate', aliases: ['换算关系', '采购换算关系'] },
+  { key: 'minOrderQty', aliases: ['起订量（采购单位）', '起订量(采购单位)', '起订量采购单位', '起订量'] },
+] as const;
+
+function normalizeUpc(value: unknown): string {
+  if (value == null) return '';
+  let text = String(value).replaceAll(/\s+/g, '').trim();
+  if (!text) return '';
+  if (/^\d+\.0+$/.test(text)) {
+    text = text.replace(/\.0+$/, '');
+  }
+  return text;
+}
+
+function toTrimmedText(value: unknown): string {
+  return value == null ? '' : String(value).trim();
+}
+
+function parseStrictNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const text = String(value).replaceAll(/,/g, '').trim();
+  if (!text) return null;
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getRequiredKeys(
+  fieldMap: Record<string, string>,
+  requiredKeys: string[],
+  label: string,
+  headers: string[],
+) {
+  const missing = requiredKeys.filter((key) => !fieldMap[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${label}缺少必需列: ${missing.join('、')}。当前识别到的表头: [${headers.join(', ')}]`,
+    );
+  }
+}
+
+function getFieldValue(row: RowRecord, fieldMap: Record<string, string>, key: string): any {
+  const header = fieldMap[key];
+  return header ? row[header] : undefined;
+}
+
+function parseMode(mode: string | undefined): ProcurementMode {
+  return mode === 'month' || mode === 'none' ? mode : 'week';
+}
+
+export const ProcurementAnalyzer = {
+  async run({
     listBuffer,
     refBuffer,
     mode = 'week',
   }: ProcurementOptions): Promise<{
     buffer: Buffer;
-    summary: string;
     storeNames: string[];
+    summary: string;
   }> {
-    // 1. 读取数据
-    const normalizedMode = String(mode).trim();
+    const normalizedMode = parseMode(String(mode).trim());
     const isNoCompare = normalizedMode === 'none';
 
-    console.log(`[Procurement] Mode: ${normalizedMode}, IsNoCompare: ${isNoCompare}`);
+    const listResult = await readExcelWithSchema(listBuffer, [...LIST_SCHEMA]);
+    const refResult = isNoCompare
+      ? { data: [], fieldMap: {}, headerRowIndex: 1, headers: [] }
+      : await readExcelWithSchema(refBuffer, [...REF_SCHEMA]);
 
-    const listData = await readExcel(listBuffer);
-    const refData = !isNoCompare ? await readExcel(refBuffer) : [];
-    // 过滤已通过数据以及有供应商商品链接的数据
-    const validRows = listData.filter( (row: any) => row['检查状态'] === '已通过' && row['供应商商品链接'] !== '');
-    if (validRows.length === 0) {
-      throw new Error('No valid data found (Check Status: Passed/Normal)');
+    if (listResult.data.length === 0) {
+      throw new Error('补货清单内容为空或无法识别表头');
     }
 
-    // 收集唯一的门店名称
+    getRequiredKeys(
+      listResult.fieldMap,
+      [
+        'status',
+        'link',
+        'upc',
+        'sku',
+        'storeCode',
+        'supplierCode',
+        'purchaseUnit',
+        'purchaseQty',
+      ],
+      '补货清单',
+      listResult.headers,
+    );
+
+    if (!isNoCompare) {
+      if (refResult.data.length === 0) {
+        throw new Error('补货参考内容为空或无法识别表头');
+      }
+      getRequiredKeys(
+        refResult.fieldMap,
+        ['upc', 'weeklySales', 'monthlySales', 'conversionRate', 'minOrderQty'],
+        '补货参考',
+        refResult.headers,
+      );
+    }
+
     const storeNamesSet = new Set<string>();
-    validRows.forEach((row: any) => {
-      // 尝试查找门店名称字段，这里假设字段名为 "收货方名称" 或 "门店名称"
-      // 根据之前的列名 "收货方编码"，推测可能有对应的名称字段
-      // 如果找不到，可以遍历所有key查找包含 "收货方" 且包含 "名" 的字段
-      const storeNameKey = Object.keys(row).find(
-        (k) => (k.includes('收货方') || k.includes('门店')) && k.includes('名'),
-      );
-      if (storeNameKey && row[storeNameKey]) {
-        storeNamesSet.add(String(row[storeNameKey]).trim());
-      }
-    });
-    const storeNames = Array.from(storeNamesSet);
+    const refMap = new Map<string, RowRecord>();
 
-    // 3. 构建参考表映射
-    const refMap = new Map();
-    refData.forEach((row: any) => {
-      const upcKey = Object.keys(row).find(
-        (k) => /UPC/i.test(k) || k.includes('商品UPC'),
-      );
-      if (upcKey && row[upcKey]) {
-        refMap.set(String(row[upcKey]).trim(), row);
-      }
-    });
+    if (!isNoCompare) {
+      refResult.data.forEach((row) => {
+        const upc = normalizeUpc(getFieldValue(row, refResult.fieldMap, 'upc'));
+        if (!upc || refMap.has(upc)) return;
+        refMap.set(upc, row);
+      });
+    }
 
-    // 4. 生成结果 Workbook
     const wbOutput = new ExcelJS.Workbook();
     const wsOutput = wbOutput.addWorksheet('补货建议');
 
@@ -71,92 +158,115 @@ export class ProcurementAnalyzer {
       { header: '补货单位', key: 'unit', width: 10 },
     ];
 
-    let keptCount = 0;
-    let removedCount = 0
-    // 循环当前的补货清单
-    validRows.forEach((row: any) => {
-      const upcKey = Object.keys(row).find((k) => k.includes('商品UPC'));
-      const upc = row[upcKey];
-      // 补货参考对应的数据
-      const refRow = refMap.get(upc);
+    const stats = {
+      totalScanned: listResult.data.length,
+      candidateCount: 0,
+      exportedCount: 0,
+      filteredByStatus: 0,
+      filteredByMissingLink: 0,
+      filteredByMissingUpc: 0,
+      skippedByMissingReference: 0,
+      skippedByInvalidConversionRate: 0,
+      skippedByInvalidPurchaseQty: 0,
+      filteredByFinalQty: 0,
+      yellowMarked: 0,
+    };
 
-      const adviceQtyKey = Object.keys(row).find(
-        (k) =>
-          k.includes('补货量') && (k.includes('基础') || k.includes('建议')),
-      );
-      // 补货清单的建议补货量
-      let originalQty = adviceQtyKey ? Number(row[adviceQtyKey]) : 0;
-      if (isNaN(originalQty)) originalQty = 0;
+    for (const row of listResult.data) {
+      const status = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'status'));
+      if (status !== '已通过') {
+        stats.filteredByStatus++;
+        continue;
+      }
 
-      let finalQty = 0;
-      const purchaseQtyKey = Object.keys(row).find(
-        (k) => k.includes('补货量') && k.includes('采购'),
-      );
+      const link = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'link'));
+      if (!link) {
+        stats.filteredByMissingLink++;
+        continue;
+      }
 
-      let purchaseQty = purchaseQtyKey ? Number(row[purchaseQtyKey]) : 0;
-      if (isNaN(purchaseQty)) purchaseQty = originalQty;
+      stats.candidateCount++;
 
-      let bgColor: string | null = null;
-      // 如果补货参考存在，且30天月销或7天周销字段存在
-      // 只有在非 'none' 模式且找到了对应的参考行时才进行比对
-      if (!isNoCompare && refRow) {
-        const key30 = Object.keys(refRow).find(
-          (k) => k.includes('30天') || k.includes('月销'),
-        );
-        const key7 = Object.keys(refRow).find(
-          (k) => k.includes('7天') || k.includes('周销'),
-        );
+      const upc = normalizeUpc(getFieldValue(row, listResult.fieldMap, 'upc'));
+      if (!upc) {
+        stats.filteredByMissingUpc++;
+        continue;
+      }
 
-        const ref30Days = key30 ? Number(refRow[key30]) || 0 : 0;
-        const ref7Days = key7 ? Number(refRow[key7]) || 0 : 0;
-        
-        // 根据模式选择对比基准
-        const comparisonValue = normalizedMode === 'month' ? ref30Days : ref7Days;
+      const storeName = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'storeName'));
+      if (storeName) {
+        storeNamesSet.add(storeName);
+      }
 
-        // 如果建议补货量大于参考量（周销7天或月销30天），就减少一半
-        if (originalQty > comparisonValue) {
-          const result = purchaseQty / 2;
-          finalQty = result < 1 ? 1 : Math.floor(result);
-          bgColor = 'FFFF0000'; // Red
-          console.log(`[Halved] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Comp: ${comparisonValue}, Final: ${finalQty}`);
-        } else {
-          finalQty = purchaseQty;
+      const skuCode = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'sku'));
+      const storeCode = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'storeCode'));
+      const supplierCode = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'supplierCode'));
+      const unit = toTrimmedText(getFieldValue(row, listResult.fieldMap, 'purchaseUnit'));
+      const purchaseQty = parseStrictNumber(getFieldValue(row, listResult.fieldMap, 'purchaseQty'));
+
+      if (purchaseQty == null) {
+        stats.skippedByInvalidPurchaseQty++;
+        continue;
+      }
+
+      let finalQty = purchaseQty;
+      let bgColor: null | string = null;
+
+      if (!isNoCompare) {
+        const refRow = refMap.get(upc);
+        if (!refRow) {
+          stats.skippedByMissingReference++;
+          continue;
         }
 
-        // 检查起订量逻辑
-        // 如果起订量大于建议补货量，则强制使用起订量
-        const minOrderQtyKey = Object.keys(refRow).find(
-          (k) => k.includes('起订量') && k.includes('采购单位'),
+        const comparisonValue = parseStrictNumber(
+          getFieldValue(
+            refRow,
+            refResult.fieldMap,
+            normalizedMode === 'month' ? 'monthlySales' : 'weeklySales',
+          ),
         );
-        let minOrderQty = minOrderQtyKey ? Number(refRow[minOrderQtyKey]) : 0;
-        if (isNaN(minOrderQty)) minOrderQty = 0;
-        // 如果起订量大于建议补货量，要么就是起订量
-        if (minOrderQty > finalQty) {
-          finalQty = minOrderQty;
-          console.log(`[MinOrder] SKU: ${row['商品SKU']}, Final adjusted to MinOrder: ${minOrderQty}`);
+        const conversionRate = parseStrictNumber(
+          getFieldValue(refRow, refResult.fieldMap, 'conversionRate'),
+        );
+        const minOrderQty = parseStrictNumber(
+          getFieldValue(refRow, refResult.fieldMap, 'minOrderQty'),
+        );
+
+        if (conversionRate == null || conversionRate <= 0) {
+          stats.skippedByInvalidConversionRate++;
+          continue;
         }
-      } else {
-        finalQty = purchaseQty;
-        // 仅在调试时打印部分行，避免日志过多
-        if (Math.random() < 0.05) {
-             console.log(`[NoCompare] SKU: ${row['商品SKU']}, Orig: ${originalQty}, Purch: ${purchaseQty}, Final: ${finalQty}`);
+
+        const normalizedComparisonValue = comparisonValue == null ? 0 : comparisonValue;
+        const normalizedMinOrderQty = minOrderQty != null && minOrderQty > 0 ? minOrderQty : 0;
+
+        finalQty = Math.ceil(normalizedComparisonValue / conversionRate);
+        if (finalQty < normalizedMinOrderQty) {
+          finalQty = normalizedMinOrderQty;
+        }
+
+        const purchaseQtyInBaseUnit = purchaseQty * conversionRate;
+        if (purchaseQtyInBaseUnit > normalizedComparisonValue * 1.5) {
+          bgColor = 'FFFF00';
+          stats.yellowMarked++;
         }
       }
 
       if (finalQty <= 0) {
-        removedCount++;
-        return;
+        stats.filteredByFinalQty++;
+        continue;
       }
 
-      keptCount++;
+      stats.exportedCount++;
       const newRow = wsOutput.addRow({
-        storeCode: row['收货方编码'],
-        skuCode: row['商品SKU'],
+        storeCode,
+        skuCode,
         quantity: finalQty,
         name: '',
         price: '',
-        supplierCode: row['发货方编码'],
-        unit: row['采购单位'],
+        supplierCode,
+        unit,
       });
 
       newRow.getCell('name').value = '';
@@ -169,13 +279,30 @@ export class ProcurementAnalyzer {
           fgColor: { argb: bgColor },
         };
       }
-    });
+    }
 
     const buffer = (await wbOutput.xlsx.writeBuffer()) as Buffer;
-    const summary = `处理完成！(模式: ${isNoCompare ? '不比对' : normalizedMode === 'month' ? '按月' : '按周'})\n共扫描 ${listData.length} 条数据，保留 ${keptCount} 条，已移除 ${
-      listData.length - validRows.length + removedCount
-    } 条不合规数据`;
+    const modeLabel =
+      normalizedMode === 'none'
+        ? '不比对'
+        : normalizedMode === 'month'
+          ? '按月'
+          : '按周';
+    const summary = [
+      `处理完成！(模式: ${modeLabel})`,
+      `总扫描数: ${stats.totalScanned}`,
+      `通过状态且有链接的候选数: ${stats.candidateCount}`,
+      `成功导出数: ${stats.exportedCount}`,
+      `因状态过滤数: ${stats.filteredByStatus}`,
+      `因缺少链接过滤数: ${stats.filteredByMissingLink}`,
+      `因缺少 UPC 过滤数: ${stats.filteredByMissingUpc}`,
+      `因参考表未匹配跳过数: ${stats.skippedByMissingReference}`,
+      `因换算关系非法跳过数: ${stats.skippedByInvalidConversionRate}`,
+      `因采购量无效跳过数: ${stats.skippedByInvalidPurchaseQty}`,
+      `因最终数量 <= 0 过滤数: ${stats.filteredByFinalQty}`,
+      `黄标数: ${stats.yellowMarked}`,
+    ].join('\n');
 
-    return { buffer: buffer as Buffer, summary, storeNames };
-  }
-}
+    return { buffer: buffer as Buffer, summary, storeNames: [...storeNamesSet] };
+  },
+};

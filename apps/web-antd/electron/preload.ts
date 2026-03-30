@@ -1,10 +1,46 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const INVOKE_CHANNELS = [
+  'local-auth-login',
+  'local-auth-logout',
+  'local-auth-get-user-info',
+  'local-auth-get-access-codes',
   'process-excel-buffers',
   'generate-eleme-activity',
   'process-eleme-baohaojia',
   'generate-procurement-plan',
+  'get-product-master-status',
+  'get-product-master-filter-options',
+  'import-product-master',
+  'list-product-master-records',
+  'refresh-product-master',
+  'run-product-compare',
+  'get-product-compare-ai-config',
+  'save-product-compare-ai-config',
+  'execute-procurement-task',
+  'get-execution-logs',
+  'execute-withdrawal-task',
+  // Storage
+  'get-stores',
+  'save-stores',
+  'add-store',
+  'update-store',
+  'delete-store',
+  'get-suppliers',
+  'save-suppliers',
+  'add-supplier',
+  'update-supplier',
+  'delete-supplier',
+  'get-tasks',
+  'save-tasks',
+  'add-task',
+  'update-task',
+  'delete-task',
+  // Merchant
+  'get-merchants',
+  'add-merchant',
+  'update-merchant',
+  'delete-merchant',
 ];
 
 const SEND_CHANNELS = [
@@ -17,7 +53,9 @@ const ON_CHANNELS = [
   'update-download-progress',
   'update-downloaded',
   'update-error',
+  'update-checking',
   'main-process-message',
+  'withdrawal-log',
 ];
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -37,8 +75,10 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
     if (!ON_CHANNELS.includes(channel)) {
       throw new Error(`IPC on not allowed: ${channel}`);
     }
-    ipcRenderer.on(channel, (_event, ...args) => listener(...args));
-    return { channel, listener };
+    const wrappedListener = (_event: unknown, ...args: any[]) =>
+      listener(...args);
+    ipcRenderer.on(channel, wrappedListener);
+    return () => ipcRenderer.off(channel, wrappedListener);
   },
   off(channel: string, listener: (...args: any[]) => void) {
     ipcRenderer.off(channel, listener);

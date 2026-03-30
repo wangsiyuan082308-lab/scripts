@@ -1,7 +1,9 @@
 <script lang="ts" setup>
-import { Page, useVbenForm } from '@vben/common-ui';
+import { Page } from '@vben/common-ui';
 
-import { message, Modal } from 'ant-design-vue';
+import { Card, message, Modal } from 'ant-design-vue';
+
+import { useVbenForm } from '#/adapter/form';
 
 import { readFileAsBuffer } from '#/utils/file';
 
@@ -13,12 +15,9 @@ const [Form, formApi] = useVbenForm({
     {
       component: 'RadioGroup',
       componentProps: {
-        options: [
-          { label: '牵牛花', value: 'qianniuhua' },
-          { label: '翱象', value: 'aoxiang' },
-        ],
+        options: [{ label: '翱象', value: 'aoxiang' }],
       },
-      defaultValue: 'qianniuhua',
+      defaultValue: 'aoxiang',
       fieldName: 'type',
       label: '目标平台',
       rules: 'required',
@@ -37,7 +36,6 @@ const [Form, formApi] = useVbenForm({
       rules: 'required',
     },
   ],
-  showResetButton: false,
   submitButtonOptions: {
     content: '生成计划',
   },
@@ -71,18 +69,19 @@ async function onSubmit(values: any) {
       },
     );
 
+    if (result.canceled) {
+      message.info({ content: '已取消保存', key: 'processPlan' });
+      return;
+    }
+
     if (result.success) {
-      if (result.canceled) {
-        message.info({ content: '已取消保存', key: 'processPlan' });
-      } else {
-        message.success({ content: '生成成功', key: 'processPlan' });
-        Modal.success({
-          title: '生成完成',
-          content: result.summary || `文件已保存至: ${result.outputPath}`,
-          okText: '知道了',
-        });
-        await formApi.resetForm();
-      }
+      message.success({ content: '生成成功', key: 'processPlan' });
+      Modal.success({
+        title: '生成完成',
+        content: result.summary || `文件已保存至: ${result.outputPath}`,
+        okText: '知道了',
+      });
+      await formApi.resetForm();
     } else {
       throw new Error(result.message || '生成失败');
     }
@@ -102,9 +101,10 @@ async function onSubmit(values: any) {
       <div class="mb-4 text-gray-500">
         <p>功能说明：</p>
         <ul class="list-inside list-disc">
-          <li>批量上传多个Excel文件。</li>
-          <li>选择生成牵牛花或翱象的采购计划。</li>
-          <li>系统将自动合并数据并按照指定模版生成文件。</li>
+          <li>批量上传一个或多个牵牛花采购计划模版 Excel 文件。</li>
+          <li>当前仅支持生成翱象采购计划。</li>
+          <li>仅可用于 PDD 采购单转换，供应商编码会固定写入 `2168183`。</li>
+          <li>系统将自动合并数据并按当前翱象导入模板导出文件。</li>
         </ul>
       </div>
       <Form />

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+<<<<<<< HEAD
 import type { EChartsOption } from 'echarts';
 
+=======
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -58,7 +61,11 @@ const summary = ref<Summary>({
   latestDate: '-',
 });
 const reports = ref<PurchaseReport[]>([]);
+<<<<<<< HEAD
 const chartRef = ref<InstanceType<typeof EchartsUI>>();
+=======
+const chartRef = ref();
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 const { renderEcharts } = useEcharts(chartRef);
 
 const platformOptions = [
@@ -99,7 +106,11 @@ function renderChart(data: PurchaseReport[]) {
   }
   const sorted = [...dateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
+<<<<<<< HEAD
   const option: EChartsOption = {
+=======
+  const option: Record<string, any> = {
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
     tooltip: { trigger: 'axis' },
     grid: { left: 60, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'category', data: sorted.map((d) => d[0]) },

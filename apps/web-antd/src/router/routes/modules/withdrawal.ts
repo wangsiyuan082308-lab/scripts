@@ -4,46 +4,29 @@ const routes: RouteRecordRaw[] = [
   {
     meta: {
       icon: 'lucide:wallet',
-      order: 2,
-      title: '提现管理',
+      order: 5,
+      title: '财务中心',
     },
     name: 'Withdrawal',
     path: '/withdrawal',
+    redirect: '/withdrawal/task',
     children: [
       {
-        name: 'WithdrawalOverview',
-        path: '/withdrawal/overview',
-        component: () => import('#/views/withdrawal/overview.vue'),
+        name: 'WithdrawalTask',
+        path: '/withdrawal/task',
+        component: () => import('#/views/withdrawal-task/index.vue'),
         meta: {
-          icon: 'lucide:layout-dashboard',
-          title: '提现总览',
+          icon: 'ant-design:wallet-outlined',
+          title: '提现管理',
         },
       },
       {
-        name: 'WithdrawalStoreStats',
-        path: '/withdrawal/store-stats',
-        component: () => import('#/views/withdrawal/store-stats.vue'),
+        name: 'FinancialReport',
+        path: '/withdrawal/report',
+        component: () => import('#/views/financial-report/index.vue'),
         meta: {
-          icon: 'lucide:store',
-          title: '门店统计',
-        },
-      },
-      {
-        name: 'WithdrawalLogs',
-        path: '/withdrawal/logs',
-        component: () => import('#/views/withdrawal/logs.vue'),
-        meta: {
-          icon: 'lucide:scroll-text',
-          title: '运行日志',
-        },
-      },
-      {
-        name: 'WithdrawalOptimization',
-        path: '/withdrawal/optimization',
-        component: () => import('#/views/withdrawal/optimization-history.vue'),
-        meta: {
-          icon: 'lucide:brain',
-          title: '优化历史',
+          icon: 'ant-design:file-text-outlined',
+          title: '财务报表',
         },
       },
     ],

@@ -46,10 +46,14 @@ interface AccessState {
 }
 
 /**
- * @zh_CN 访问权限相关
+ * @zh_CN 权限访问 Store
+ * @description 管理令牌、菜单、路由、权限码以及锁屏状态。
  */
 export const useAccessStore = defineStore('core-access', {
   actions: {
+    /**
+     * 根据路由路径递归查找当前用户可访问的菜单项。
+     */
     getMenuByPath(path: string) {
       function findMenu(
         menus: MenuRecordRaw[],
@@ -69,31 +73,67 @@ export const useAccessStore = defineStore('core-access', {
       }
       return findMenu(this.accessMenus, path);
     },
+
+    /**
+     * 进入锁屏状态，并记录锁屏密码。
+     */
     lockScreen(password: string) {
       this.isLockScreen = true;
       this.lockScreenPassword = password;
     },
+
+    /**
+     * 更新权限码列表。
+     */
     setAccessCodes(codes: string[]) {
       this.accessCodes = codes;
     },
+
+    /**
+     * 更新可访问菜单列表。
+     */
     setAccessMenus(menus: MenuRecordRaw[]) {
       this.accessMenus = menus;
     },
+
+    /**
+     * 更新可访问路由列表。
+     */
     setAccessRoutes(routes: RouteRecordRaw[]) {
       this.accessRoutes = routes;
     },
+
+    /**
+     * 更新访问令牌。
+     */
     setAccessToken(token: AccessToken) {
       this.accessToken = token;
     },
+
+    /**
+     * 标记权限检查流程是否已完成。
+     */
     setIsAccessChecked(isAccessChecked: boolean) {
       this.isAccessChecked = isAccessChecked;
     },
+
+    /**
+     * 标记当前登录态是否已过期。
+     */
     setLoginExpired(loginExpired: boolean) {
       this.loginExpired = loginExpired;
     },
+
+    /**
+     * 更新刷新令牌。
+     */
     setRefreshToken(token: AccessToken) {
       this.refreshToken = token;
     },
+
+    /**
+     * 解除锁屏并清除锁屏密码。
+     */
     unlockScreen() {
       this.isLockScreen = false;
       this.lockScreenPassword = undefined;

@@ -1,10 +1,66 @@
 {
+  "name": "vben-admin-monorepo",
+  "version": "5.5.50",
+  "private": true,
+  "keywords": [
+    "monorepo",
+    "turbo",
+    "vben",
+    "vben admin",
+    "vben pro",
+    "vue",
+    "vue admin",
+    "vue vben admin",
+    "vue vben admin pro",
+    "vue3"
+  ],
+  "homepage": "https://github.com/vbenjs/vue-vben-admin",
+  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "repository": "vbenjs/vue-vben-admin.git",
+  "license": "MIT",
   "author": {
     "email": "ann.vben@gmail.com",
     "name": "vben",
     "url": "https://github.com/anncwb"
   },
-  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "type": "module",
+  "scripts": {
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 turbo build",
+    "build:analyze": "turbo build:analyze",
+    "build:antd": "pnpm run build --filter=@vben/web-antd",
+    "build:docker": "./scripts/deploy/build-local-docker-image.sh",
+    "build:docs": "pnpm run build --filter=@vben/docs",
+    "build:play": "pnpm run build --filter=@vben/playground",
+    "catalog": "pnpx codemod pnpm/catalog",
+    "changeset": "pnpm exec changeset",
+    "check": "pnpm run check:circular && pnpm run check:dep && pnpm run check:type && pnpm check:cspell",
+    "check:circular": "vsh check-circular",
+    "check:cspell": "cspell lint **/*.ts **/README.md .changeset/*.md --no-progress",
+    "check:dep": "vsh check-dep",
+    "check:type": "turbo run typecheck",
+    "clean": "node ./scripts/clean.mjs",
+    "commit": "czg",
+    "dev": "turbo-run dev",
+    "dev:antd": "pnpm -F @vben/web-antd run dev",
+    "dev:antd:electron": "pnpm -F @vben/web-antd run dev:electron",
+    "dev:docs": "pnpm -F @vben/docs run dev",
+    "dev:withdraw": "pnpm exec tsx apps/web-antd/electron/features/withdrawal-task/withdrawal-cli.ts",
+    "format": "vsh lint --format",
+    "lint": "vsh lint",
+    "postinstall": "pnpm -r run stub --if-present",
+    "preinstall": "npx only-allow pnpm",
+    "preview": "turbo-run preview",
+    "publint": "vsh publint",
+    "reinstall": "pnpm clean --del-lock --yes && pnpm install",
+    "test:e2e": "turbo run test:e2e",
+    "test:unit": "vitest run --dom",
+    "update:deps": "npx taze -r -w",
+    "version": "pnpm exec changeset version && pnpm install --no-frozen-lockfile"
+  },
+  "dependencies": {
+    "@types/lodash-es": "catalog:",
+    "lodash-es": "catalog:"
+  },
   "devDependencies": {
     "@changesets/changelog-github": "catalog:",
     "@changesets/cli": "catalog:",
@@ -31,6 +87,7 @@
     "playwright": "catalog:",
     "rimraf": "catalog:",
     "tailwindcss": "catalog:",
+    "tsx": "^4.21.0",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "unbuild": "catalog:",
@@ -43,6 +100,7 @@
     "node": ">=20.19.0",
     "pnpm": ">=10.0.0"
   },
+<<<<<<< HEAD
   "homepage": "https://github.com/vbenjs/vue-vben-admin",
   "keywords": [
     "monorepo",
@@ -108,4 +166,7 @@
   },
   "type": "module",
   "version": "5.5.15"
+=======
+  "packageManager": "pnpm@10.28.2"
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 }

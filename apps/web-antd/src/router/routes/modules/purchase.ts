@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Purchase',
     path: '/purchase',
+    redirect: '/purchase/overview',
     children: [
       {
         name: 'PurchaseOverview',
@@ -17,7 +18,18 @@ const routes: RouteRecordRaw[] = [
         meta: {
           icon: 'lucide:layout-dashboard',
           title: '采购总览',
+          order: 0,
         },
+      },
+      {
+        meta: {
+          icon: 'ant-design:schedule-outlined',
+          title: '采购任务管理',
+          order: 10,
+        },
+        name: 'ProcurementTask',
+        path: '/procurement-task',
+        component: () => import('#/views/procurement-task/index.vue'),
       },
     ],
   },

@@ -16,8 +16,8 @@ export default defineEventHandler(async (event) => {
   if (!password || !username) {
     setResponseStatus(event, 400);
     return useResponseError(
-      'BadRequestException',
-      'Username and password are required',
+      '用户名和密码不能为空。',
+      '用户名和密码不能为空。',
     );
   }
 
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   if (!findUser) {
     clearRefreshTokenCookie(event);
-    return forbiddenResponse(event, 'Username or password is incorrect.');
+    return forbiddenResponse(event, '用户名或密码错误。');
   }
 
   const accessToken = generateAccessToken(findUser);

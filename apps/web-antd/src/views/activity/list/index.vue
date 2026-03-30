@@ -1,6 +1,9 @@
 <script setup lang="ts">
+<<<<<<< HEAD
 import type { EChartsOption } from 'echarts';
 
+=======
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -67,7 +70,11 @@ const searchText = ref('');
 const drawerVisible = ref(false);
 const currentActivity = ref<Activity | null>(null);
 
+<<<<<<< HEAD
 const chartRef = ref<InstanceType<typeof EchartsUI>>();
+=======
+const chartRef = ref();
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 const { renderEcharts } = useEcharts(chartRef);
 
 const levelConfig: Record<string, { label: string; tagColor: string }> = {
@@ -139,7 +146,11 @@ function formatTime(activity: Activity) {
 }
 
 function renderChart(s: Summary) {
+<<<<<<< HEAD
   const option: EChartsOption = {
+=======
+  const option: Record<string, any> = {
+>>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
     tooltip: { trigger: 'item' },
     legend: { bottom: 0, left: 'center' },
     series: [

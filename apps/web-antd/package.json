@@ -1,6 +1,6 @@
 {
   "name": "@vben/web-antd",
-  "version": "5.5.15",
+  "version": "5.5.50",
   "description": "ScriptAi 管理后台 (Web/Electron)",
   "author": {
     "email": "ann.vben@gmail.com",
@@ -10,6 +10,7 @@
   "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
   "build": {
     "appId": "com.oby.merchant-tools",
+    "productName": "前端小工具",
     "directories": {
       "output": "release/${version}"
     },
@@ -25,7 +26,7 @@
       }
     ],
     "mac": {
-      "artifactName": "${productName}_${version}.${ext}",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
           "arch": [
@@ -49,9 +50,8 @@
       "oneClick": false,
       "perMachine": false
     },
-    "productName": "Oby商家工具",
     "win": {
-      "artifactName": "${productName}_${version}.${ext}",
+      "artifactName": "${productName}-${version}-setup.${ext}",
       "target": [
         {
           "arch": [
@@ -79,10 +79,12 @@
     "@vben/utils": "workspace:*",
     "@vueuse/core": "catalog:",
     "ant-design-vue": "catalog:",
+    "chromium-bidi": "^15.0.0",
     "dayjs": "catalog:",
     "electron-updater": "^6.1.7",
     "exceljs": "^4.4.0",
     "pinia": "catalog:",
+    "playwright": "catalog:",
     "vue": "catalog:",
     "vue-router": "catalog:"
   },

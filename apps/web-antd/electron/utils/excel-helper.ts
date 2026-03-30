@@ -2,84 +2,190 @@ import { Buffer } from 'node:buffer';
 
 import * as ExcelJS from 'exceljs';
 
-/**
- * 通用 Excel 读取工具 (Node.js Buffer 版)
- * 自动识别前 10 行中的表头
- */
-export async function readExcel(buffer: Buffer): Promise<any[]> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const worksheet = workbook.worksheets[0];
+export interface ExcelSchemaField {
+  key: string;
+  aliases: string[];
+  required?: boolean;
+}
 
-  if (!worksheet) return [];
+export interface ExcelSchemaReadResult {
+  data: any[];
+  fieldMap: Record<string, string>;
+  headerRowIndex: number;
+  headers: string[];
+}
 
-  let headers: string[] = [];
-  let headerRowIndex = 1;
-  const data: any[] = [];
+function normalizeHeader(text: string): string {
+  return text
+    .replaceAll(/[\r\n]+/g, ' ')
+    .replaceAll(/[*：:]/g, '')
+    .replaceAll(/\s+/g, '')
+    .trim()
+    .toLowerCase();
+}
 
-  // 1. 扫描前 10 行寻找表头
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber > 10) return;
-    if (headers.length > 0) return;
+function toText(value: ExcelJS.CellValue | null | undefined): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if ('text' in value && typeof value.text === 'string') return value.text.trim();
+    if ('result' in value && value.result != null) return String(value.result).trim();
+    if ('richText' in value && Array.isArray(value.richText)) {
+      return value.richText.map((item) => item.text || '').join('').trim();
+    }
+    if ('hyperlink' in value && typeof value.hyperlink === 'string') {
+      return value.hyperlink.trim();
+    }
+  }
+  return String(value).trim();
+}
 
-    // 清洗表头
-    const rowValues: string[] = [];
+function matchHeader(headers: Map<string, number>, aliases: string[]): number {
+  const normalizedAliases = aliases.map((alias) => normalizeHeader(alias));
+
+  for (const alias of normalizedAliases) {
+    const exact = headers.get(alias);
+    if (exact) return exact;
+  }
+
+  for (const [header, column] of headers.entries()) {
+    if (normalizedAliases.some((alias) => header.includes(alias) || alias.includes(header))) {
+      return column;
+    }
+  }
+
+  return 0;
+}
+
+function resolveHeaderRow(
+  worksheet: ExcelJS.Worksheet,
+  requiredAliasGroups: string[][],
+): { headers: Map<string, number>; rowIndex: number } {
+  const maxScanRows = Math.min(20, worksheet.rowCount || 20);
+
+  for (let rowIndex = 1; rowIndex <= maxScanRows; rowIndex++) {
+    const row = worksheet.getRow(rowIndex);
+    const headers = new Map<string, number>();
+
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const val = cell.value;
-      const text =
-        val && typeof val === 'object' && 'result' in val ? val.result : val;
-      rowValues[colNumber - 1] = text
-        ? String(text)
-            .replaceAll(/[\r\n]+/g, '')
-            .trim()
-        : '';
+      const header = normalizeHeader(toText(cell.value));
+      if (header) {
+        headers.set(header, colNumber);
+      }
     });
 
-    // 判断依据：包含 "UPC" 或 "条码" 或 "SKU" 或 "门店"
-    const isHeader = rowValues.some(
-      (v) =>
-        /UPC/i.test(v) ||
-        v.includes('条码') ||
-        v.includes('商品条码') ||
-        v.includes('SKU') ||
-        v.includes('门店'),
-    );
+    if (headers.size === 0) continue;
 
-    if (isHeader) {
-      headers = rowValues;
-      headerRowIndex = rowNumber;
+    const matchedAll = requiredAliasGroups.every((aliases) => matchHeader(headers, aliases) > 0);
+    if (matchedAll) {
+      return { headers, rowIndex };
+    }
+  }
+
+  const fallbackRow = worksheet.getRow(1);
+  const fallbackHeaders = new Map<string, number>();
+  fallbackRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const header = normalizeHeader(toText(cell.value));
+    if (header) {
+      fallbackHeaders.set(header, colNumber);
     }
   });
 
-  // 默认回退
-  if (headers.length === 0) {
-    const firstRow = worksheet.getRow(1);
-    firstRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      const val = cell.value;
-      const text =
-        val && typeof val === 'object' && 'result' in val ? val.result : val;
-      headers[colNumber - 1] = text ? String(text).trim() : '';
-    });
-    headerRowIndex = 1;
-  }
+  return { headers: fallbackHeaders, rowIndex: 1 };
+}
 
-  // 2. 读取数据
+function getWorksheetHeaders(
+  worksheet: ExcelJS.Worksheet,
+  headerRowIndex: number,
+): string[] {
+  const headerRow = worksheet.getRow(headerRowIndex);
+  const headers: string[] = [];
+
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    headers[colNumber - 1] = toText(cell.value).replaceAll(/[\r\n]+/g, '').trim();
+  });
+
+  return headers;
+}
+
+async function loadWorksheet(buffer: Buffer): Promise<ExcelJS.Worksheet | null> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  return workbook.worksheets[0] ?? null;
+}
+
+export async function readExcel(buffer: Buffer): Promise<any[]> {
+  const worksheet = await loadWorksheet(buffer);
+  if (!worksheet) return [];
+
+  const { rowIndex: headerRowIndex } = resolveHeaderRow(worksheet, [
+    ['UPC', '商品UPC'],
+  ]);
+  const headers = getWorksheetHeaders(worksheet, headerRowIndex);
+  const data: any[] = [];
+
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber <= headerRowIndex) return;
 
     const rowData: any = {};
-    row.eachCell((cell, colNumber) => {
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const header = headers[colNumber - 1];
-      if (header) {
-        let val = cell.value;
-        if (val && typeof val === 'object') {
-          if ('result' in val) val = val.result;
-          else if ('text' in val) val = val.text;
-        }
-        rowData[header] = val;
-      }
+      if (!header) return;
+      rowData[header] = toText(cell.value);
     });
     data.push(rowData);
   });
+
   return data;
 }
+
+export async function readExcelWithSchema(
+  buffer: Buffer,
+  schema: ExcelSchemaField[],
+): Promise<ExcelSchemaReadResult> {
+  const worksheet = await loadWorksheet(buffer);
+  if (!worksheet) {
+    return { data: [], fieldMap: {}, headerRowIndex: 1, headers: [] };
+  }
+
+  const requiredAliasGroups = schema
+    .filter((field) => field.required !== false)
+    .map((field) => field.aliases);
+  const { headers: normalizedHeaders, rowIndex: headerRowIndex } = resolveHeaderRow(
+    worksheet,
+    requiredAliasGroups,
+  );
+  const headers = getWorksheetHeaders(worksheet, headerRowIndex);
+
+  const fieldMap: Record<string, string> = {};
+  for (const field of schema) {
+    const columnIndex = matchHeader(normalizedHeaders, field.aliases);
+    if (columnIndex > 0) {
+      fieldMap[field.key] = headers[columnIndex - 1] || field.aliases[0] || field.key;
+    }
+  }
+
+  const data: any[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= headerRowIndex) return;
+
+    const rowData: any = {};
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const header = headers[colNumber - 1];
+      if (!header) return;
+      rowData[header] = toText(cell.value);
+    });
+    data.push(rowData);
+  });
+
+  return {
+    data,
+    fieldMap,
+    headerRowIndex,
+    headers: headers.filter(Boolean),
+  };
+}
+
+export { matchHeader, normalizeHeader, resolveHeaderRow, toText };

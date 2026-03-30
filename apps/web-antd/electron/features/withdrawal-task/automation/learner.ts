@@ -1,5 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { isCliEntry } from '../../../utils/is-main-module';
+
 import type { MetricEvent } from './logger';
 
 const METRICS_DIR = path.join(process.cwd(), 'logs', 'metrics');
@@ -180,7 +183,7 @@ export function analyze(days = 7): LearningState {
 }
 
 // 直接运行时输出分析结果
-if (require.main === module) {
+if (isCliEntry('learner.ts', 'learner.js', 'learner.mjs', 'learner.cjs')) {
   const state = analyze();
   console.log('\n📊 饿了么提现自我学习分析报告');
   console.log('='.repeat(40));

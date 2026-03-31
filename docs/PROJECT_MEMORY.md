@@ -12,7 +12,7 @@ It currently mixes:
 - local Excel processing tools
 - Electron IPC-powered desktop workflows
 - browser automation for Eleme-related operations
-- a Nitro mock backend that acts as both auth/menu service and a thin adapter over local JSON data
+- a separate Fastify backend repository that serves the real `/api` endpoints during development
 
 ## 2. Monorepo structure
 
@@ -22,10 +22,6 @@ Top-level packages that matter most:
   - the main Vue 3 app
   - includes Electron main/preload code
   - contains most user-facing features
-- `apps/backend-mock`
-  - Nitro/H3 backend
-  - mock auth/menu endpoints
-  - Eleme activity/records/log endpoints
 - `packages/*`
   - shared vben packages and utilities
 - `internal/*`
@@ -57,16 +53,17 @@ The app enables:
 
 ### Backend
 
-`apps/backend-mock` is a Nitro app.
+The frontend dev server proxies `/api` to the sibling backend repository:
 
-Observed responsibilities:
+- `../scripts-backend`
+- local address: `http://127.0.0.1:3030/api`
+
+Observed responsibilities include:
 
 - login / refresh / logout
 - menu and user info
 - activity center APIs
-- finance/purchase/store/supplier mock endpoints
-
-The frontend dev server proxies `/api` to `http://localhost:5320/api`.
+- finance / purchase / store / supplier endpoints
 
 ### Electron
 
@@ -114,7 +111,7 @@ Key files:
 - `apps/web-antd/src/views/activity/records/index.vue`
 - `apps/web-antd/src/views/activity/execution-logs/index.vue`
 
-This area uses `requestClient` to call backend mock endpoints such as:
+This area uses `requestClient` to call backend endpoints such as:
 
 - `/eleme/activities`
 - `/eleme/records`

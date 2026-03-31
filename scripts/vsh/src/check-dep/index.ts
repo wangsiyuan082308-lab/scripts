@@ -1,6 +1,12 @@
 import type { CAC } from 'cac';
 
-import { colors, consola, getPackages, spinner, UNICODE } from '@vben/node-utils';
+import {
+  colors,
+  consola,
+  getPackages,
+  spinner,
+  UNICODE,
+} from '@vben/node-utils';
 
 import depcheck from 'depcheck';
 
@@ -19,7 +25,6 @@ const DEFAULT_CONFIG = {
   ],
   // 需要忽略的包
   ignorePackages: [
-    '@vben/backend-mock',
     '@vben/commitlint-config',
     '@vben/eslint-config',
     '@vben/node-utils',
@@ -167,14 +172,14 @@ async function runDepcheck(config: DepcheckConfig = {}): Promise<void> {
     );
 
     if (hasIssues) {
-      consola.error(
-        colors.red(`${UNICODE.FAILURE} Dependency issues found`),
-      );
+      consola.error(colors.red(`${UNICODE.FAILURE} Dependency issues found`));
       if (!check) {
         process.exit(1);
       }
     } else {
-      consola.success(colors.green(`${UNICODE.SUCCESS} No dependency issues found`));
+      consola.success(
+        colors.green(`${UNICODE.SUCCESS} No dependency issues found`),
+      );
     }
   } catch (error) {
     consola.error(
@@ -204,21 +209,20 @@ function defineDepcheckCommand(cac: CAC): void {
       '--ignore-patterns <patterns>',
       'File patterns to ignore, comma separated',
     )
-    .option(
-      '--check',
-      'Only check, do not exit on issues.',
-    )
+    .option('--check', 'Only check, do not exit on issues.')
     .usage('Analyze project dependencies')
-    .action(async ({ check, ignoreMatches, ignorePackages, ignorePatterns }) => {
-      const config: DepcheckConfig = {
-        check,
-        ...(ignorePackages && { ignorePackages: ignorePackages.split(',') }),
-        ...(ignoreMatches && { ignoreMatches: ignoreMatches.split(',') }),
-        ...(ignorePatterns && { ignorePatterns: ignorePatterns.split(',') }),
-      };
+    .action(
+      async ({ check, ignoreMatches, ignorePackages, ignorePatterns }) => {
+        const config: DepcheckConfig = {
+          check,
+          ...(ignorePackages && { ignorePackages: ignorePackages.split(',') }),
+          ...(ignoreMatches && { ignoreMatches: ignoreMatches.split(',') }),
+          ...(ignorePatterns && { ignorePatterns: ignorePatterns.split(',') }),
+        };
 
-      await runDepcheck(config);
-    });
+        await runDepcheck(config);
+      },
+    );
 }
 
 export { defineDepcheckCommand, type DepcheckConfig };

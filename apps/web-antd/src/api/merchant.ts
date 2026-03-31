@@ -1,8 +1,4 @@
-import {
-  listMerchants,
-  removeMerchant,
-  saveMerchant,
-} from './system-settings-repo';
+import { requestClient } from '#/api/request';
 
 export interface Merchant {
   id: string;
@@ -10,67 +6,61 @@ export interface Merchant {
   contact?: string;
   phone?: string;
   address?: string;
-  status?: number; // 0: inactive, 1: active
+  status?: number | string;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: any;
 }
 
-function createMerchantId() {
-  return `M${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, '0')}`;
-}
+type MerchantListResult = {
+  items?: Merchant[];
+  total?: number;
+};
 
 function normalizeMerchant(data: Partial<Merchant>): Merchant {
-  const id = (data.id || '').trim() || createMerchantId();
   return {
     ...data,
-    address: (data.address || '').trim(),
-    contact: (data.contact || '').trim(),
-    id,
-    name: (data.name || '').trim(),
-    phone: (data.phone || '').trim(),
+    address: `${data.address || ''}`.trim(),
+    contact: `${data.contact || ''}`.trim(),
+    id: `${data.id || ''}`.trim(),
+    name: `${data.name || ''}`.trim(),
+    phone: `${data.phone || ''}`.trim(),
     updatedAt: new Date().toISOString(),
   };
 }
 
-function includesIgnoreCase(value: string, keyword: string) {
-  return value.toLowerCase().includes(keyword.toLowerCase());
-}
-
 export async function getMerchantList(params?: any) {
-  const merchants = await listMerchants();
   const query = params?.data ?? params ?? {};
-  const keyword = `${query?.name || ''}`.trim();
-  if (!keyword) {
-    return merchants;
-  }
+  const result = await requestClient.get<MerchantListResult>('/merchant/list', {
+    params: {
+      name: `${query?.name || ''}`.trim(),
+      page: query?.page || 1,
+      pageSize: query?.pageSize || 1000,
+    },
+  });
 
-  return merchants.filter((item) => includesIgnoreCase(item.name || '', keyword));
+  return Array.isArray(result?.items) ? result.items : [];
 }
 
 export async function addMerchant(data: Merchant) {
   const merchant = normalizeMerchant(data);
-  return saveMerchant({
-    ...merchant,
-    createdAt: merchant.createdAt || new Date().toISOString(),
-  });
+  return requestClient.post('/merchant/list', merchant);
 }
 
 export async function updateMerchant(data: Merchant) {
-  if (!data?.id) {
+  const merchant = normalizeMerchant(data);
+  if (!merchant.id) {
     throw new Error('商户ID不能为空');
   }
-  const existing = (await listMerchants()).find((item) => item.id === data.id);
-  return saveMerchant({
-    ...(existing || {}),
-    ...normalizeMerchant(data),
-    createdAt: existing?.createdAt || data.createdAt || new Date().toISOString(),
-  });
+  return requestClient.put('/merchant/list', merchant);
 }
 
 export async function deleteMerchant(id: string) {
-  await removeMerchant(id);
-  return listMerchants();
+  if (!`${id || ''}`.trim()) {
+    throw new Error('商户ID不能为空');
+  }
+
+  return requestClient.delete('/merchant/list', {
+    params: { id },
+  });
 }

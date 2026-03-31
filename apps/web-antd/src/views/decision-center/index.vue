@@ -15,13 +15,11 @@ import {
   message,
 } from 'ant-design-vue';
 
-interface ProductCompareAiConfig {
-  apiKey: string;
-  baseUrl: string;
-  matchPromptTemplate: string;
-  model: string;
-  newProductMonthlySalesThreshold: number;
-}
+import {
+  getProductCompareAiConfig,
+  saveProductCompareAiConfig,
+  type ProductCompareAiConfig,
+} from '#/api/decision-center';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -36,11 +34,8 @@ const config = reactive<ProductCompareAiConfig>({
 async function loadConfig() {
   loading.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('get-product-compare-ai-config');
-    if (!result.success) {
-      throw new Error(result.message || '获取决策中心配置失败');
-    }
-    Object.assign(config, result.data);
+    const result = await getProductCompareAiConfig();
+    Object.assign(config, result);
   } catch (error: any) {
     message.error(error.message || '获取决策中心配置失败');
   } finally {
@@ -51,13 +46,10 @@ async function loadConfig() {
 async function saveConfig() {
   saving.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('save-product-compare-ai-config', {
+    const result = await saveProductCompareAiConfig({
       ...config,
     });
-    if (!result.success) {
-      throw new Error(result.message || '保存决策中心配置失败');
-    }
-    Object.assign(config, result.data);
+    Object.assign(config, result);
     message.success('决策中心配置已保存');
   } catch (error: any) {
     message.error(error.message || '保存决策中心配置失败');

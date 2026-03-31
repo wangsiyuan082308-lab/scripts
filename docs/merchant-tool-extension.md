@@ -3,7 +3,7 @@
 ## 项目概况
 
 **仓库：** Vue Vben Admin Monorepo
-**技术栈：** Vue3 + Vite + Ant Design + TypeScript + Nitro (H3)
+**技术栈：** Vue3 + Vite + Ant Design + TypeScript + Fastify
 **自动化框架：** OpenClaw (Playwright)
 
 ---
@@ -20,20 +20,9 @@ apps/
 │       │   ├── eleme-baohaojia.vue        # 爆好价助手
 │       │   └── procurement-plan.vue       # 采购计划生成
 │       └── workspace/           # 工作台首页
-└── backend-mock/      # Nitro 后端（H3 框架）
-    └── api/
-        ├── auth/                # 认证相关
-        ├── user/                # 用户信息
-        ├── menu/                # 菜单配置
-        ├── procurement-task/    # 采购任务
-        ├── supplier/            # 供应商
-        ├── purchase/            # 采购报表
-        ├── finance/             # 财务报表
-        └── eleme/               # ✅ 饿了么活动 API（已实现）
-            ├── activities.ts    # 活动列表 + ROI 计算
-            ├── activities/[id].ts  # 活动详情
-            ├── records.ts       # 报名记录
-            └── logs.ts          # 执行日志
+
+同级后端仓库：
+../scripts-backend/    # Fastify 后端（真实 API）
 ```
 
 **OpenClaw 技能池：** `~/.openclaw/workspace/skills/`
@@ -69,10 +58,11 @@ apps/
 │   └── router/routes/modules/
 │       └── dashboard.ts           # 新增路由（显示在菜单）
 │
-└── backend-mock/api/eleme/
-    ├── activities.ts              # GET /api/eleme/activities
-    ├── records.ts                 # GET /api/eleme/records
-    └── logs.ts                    # GET /api/eleme/logs
+后端接口来自：
+  ../scripts-backend
+  ├── /api/eleme/activities
+  ├── /api/eleme/records
+  └── /api/eleme/logs
 
 数据源（共享）:
   ~/.openclaw/workspace/skills/eleme-activity-assistant/
@@ -89,13 +79,13 @@ OpenClaw Cron (每天09:00)
   → 飞书推送摘要
 
 Web 面板 (随时查看)
-  → backend-mock 读取 JSON 文件
+  → scripts-backend 读取 JSON 文件
   → 前端展示活动列表/日志/记录
 ```
 
 ## 技术要点
 
-1. **数据共享**：backend-mock 直接读取 OpenClaw workspace 的 JSON 文件，零迁移成本
+1. **数据共享**：scripts-backend 直接读取 OpenClaw workspace 的 JSON 文件，零迁移成本
 2. **ROI 计算**：前端复用活动助手的推荐算法（P0/P1/P2/P3 分级）
 3. **日志解析**：读取 logs/ 目录下的 .log 文件，按时间倒序展示
 4. **无需数据库**：JSON 文件足够，后续需要再升级 SQLite

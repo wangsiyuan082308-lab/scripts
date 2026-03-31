@@ -1,9 +1,4 @@
-import {
-  listStores,
-  removeStore,
-  saveStore,
-  saveStores,
-} from './system-settings-repo';
+import { requestClient } from '#/api/request';
 
 export interface Store {
   id: string;
@@ -16,6 +11,11 @@ export interface Store {
   phone: string;
   merchantId?: string;
 }
+
+type StoreListResult = {
+  items?: Store[];
+  total?: number;
+};
 
 function createStoreId() {
   return `STORE_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -36,59 +36,48 @@ function normalizeStore(data: Partial<Store>): Store {
   };
 }
 
-function includesIgnoreCase(value: string, keyword: string) {
-  return value.toLowerCase().includes(keyword.toLowerCase());
-}
-
 export async function getStoreList(params: any) {
-  const stores = await listStores();
   const query = params?.data ?? params ?? {};
-  const storeName = `${query?.storeName || ''}`.trim();
-  const storeId = `${query?.storeId || ''}`.trim();
-  return stores.filter((item) => {
-    const matchName = !storeName || includesIgnoreCase(item.storeName || '', storeName);
-    const matchId = !storeId || includesIgnoreCase(item.storeId || '', storeId);
-    return matchName && matchId;
+  const result = await requestClient.get<StoreListResult>('/store/list', {
+    params: {
+      merchantId: `${query?.merchantId || ''}`.trim() || undefined,
+      page: query?.page || 1,
+      pageSize: query?.pageSize || 1000,
+      storeId: `${query?.storeId || ''}`.trim(),
+      storeName: `${query?.storeName || ''}`.trim(),
+    },
   });
+
+  return Array.isArray(result?.items) ? result.items : [];
 }
 
 export async function addStore(data: Store) {
-  return saveStore(normalizeStore(data));
+  return requestClient.post('/store/list', normalizeStore(data));
 }
 
 export async function updateStore(data: Store) {
-  const stores = await listStores();
-  const storeKey = `${data.storeId || data.id || ''}`.trim();
-  if (!storeKey) {
+  const store = normalizeStore(data);
+  if (!`${store.storeId || ''}`.trim()) {
     throw new Error('店铺ID不能为空');
   }
 
-  const existing = stores.find(
-    (item) => item.storeId === storeKey || `${item.id || ''}`.trim() === storeKey,
-  );
-
-  const normalized = normalizeStore({
-    ...(existing || {}),
-    ...data,
-    id: existing?.storeId || storeKey,
-    storeId: existing?.storeId || storeKey,
-  });
-
-  return saveStore({
-    ...(existing || {}),
-    ...normalized,
-  });
+  return requestClient.put('/store/list', store);
 }
 
 export async function deleteStore(id: string) {
-  await removeStore(id);
-  return listStores();
+  if (!`${id || ''}`.trim()) {
+    throw new Error('店铺ID不能为空');
+  }
+
+  return requestClient.delete('/store/list', {
+    params: { storeId: id },
+  });
 }
 
 export async function addStores(data: Store[]) {
   const normalized = data
     .map((item) => normalizeStore(item))
     .filter((item) => item.storeId || item.storeName);
-  await saveStores(normalized);
-  return normalized;
+
+  return requestClient.post('/store/list', normalized);
 }

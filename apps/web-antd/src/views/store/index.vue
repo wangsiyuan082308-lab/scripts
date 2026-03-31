@@ -245,22 +245,24 @@ const handleSubmit = async (model: any) => {
 </script>
 
 <template>
-  <SimpleTemplate
-    ref="tableRef"
-    row-key="storeId"
-    :search-form-items="searchFormItems"
-    :columns="columns"
-    :serve-methods="serveMethods"
-    :header-options="headerOptions"
-    :show-page="false"
-  />
+  <div class="store-page">
+    <SimpleTemplate
+      ref="tableRef"
+      row-key="storeId"
+      :search-form-items="searchFormItems"
+      :columns="columns"
+      :serve-methods="serveMethods"
+      :header-options="headerOptions"
+      :show-page="false"
+    />
 
-  <BaseModelForm
-    v-model:show="showModal"
-    :title="isUpdate ? '编辑门店' : '添加门店'"
-    :form-items="formItems"
-    v-model:model="formModel"
-    :submit="handleSubmit"
-    width="600px"
-  />
+    <BaseModelForm
+      v-model:show="showModal"
+      :title="isUpdate ? '编辑门店' : '添加门店'"
+      :form-items="formItems"
+      v-model:model="formModel"
+      :submit="handleSubmit"
+      width="600px"
+    />
+  </div>
 </template>

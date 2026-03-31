@@ -1,6 +1,10 @@
-import { defineConfig } from '@vben/vite-config';
-import electron from 'vite-plugin-electron/simple';
 import type { Plugin } from 'vite';
+
+import process from 'node:process';
+
+import { defineConfig } from '@vben/vite-config';
+
+import electron from 'vite-plugin-electron/simple';
 import { loadEnv as loadViteEnv } from 'vite';
 
 /**
@@ -31,7 +35,11 @@ function esmDirnamePlugin(): Plugin {
   };
 }
 
-const AUTOMATION_EXTERNAL_PACKAGES = ['playwright', 'playwright-core', 'chromium-bidi'];
+const AUTOMATION_EXTERNAL_PACKAGES = [
+  'playwright',
+  'playwright-core',
+  'chromium-bidi',
+];
 
 const isAutomationRuntimeExternal = (id: string) => {
   return AUTOMATION_EXTERNAL_PACKAGES.some((pkg) => {
@@ -51,27 +59,18 @@ function trimTrailingSlash(value: string) {
 function resolveApiProxyTarget(mode: string) {
   const env = loadViteEnv(mode, process.cwd(), '');
   const apiUrl = `${env.VITE_GLOB_API_URL || ''}`.trim();
-  const mockEnabled = `${env.VITE_NITRO_MOCK || ''}`.trim() === 'true';
   const configuredProxyTarget = `${env.VITE_DEV_PROXY_TARGET || ''}`.trim();
 
   if (!apiUrl.startsWith('/')) {
     return undefined;
   }
 
-  if (configuredProxyTarget) {
-    return trimTrailingSlash(configuredProxyTarget);
-  }
-
-  if (mockEnabled) {
-    return 'http://localhost:5320/api';
-  }
-
-  return undefined;
+  return configuredProxyTarget ? trimTrailingSlash(configuredProxyTarget) : undefined;
 }
 
-export default defineConfig(async (config) => {
+export default defineConfig(async (_config) => {
   const isVitest = process.env.VITEST === 'true';
-  const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
+  const proxyTarget = resolveApiProxyTarget(_config?.mode || 'development');
 
   return {
     application: {},
@@ -84,17 +83,17 @@ export default defineConfig(async (config) => {
           external: (id) => {
             if (
               [
-                'exceljs',
-                'xlsx',
+                'core-js',
                 'electron',
+                'exceljs',
+                'node:buffer',
                 'node:fs',
                 'node:path',
-                'node:buffer',
                 'node:process',
                 'node:url',
                 // 确保这些模块不被打包
                 'regenerator-runtime',
-                'core-js',
+                'xlsx',
               ].includes(id)
             ) {
               return true;

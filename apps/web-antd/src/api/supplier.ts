@@ -1,9 +1,4 @@
-import {
-  listSuppliers,
-  removeSupplier,
-  saveSupplier,
-  saveSuppliers,
-} from './system-settings-repo';
+import { requestClient } from '#/api/request';
 
 export interface Supplier {
   supplierId: string;
@@ -16,6 +11,11 @@ export interface Supplier {
   minOrder?: string;
   settlementType?: string;
 }
+
+type SupplierListResult = {
+  items?: Supplier[];
+  total?: number;
+};
 
 function normalizeSupplier(data: Partial<Supplier>): Supplier {
   return {
@@ -31,21 +31,19 @@ function normalizeSupplier(data: Partial<Supplier>): Supplier {
   };
 }
 
-function includesIgnoreCase(value: string, keyword: string) {
-  return value.toLowerCase().includes(keyword.toLowerCase());
-}
-
 export async function getSupplierList(params: any) {
-  const suppliers = await listSuppliers();
   const query = params?.data ?? params ?? {};
-  const supplierName = `${query?.supplierName || ''}`.trim();
-  const supplierId = `${query?.supplierId || ''}`.trim();
-
-  return suppliers.filter((item) => {
-    const matchName = !supplierName || includesIgnoreCase(item.supplierName || '', supplierName);
-    const matchId = !supplierId || includesIgnoreCase(item.supplierId || '', supplierId);
-    return matchName && matchId;
+  const result = await requestClient.get<SupplierListResult>('/supplier/list', {
+    params: {
+      merchantId: `${query?.merchantId || ''}`.trim() || undefined,
+      page: query?.page || 1,
+      pageSize: query?.pageSize || 1000,
+      supplierId: `${query?.supplierId || ''}`.trim(),
+      supplierName: `${query?.supplierName || ''}`.trim(),
+    },
   });
+
+  return Array.isArray(result?.items) ? result.items : [];
 }
 
 export async function addSupplier(data: Supplier) {
@@ -54,7 +52,7 @@ export async function addSupplier(data: Supplier) {
     throw new Error('供应商ID不能为空');
   }
 
-  return saveSupplier(supplier);
+  return requestClient.post('/supplier/list', supplier);
 }
 
 export async function updateSupplier(data: Supplier) {
@@ -62,19 +60,24 @@ export async function updateSupplier(data: Supplier) {
   if (!supplier.supplierId) {
     throw new Error('供应商ID不能为空');
   }
-  const existing = (await listSuppliers()).find((item) => item.supplierId === supplier.supplierId);
-  return saveSupplier({ ...(existing || {}), ...supplier });
+
+  return requestClient.put('/supplier/list', supplier);
 }
 
 export async function deleteSupplier(id: string) {
-  await removeSupplier(id);
-  return listSuppliers();
+  if (!`${id || ''}`.trim()) {
+    throw new Error('供应商ID不能为空');
+  }
+
+  return requestClient.delete('/supplier/list', {
+    params: { supplierId: id },
+  });
 }
 
 export async function addSuppliers(data: Supplier[]) {
   const suppliers = data
     .map((item) => normalizeSupplier(item))
     .filter((item) => item.supplierId || item.supplierName);
-  await saveSuppliers(suppliers);
-  return suppliers;
+
+  return requestClient.post('/supplier/list', suppliers);
 }

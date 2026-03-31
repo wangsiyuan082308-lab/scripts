@@ -41,8 +41,10 @@ const isAdmin = computed(() => {
 const searchFormItems = [
   {
     label: '商户名称',
-    renderType: 'input',
-    valueKey: 'name',
+    child: {
+      renderType: 'input',
+      valueKey: 'name',
+    },
   },
   {
     renderType: 'suffixButton',
@@ -131,31 +133,41 @@ const tableRef = ref();
 const formItems = [
   {
     label: '商户名称',
-    renderType: 'input',
-    valueKey: 'name',
+    child: {
+      renderType: 'input',
+      valueKey: 'name',
+    },
     rules: [{ required: true, message: '请输入商户名称' }],
   },
   // ID 隐藏，但在提交时需要
   {
     label: '商户ID',
-    renderType: 'input',
-    valueKey: 'id',
-    show: false, // BaseModelForm 支持 show: false 吗？BaseForm 支持。
+    child: {
+      renderType: 'input',
+      valueKey: 'id',
+    },
+    show: false,
   },
   {
     label: '联系人',
-    renderType: 'input',
-    valueKey: 'contact',
+    child: {
+      renderType: 'input',
+      valueKey: 'contact',
+    },
   },
   {
     label: '电话',
-    renderType: 'input',
-    valueKey: 'phone',
+    child: {
+      renderType: 'input',
+      valueKey: 'phone',
+    },
   },
   {
     label: '地址',
-    renderType: 'input',
-    valueKey: 'address',
+    child: {
+      renderType: 'input',
+      valueKey: 'address',
+    },
   },
 ];
 
@@ -231,22 +243,24 @@ const handleSubmit = async (model: any) => {
 </script>
 
 <template>
-  <SimpleTemplate
-    ref="tableRef"
-    row-key="id"
-    :search-form-items="searchFormItems"
-    :columns="columns"
-    :serve-methods="serveMethods"
-    :header-options="headerOptions"
-    :show-page="false"
-  />
+  <div class="merchant-page">
+    <SimpleTemplate
+      ref="tableRef"
+      row-key="id"
+      :search-form-items="searchFormItems"
+      :columns="columns"
+      :serve-methods="serveMethods"
+      :header-options="headerOptions"
+      :show-page="false"
+    />
 
-  <BaseModelForm
-    v-model:show="showModal"
-    :title="isUpdate ? '编辑商户' : '添加商户'"
-    :form-items="formItems"
-    v-model:model="formModel"
-    :submit="handleSubmit"
-    width="600px"
-  />
+    <BaseModelForm
+      v-model:show="showModal"
+      :title="isUpdate ? '编辑商户' : '添加商户'"
+      :form-items="formItems"
+      v-model:model="formModel"
+      :submit="handleSubmit"
+      width="600px"
+    />
+  </div>
 </template>

@@ -93,6 +93,12 @@ interface RuntimePaths {
   dataDir: string;
 }
 
+interface OpenClawAliyunConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
 interface ParsedCompareRow {
   monthlySales: null | number;
   procurementCost: null | number;
@@ -124,6 +130,9 @@ interface AICandidateSelection {
 
 const PRODUCT_COMPARE_DIRNAME = 'product-compare';
 const PRODUCT_COMPARE_CONFIG_FILENAME = 'ai-config.json';
+const OPENCLAW_DIRNAME = '.openclaw';
+const OPENCLAW_ENV_FILENAME = '.env';
+const OPENCLAW_CONFIG_FILENAME = 'openclaw.json';
 
 const DEFAULT_MATCH_PROMPT_TEMPLATE = [
   '你是商品比对助手。',
@@ -190,6 +199,16 @@ function normalizeText(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function readJsonFileSync<T>(filePath: string): null | T {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(content) as T;
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 function normalizeKey(value: unknown) {
   return normalizeText(value).replace(/[\s()（）\-_/]/g, '').toLowerCase();
 }
@@ -215,6 +234,90 @@ function toNumber(value: unknown): null | number {
 
 function uniqueStrings(values: Array<unknown>) {
   return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
+}
+
+function getOpenClawRoot() {
+  return path.join(os.homedir(), OPENCLAW_DIRNAME);
+}
+
+function stripWrappingQuotes(value: string) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function readDotEnvValue(filePath: string, key: string) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const separatorIndex = trimmed.indexOf('=');
+      if (separatorIndex <= 0) continue;
+      const currentKey = trimmed.slice(0, separatorIndex).trim();
+      if (currentKey !== key) continue;
+      return normalizeText(stripWrappingQuotes(trimmed.slice(separatorIndex + 1).trim()));
+    }
+    return '';
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return '';
+    throw error;
+  }
+}
+
+function normalizeChatCompletionsUrl(baseUrl: string) {
+  const normalized = normalizeText(baseUrl).replace(/\/+$/, '');
+  if (!normalized) return '';
+  if (normalized.endsWith('/chat/completions')) {
+    return normalized;
+  }
+  if (normalized.endsWith('/v1')) {
+    return `${normalized}/chat/completions`;
+  }
+  return `${normalized}/chat/completions`;
+}
+
+function pickPreferredOpenClawModel(models: unknown) {
+  const normalizedModels = (Array.isArray(models) ? models : [])
+    .map((item) => {
+      if (typeof item === 'string') return normalizeText(item);
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>;
+        return normalizeText(
+          record.id || record.modelId || record.name || record.model,
+        );
+      }
+      return '';
+    })
+    .filter(Boolean);
+
+  return normalizedModels.find((item) => item === 'qwen3.5-plus') || normalizedModels[0] || '';
+}
+
+function readOpenClawAliyunConfig(): OpenClawAliyunConfig {
+  const openClawRoot = getOpenClawRoot();
+  const envPath = path.join(openClawRoot, OPENCLAW_ENV_FILENAME);
+  const configPath = path.join(openClawRoot, OPENCLAW_CONFIG_FILENAME);
+  const openClawConfig = readJsonFileSync<any>(configPath);
+  const aliyunProvider = openClawConfig?.models?.providers?.aliyun || {};
+
+  const apiKey = uniqueStrings([
+    readDotEnvValue(envPath, 'ALIYUN_DASHSCOPE_API_KEY'),
+    readDotEnvValue(envPath, 'ALIYUN_API_KEY'),
+    readDotEnvValue(envPath, 'DASHSCOPE_API_KEY'),
+    aliyunProvider?.apiKey,
+  ])[0] || '';
+
+  return {
+    apiKey,
+    baseUrl: normalizeChatCompletionsUrl(aliyunProvider?.baseUrl),
+    model: pickPreferredOpenClawModel(aliyunProvider?.models),
+  };
 }
 
 function buildSummary(stats: ProductCompareRunStats) {
@@ -272,6 +375,7 @@ async function readJsonFile<T>(filePath: string): Promise<null | T> {
 function normalizeAiConfig(
   input?: Partial<ProductCompareAiConfig> | null,
 ): ProductCompareAiConfig {
+  const openClawAliyun = readOpenClawAliyunConfig();
   const merged = {
     ...DEFAULT_AI_CONFIG,
     ...(input || {}),
@@ -279,11 +383,15 @@ function normalizeAiConfig(
 
   return {
     apiKey: normalizeText(merged.apiKey),
-    baseUrl: normalizeText(merged.baseUrl) || DEFAULT_AI_CONFIG.baseUrl,
+    baseUrl:
+      normalizeChatCompletionsUrl(normalizeText(merged.baseUrl)) ||
+      openClawAliyun.baseUrl ||
+      DEFAULT_AI_CONFIG.baseUrl,
     matchPromptTemplate:
       normalizeText(merged.matchPromptTemplate) ||
       DEFAULT_AI_CONFIG.matchPromptTemplate,
-    model: normalizeText(merged.model) || DEFAULT_AI_CONFIG.model,
+    model:
+      normalizeText(merged.model) || openClawAliyun.model || DEFAULT_AI_CONFIG.model,
     newProductMonthlySalesThreshold:
       toNumber(merged.newProductMonthlySalesThreshold) ??
       DEFAULT_AI_CONFIG.newProductMonthlySalesThreshold,
@@ -767,12 +875,23 @@ function renderPromptTemplate(
     .replace('{{candidates}}', candidatesJson);
 }
 
-function getConfiguredApiKey(config: ProductCompareAiConfig) {
+function getResolvedAiRuntimeConfig(config: ProductCompareAiConfig) {
+  const openClawAliyun = readOpenClawAliyunConfig();
   return (
-    normalizeText(config.apiKey) ||
-    normalizeText(process.env.ALIYUN_API_KEY) ||
-    normalizeText(process.env.DASHSCOPE_API_KEY) ||
-    normalizeText(process.env.OPENAI_API_KEY)
+    {
+      apiKey:
+        normalizeText(config.apiKey) ||
+        normalizeText(process.env.ALIYUN_API_KEY) ||
+        normalizeText(process.env.DASHSCOPE_API_KEY) ||
+        normalizeText(process.env.ALIYUN_DASHSCOPE_API_KEY) ||
+        normalizeText(process.env.OPENAI_API_KEY) ||
+        openClawAliyun.apiKey,
+      baseUrl:
+        normalizeChatCompletionsUrl(config.baseUrl) ||
+        openClawAliyun.baseUrl ||
+        DEFAULT_AI_CONFIG.baseUrl,
+      model: normalizeText(config.model) || openClawAliyun.model || DEFAULT_AI_CONFIG.model,
+    } satisfies Pick<ProductCompareAiConfig, 'apiKey' | 'baseUrl' | 'model'>
   );
 }
 
@@ -819,12 +938,12 @@ async function callMatchModel(
   target: ParsedCompareRow,
   candidates: ComparisonCandidate[],
 ) {
-  const apiKey = getConfiguredApiKey(config);
-  if (!apiKey) {
+  const runtimeConfig = getResolvedAiRuntimeConfig(config);
+  if (!runtimeConfig.apiKey) {
     throw new Error('AI API Key 未配置');
   }
 
-  const response = await fetch(config.baseUrl, {
+  const response = await fetch(runtimeConfig.baseUrl, {
     body: JSON.stringify({
       messages: [
         {
@@ -835,11 +954,11 @@ async function callMatchModel(
           role: 'user',
         },
       ],
-      model: config.model,
+      model: runtimeConfig.model,
       temperature: 0,
     }),
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${runtimeConfig.apiKey}`,
       'Content-Type': 'application/json',
     },
     method: 'POST',

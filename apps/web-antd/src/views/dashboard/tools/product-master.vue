@@ -1,6 +1,13 @@
 <script lang="tsx" setup>
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type {
+  FilterOption,
+  ProductMasterListItem,
+  ProductMasterRecordMutation,
+  ProductMasterStatus,
+} from '#/api/product-master';
+
 import { computed, h, onMounted, reactive, ref, toRaw } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -11,59 +18,48 @@ import {
   Descriptions,
   Empty,
   Input,
+  message,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
   Tag,
   Tooltip,
   Upload,
-  message,
 } from 'ant-design-vue';
 
-import { readFileAsBuffer } from '#/utils/file';
-
-interface ProductMasterListItem {
-  baseUnitProcurementCost?: number | null;
-  cartonProcurementCost?: number | null;
-  cartonSize?: string;
-  currentRetailPrice?: number | null;
-  hasStorePriceVariance?: boolean;
-  primaryStoreNames: string[];
-  primarySupplierNames: string[];
-  procurementCost?: number | null;
-  productName: string;
-  priceVarianceReason?: string;
-  sku: string;
-  specification: string;
-  storeCount: number;
-  supplierCount: number;
-  upc: string;
-}
-
-interface FilterOption {
-  label: string;
-  value: string;
-}
-
-interface ProductMasterStatus {
-  exists: boolean;
-  fileMtimeMs: number;
-  indexBuiltAt?: string;
-  rawPath: string;
-  rawSize: number;
-  rawSourcePath?: string;
-  recordCount: number;
-  schemaVersion: number;
-}
+import {
+  deleteProductMasterRecord,
+  getProductMasterFilterOptions,
+  getProductMasterStatus,
+  importProductMaster,
+  listProductMasterRecords,
+  refreshProductMaster,
+  updateProductMasterRecord,
+} from '#/api/product-master';
+// @ts-expect-error no .vue type declaration
+import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 
 const loading = ref(false);
 const statusLoading = ref(false);
 const statusModalOpen = ref(false);
+const editModalOpen = ref(false);
 const rows = ref<ProductMasterListItem[]>([]);
 const storeOptions = ref<FilterOption[]>([]);
 const supplierOptions = ref<FilterOption[]>([]);
-const status = ref<ProductMasterStatus | null>(null);
+const status = ref<null | ProductMasterStatus>(null);
+const currentEditUpc = ref('');
+const formModel = ref<ProductMasterRecordMutation>({
+  cartonSize: '',
+  currentRetailPrice: null,
+  originalUpc: '',
+  procurementCost: null,
+  productName: '',
+  sku: '',
+  specification: '',
+  upc: '',
+});
 
 const filters = reactive({
   hasStorePriceVariance: undefined as string | undefined,
@@ -73,11 +69,15 @@ const filters = reactive({
   upc: '',
 });
 
-const statusTagColor = computed(() => (status.value?.exists ? 'success' : 'default'));
+const statusTagColor = computed(() =>
+  status.value?.exists ? 'success' : 'default',
+);
 const statusText = computed(() => (status.value?.exists ? '已上传' : '未上传'));
 
-function compareNumber(left?: number | null, right?: number | null) {
-  return (left ?? Number.NEGATIVE_INFINITY) - (right ?? Number.NEGATIVE_INFINITY);
+function compareNumber(left?: null | number, right?: null | number) {
+  return (
+    (left ?? Number.NEGATIVE_INFINITY) - (right ?? Number.NEGATIVE_INFINITY)
+  );
 }
 
 const columns: TableColumnsType = [
@@ -102,12 +102,7 @@ const columns: TableColumnsType = [
               Tooltip,
               { title: `多门店采购价不一致：${row.priceVarianceReason}` },
               {
-                default: () =>
-                  h(
-                    Tag,
-                    { color: 'warning' },
-                    () => '差异',
-                  ),
+                default: () => h(Tag, { color: 'warning' }, () => '差异'),
               },
             ),
             h('span', text || '-'),
@@ -127,7 +122,8 @@ const columns: TableColumnsType = [
     dataIndex: 'cartonProcurementCost',
     title: '箱规采购价',
     width: 100,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) =>
+      text === null || text === undefined ? '-' : text,
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
       compareNumber(left.cartonProcurementCost, right.cartonProcurementCost),
   },
@@ -135,15 +131,20 @@ const columns: TableColumnsType = [
     dataIndex: 'baseUnitProcurementCost',
     title: '最小单位采购价',
     width: 120,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) =>
+      text === null || text === undefined ? '-' : text,
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
-      compareNumber(left.baseUnitProcurementCost, right.baseUnitProcurementCost),
+      compareNumber(
+        left.baseUnitProcurementCost,
+        right.baseUnitProcurementCost,
+      ),
   },
   {
     dataIndex: 'currentRetailPrice',
     title: '零售价',
     width: 100,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) =>
+      text === null || text === undefined ? '-' : text,
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
       compareNumber(left.currentRetailPrice, right.currentRetailPrice),
   },
@@ -160,7 +161,7 @@ const columns: TableColumnsType = [
     width: 260,
     customRender: ({ text }) => {
       const value = Array.isArray(text) ? text : [];
-      return value.length ? value.join('、') : '无';
+      return value.length > 0 ? value.join('、') : '无';
     },
   },
   { dataIndex: 'supplierCount', title: '供应商数', width: 100 },
@@ -170,10 +171,108 @@ const columns: TableColumnsType = [
     width: 220,
     customRender: ({ text }) => {
       const value = Array.isArray(text) ? text : [];
-      return value.length ? value.join('、') : '无';
+      return value.length > 0 ? value.join('、') : '无';
+    },
+  },
+  {
+    title: '操作',
+    width: 140,
+    fixed: 'right',
+    customRender: ({ record }) => {
+      const row = record as ProductMasterListItem;
+      return h(
+        Space,
+        { size: 4 },
+        {
+          default: () => [
+            h(
+              Button,
+              {
+                type: 'link',
+                onClick: () => handleEdit(row),
+              },
+              () => '编辑',
+            ),
+            h(
+              Popconfirm,
+              {
+                title: `确认删除商品 ${row.productName || row.upc} 吗？`,
+                onConfirm: () => handleDelete(row),
+              },
+              {
+                default: () =>
+                  h(
+                    Button,
+                    {
+                      type: 'link',
+                      danger: true,
+                    },
+                    () => '删除',
+                  ),
+              },
+            ),
+          ],
+        },
+      );
     },
   },
 ];
+
+const formItems = ref([
+  {
+    label: '商品条码',
+    child: {
+      valueKey: 'upc',
+      renderType: 'input',
+    },
+  },
+  {
+    label: '商品编码',
+    child: {
+      valueKey: 'sku',
+      renderType: 'input',
+    },
+  },
+  {
+    label: '商品名称',
+    child: {
+      valueKey: 'productName',
+      renderType: 'input',
+    },
+  },
+  {
+    label: '规格',
+    child: {
+      valueKey: 'specification',
+      renderType: 'input',
+    },
+  },
+  {
+    label: '箱规',
+    child: {
+      valueKey: 'cartonSize',
+      renderType: 'input',
+    },
+  },
+  {
+    label: '采购价',
+    child: {
+      valueKey: 'procurementCost',
+      renderType: 'inputNumber',
+      precision: 2,
+      style: { width: '100%' },
+    },
+  },
+  {
+    label: '零售价',
+    child: {
+      valueKey: 'currentRetailPrice',
+      renderType: 'inputNumber',
+      precision: 2,
+      style: { width: '100%' },
+    },
+  },
+]);
 
 function formatDate(value?: number | string) {
   if (!value) return '-';
@@ -191,11 +290,7 @@ function formatSize(value?: number) {
 async function loadStatus() {
   statusLoading.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('get-product-master-status');
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表状态失败');
-    }
-    status.value = result.data;
+    status.value = await getProductMasterStatus();
   } catch (error: any) {
     message.error(error.message || '获取商品总表状态失败');
   } finally {
@@ -205,14 +300,9 @@ async function loadStatus() {
 
 async function loadFilterOptions() {
   try {
-    const result = await window.ipcRenderer.invoke(
-      'get-product-master-filter-options',
-    );
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表筛选项失败');
-    }
-    storeOptions.value = result.data?.storeOptions || [];
-    supplierOptions.value = result.data?.supplierOptions || [];
+    const result = await getProductMasterFilterOptions();
+    storeOptions.value = result?.storeOptions || [];
+    supplierOptions.value = result?.supplierOptions || [];
   } catch (error: any) {
     message.error(error.message || '获取商品总表筛选项失败');
   }
@@ -221,23 +311,13 @@ async function loadFilterOptions() {
 async function loadRows() {
   loading.value = true;
   try {
-    const payload = {
+    rows.value = await listProductMasterRecords({
       hasStorePriceVariance: filters.hasStorePriceVariance,
       productName: filters.productName,
       storeNames: [...toRaw(filters.storeNames)],
       supplierNames: [...toRaw(filters.supplierNames)],
       upc: filters.upc,
-    };
-
-    const result = await window.ipcRenderer.invoke('list-product-master-records', {
-      ...payload,
     });
-
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表失败');
-    }
-
-    rows.value = result.data || [];
   } catch (error: any) {
     rows.value = [];
     message.error(error.message || '获取商品总表失败');
@@ -246,15 +326,12 @@ async function loadRows() {
   }
 }
 
-async function refreshProductMaster() {
+async function handleRefreshProductMaster() {
   statusLoading.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('refresh-product-master');
-    if (!result.success) {
-      throw new Error(result.message || '刷新商品总表失败');
-    }
+    const result = await refreshProductMaster();
     await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
-    message.success(`刷新完成，共 ${result.data.recordCount} 条商品记录`);
+    message.success(`刷新完成，共 ${result.recordCount} 条商品记录`);
   } catch (error: any) {
     message.error(error.message || '刷新商品总表失败');
   } finally {
@@ -265,17 +342,9 @@ async function refreshProductMaster() {
 async function handleUpload(file: File) {
   try {
     loading.value = true;
-    const fileBuffer = await readFileAsBuffer(file);
-    const result = await window.ipcRenderer.invoke('import-product-master', {
-      fileBuffer,
-      originalName: file.name,
-    });
+    const result = await importProductMaster(file);
 
-    if (!result.success) {
-      throw new Error(result.message || '导入商品总表失败');
-    }
-
-    message.success(`导入成功，共 ${result.data.recordCount} 条商品记录`);
+    message.success(`导入成功，共 ${result.recordCount} 条商品记录`);
     await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
   } catch (error: any) {
     message.error(error.message || '导入商品总表失败');
@@ -284,6 +353,47 @@ async function handleUpload(file: File) {
   }
 
   return false;
+}
+
+function handleEdit(row: ProductMasterListItem) {
+  currentEditUpc.value = row.upc;
+  formModel.value = {
+    cartonSize: row.cartonSize || '',
+    currentRetailPrice: row.currentRetailPrice ?? null,
+    originalUpc: row.upc,
+    procurementCost: row.procurementCost ?? null,
+    productName: row.productName,
+    sku: row.sku,
+    specification: row.specification,
+    upc: row.upc,
+  };
+  editModalOpen.value = true;
+}
+
+async function handleDelete(row: ProductMasterListItem) {
+  try {
+    await deleteProductMasterRecord(row.upc);
+    message.success('删除成功');
+    await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
+  } catch (error: any) {
+    message.error(error.message || '删除失败');
+  }
+}
+
+async function handleSubmit(model: ProductMasterRecordMutation) {
+  try {
+    await updateProductMasterRecord({
+      ...model,
+      originalUpc: currentEditUpc.value || model.originalUpc,
+    });
+    message.success('更新成功');
+    editModalOpen.value = false;
+    await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
+    return true;
+  } catch (error: any) {
+    message.error(error.message || '更新失败');
+    return false;
+  }
 }
 
 function resetFilters() {
@@ -308,10 +418,18 @@ onMounted(() => {
           <span class="text-sm text-gray-500">
             最后更新: {{ formatDate(status?.fileMtimeMs) }}
           </span>
-          <Button size="small" :loading="statusLoading" @click="statusModalOpen = true">
+          <Button
+            size="small"
+            :loading="statusLoading"
+            @click="statusModalOpen = true"
+          >
             查看状态详情
           </Button>
-          <Button size="small" :loading="statusLoading" @click="refreshProductMaster">
+          <Button
+            size="small"
+            :loading="statusLoading"
+            @click="handleRefreshProductMaster"
+          >
             刷新总表
           </Button>
         </div>
@@ -361,7 +479,9 @@ onMounted(() => {
             placeholder="补货差异"
             style="width: 140px"
           />
-          <Button type="primary" :loading="loading" @click="loadRows">搜索</Button>
+          <Button type="primary" :loading="loading" @click="loadRows">
+            搜索
+          </Button>
           <Button :disabled="loading" @click="resetFilters">重置</Button>
           <Upload
             :before-upload="handleUpload"
@@ -429,6 +549,15 @@ onMounted(() => {
           </Descriptions.Item>
         </Descriptions>
       </Modal>
+
+      <BaseModelForm
+        v-model:show="editModalOpen"
+        title="编辑商品总表"
+        :form-items="formItems"
+        v-model:model="formModel"
+        :submit="handleSubmit"
+        width="680px"
+      />
     </div>
   </Page>
 </template>

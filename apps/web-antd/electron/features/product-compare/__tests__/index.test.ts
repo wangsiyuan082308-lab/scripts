@@ -5,6 +5,11 @@ import ExcelJS from 'exceljs';
 
 const originalCompareHome = process.env.PRODUCT_COMPARE_HOME;
 const originalProductMasterHome = process.env.PRODUCT_MASTER_HOME;
+const originalHome = process.env.HOME;
+const originalAliyunApiKey = process.env.ALIYUN_API_KEY;
+const originalAliyunDashscopeApiKey = process.env.ALIYUN_DASHSCOPE_API_KEY;
+const originalDashscopeApiKey = process.env.DASHSCOPE_API_KEY;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalFetch = global.fetch;
 const tempDirs: string[] = [];
 
@@ -32,6 +37,11 @@ afterEach(async () => {
   const fs = await import('node:fs');
   process.env.PRODUCT_COMPARE_HOME = originalCompareHome;
   process.env.PRODUCT_MASTER_HOME = originalProductMasterHome;
+  process.env.HOME = originalHome;
+  process.env.ALIYUN_API_KEY = originalAliyunApiKey;
+  process.env.ALIYUN_DASHSCOPE_API_KEY = originalAliyunDashscopeApiKey;
+  process.env.DASHSCOPE_API_KEY = originalDashscopeApiKey;
+  process.env.OPENAI_API_KEY = originalOpenAiApiKey;
   global.fetch = originalFetch;
   vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) {
@@ -264,5 +274,99 @@ describe('product compare runner', () => {
     expect(result.results).toHaveLength(1);
     expect(result.results[0]?.resultType).toBe('unmatched_pending');
     expect(result.results[0]?.matchReason).toContain('AI比对失败');
+  });
+
+  it('uses openclaw aliyun config when local AI key is not configured', async () => {
+    const compareHome = await createTempDir('product-compare-home-');
+    const homeDir = await createTempDir('product-compare-openclaw-home-');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    process.env.PRODUCT_COMPARE_HOME = compareHome;
+    process.env.HOME = homeDir;
+    process.env.ALIYUN_API_KEY = '';
+    process.env.ALIYUN_DASHSCOPE_API_KEY = '';
+    process.env.DASHSCOPE_API_KEY = '';
+    process.env.OPENAI_API_KEY = '';
+
+    const openClawDir = path.join(homeDir, '.openclaw');
+    fs.mkdirSync(openClawDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(openClawDir, '.env'),
+      'ALIYUN_DASHSCOPE_API_KEY=openclaw-test-key\n',
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(openClawDir, 'openclaw.json'),
+      JSON.stringify({
+        models: {
+          providers: {
+            aliyun: {
+              api: 'openai-completions',
+              baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+              models: ['qwen3.5-plus', 'glm-5'],
+            },
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content:
+                '{"matched":true,"candidateId":"比对货盘-reference-1","confidence":0.93,"reason":"同规格同类商品"}',
+            },
+          },
+        ],
+      }),
+      ok: true,
+    } as Response);
+    global.fetch = fetchMock;
+
+    const { getProductCompareAiConfig, runProductCompare } = await import('../index');
+
+    const config = await getProductCompareAiConfig();
+    expect(config.baseUrl).toBe('https://coding.dashscope.aliyuncs.com/v1/chat/completions');
+    expect(config.model).toBe('qwen3.5-plus');
+
+    const targetBuffer = await workbookToBuffer([
+      {
+        UPC: '810001',
+        商品名称: '可乐经典',
+        规格: '500ml',
+        采购价: 6.8,
+        月销: 5,
+        供应商名称: '供应商甲',
+      },
+    ]);
+    const referenceBuffer = await workbookToBuffer([
+      {
+        UPC: '810009',
+        商品名称: '经典可乐',
+        规格: '500ml',
+        采购价: 6.1,
+        供应商名称: '供应商甲',
+      },
+    ]);
+
+    const result = await runProductCompare({
+      referenceBuffer,
+      sourceMode: 'custom',
+      targetBuffer,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://coding.dashscope.aliyuncs.com/v1/chat/completions',
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers?.Authorization).toBe(
+      'Bearer openclaw-test-key',
+    );
+    expect(result.results[0]?.matchType).toBe('ai_fuzzy');
+    expect(result.results[0]?.resultType).toBe('price_compare');
   });
 });

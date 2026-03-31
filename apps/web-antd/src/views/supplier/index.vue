@@ -211,11 +211,11 @@ const formItems = ref([
     label: '状态',
     child:{
       valueKey: 'status',
-      renderType:'radioGroup',
-      options: [
-        { label: '启用', value: '启用',  },
-        { label: '禁用', value: '禁用', },
-      ],
+      renderType:'switch',
+      checkedChildren: '启用',
+      unCheckedChildren: '禁用',
+      checkedValue: '启用',
+      unCheckedValue: '禁用',
     }
   },
 ]);
@@ -277,22 +277,24 @@ const handleSubmit = async (model: any) => {
 </script>
 
 <template>
-  <SimpleTemplate
-    ref="tableRef"
-    row-key="supplierId"
-    :search-form-items="searchFormItems"
-    :columns="columns"
-    :serve-methods="serveMethods"
-    :header-options="headerOptions"
-    :show-page="false"
-  />
+  <div class="supplier-page">
+    <SimpleTemplate
+      ref="tableRef"
+      row-key="supplierId"
+      :search-form-items="searchFormItems"
+      :columns="columns"
+      :serve-methods="serveMethods"
+      :header-options="headerOptions"
+      :show-page="false"
+    />
 
-  <BaseModelForm
-    v-model:show="showModal"
-    :title="isUpdate ? '编辑供应商' : '添加供应商'"
-    :form-items="formItems"
-    v-model:model="formModel"
-    :submit="handleSubmit"
-    width="600px"
-  />
+    <BaseModelForm
+      v-model:show="showModal"
+      :title="isUpdate ? '编辑供应商' : '添加供应商'"
+      :form-items="formItems"
+      v-model:model="formModel"
+      :submit="handleSubmit"
+      width="600px"
+    />
+  </div>
 </template>

@@ -138,10 +138,16 @@ export default {
   watch: {
     show: {
       handler() {
-        this.$refs.baseform && this.$refs.baseform.resetModel();
         this.modelShow = this.show;
         if (this.show) {
           this.loading = false;
+          this.currentModel = this.model;
+          this.$nextTick(() => {
+            const baseForm = this.$refs.baseform;
+            if (baseForm?.$refs?.baseForm?.clearValidate) {
+              baseForm.$refs.baseForm.clearValidate();
+            }
+          });
         }
       },
       deep: true,

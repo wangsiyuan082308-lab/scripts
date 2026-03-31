@@ -41,9 +41,7 @@ const searchText = ref('');
 const filteredRecords = computed(() => {
   if (!searchText.value) return records.value;
   const keyword = searchText.value.toLowerCase();
-  return records.value.filter((r) =>
-    r.name?.toLowerCase().includes(keyword),
-  );
+  return records.value.filter((r) => r.name?.toLowerCase().includes(keyword));
 });
 
 const columns = [
@@ -98,8 +96,8 @@ async function fetchRecords() {
     const res = await requestClient.get<any>('/eleme/records');
     records.value = res.list || [];
     total.value = res.total || 0;
-  } catch (e) {
-    console.error('获取报名记录失败', e);
+  } catch (error) {
+    console.error('获取报名记录失败', error);
     message.error('获取报名记录失败');
   } finally {
     loading.value = false;
@@ -145,7 +143,11 @@ onMounted(fetchRecords);
           <Card class="stat-card" size="small">
             <Statistic
               title="待确认"
-              :value="records.filter((r) => r.status !== 'signed_up' && r.status !== 'expired').length"
+              :value="
+                records.filter(
+                  (r) => r.status !== 'signed_up' && r.status !== 'expired',
+                ).length
+              "
               :value-style="{ color: '#faad14' }"
             />
           </Card>
@@ -154,7 +156,10 @@ onMounted(fetchRecords);
           <Card class="stat-card" size="small">
             <Statistic
               title="数据来源"
-              :value="[...new Set(records.map((r) => r.source).filter(Boolean))].length || 1"
+              :value="
+                [...new Set(records.map((r) => r.source).filter(Boolean))]
+                  .length || 1
+              "
               suffix="个文件"
             />
           </Card>
@@ -169,7 +174,7 @@ onMounted(fetchRecords);
           style="width: 240px"
           allow-clear
         />
-        <div class="flex-1" />
+        <div class="flex-1"></div>
         <Button @click="fetchRecords">刷新</Button>
         <Button @click="handleExport">导出 Excel</Button>
       </div>
@@ -180,12 +185,12 @@ onMounted(fetchRecords);
           <Table
             :columns="columns"
             :data-source="filteredRecords"
-            :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
-<<<<<<< HEAD
-            :row-key="(_record: ActivityRecord, index: number) => _record.id || _record.name + index"
-=======
+            :pagination="{
+              pageSize: 20,
+              showSizeChanger: true,
+              showTotal: (t: number) => `共 ${t} 条`,
+            }"
             :row-key="(_record: ActivityRecord) => _record.id || _record.name"
->>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
             :scroll="{ x: 900 }"
             size="middle"
           >
@@ -209,7 +214,9 @@ onMounted(fetchRecords);
               </template>
 
               <template v-else-if="column.key === 'cost'">
-                <span v-if="record.merchantCost">¥{{ record.merchantCost }}</span>
+                <span v-if="record.merchantCost"
+                  >¥{{ record.merchantCost }}</span
+                >
                 <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               </template>
 
@@ -222,8 +229,12 @@ onMounted(fetchRecords);
               </template>
 
               <template v-else-if="column.key === 'status'">
-                <Tag v-if="record.status === 'signed_up'" color="green">已报名</Tag>
-                <Tag v-else-if="record.status === 'expired'" color="default">已过期</Tag>
+                <Tag v-if="record.status === 'signed_up'" color="green">
+                  已报名
+                </Tag>
+                <Tag v-else-if="record.status === 'expired'" color="default">
+                  已过期
+                </Tag>
                 <Tag v-else color="blue">{{ record.status || '未知' }}</Tag>
               </template>
             </template>

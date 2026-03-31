@@ -1,9 +1,4 @@
 <script setup lang="ts">
-<<<<<<< HEAD
-import type { EChartsOption } from 'echarts';
-
-=======
->>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -39,7 +34,7 @@ interface PurchaseReport {
   itemCount: number;
   noStockSkus: NoStockSku[];
   orderNo: string;
-  platform: '翱象' | '牵牛花';
+  platform: '牵牛花' | '翱象';
   success: boolean;
   suppliers: string[];
   totalAmount: number;
@@ -61,11 +56,7 @@ const summary = ref<Summary>({
   latestDate: '-',
 });
 const reports = ref<PurchaseReport[]>([]);
-<<<<<<< HEAD
-const chartRef = ref<InstanceType<typeof EchartsUI>>();
-=======
 const chartRef = ref();
->>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
 const { renderEcharts } = useEcharts(chartRef);
 
 const platformOptions = [
@@ -75,12 +66,26 @@ const platformOptions = [
 ];
 
 const columns = [
-  { title: '日期', dataIndex: 'date', key: 'date', width: 120, sorter: (a: PurchaseReport, b: PurchaseReport) => (a.date || '').localeCompare(b.date || '') },
+  {
+    title: '日期',
+    dataIndex: 'date',
+    key: 'date',
+    width: 120,
+    sorter: (a: PurchaseReport, b: PurchaseReport) =>
+      (a.date || '').localeCompare(b.date || ''),
+  },
   { title: '平台', dataIndex: 'platform', key: 'platform', width: 90 },
   { title: '供应商', dataIndex: 'suppliers', key: 'suppliers', ellipsis: true },
   { title: '状态', dataIndex: 'success', key: 'success', width: 80 },
   { title: '商品数', dataIndex: 'itemCount', key: 'itemCount', width: 80 },
-  { title: '金额(元)', dataIndex: 'totalAmount', key: 'totalAmount', width: 110, sorter: (a: PurchaseReport, b: PurchaseReport) => a.totalAmount - b.totalAmount },
+  {
+    title: '金额(元)',
+    dataIndex: 'totalAmount',
+    key: 'totalAmount',
+    width: 110,
+    sorter: (a: PurchaseReport, b: PurchaseReport) =>
+      a.totalAmount - b.totalAmount,
+  },
   { title: '耗时', dataIndex: 'duration', key: 'duration', width: 80 },
   { title: '1688订单号', dataIndex: 'orderNo', key: 'orderNo', width: 220 },
 ];
@@ -97,20 +102,18 @@ const filteredReports = computed(() => {
 });
 
 function renderChart(data: PurchaseReport[]) {
-  if (!data.length) return;
+  if (data.length === 0) return;
   // 按日期聚合金额
   const dateMap = new Map<string, number>();
   for (const r of data) {
     if (!r.date) continue;
     dateMap.set(r.date, (dateMap.get(r.date) || 0) + r.totalAmount);
   }
-  const sorted = [...dateMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const sorted = [...dateMap.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
 
-<<<<<<< HEAD
-  const option: EChartsOption = {
-=======
   const option: Record<string, any> = {
->>>>>>> fdd4cc10bc7eb95d430e016eaee4a78f18e4d305
     tooltip: { trigger: 'axis' },
     grid: { left: 60, right: 20, top: 10, bottom: 30 },
     xAxis: { type: 'category', data: sorted.map((d) => d[0]) },
@@ -208,7 +211,7 @@ onMounted(fetchData);
       </Row>
 
       <!-- 采购趋势图 -->
-      <Card class="mb-4" v-if="reports.length">
+      <Card class="mb-4" v-if="reports.length > 0">
         <EchartsUI ref="chartRef" style="height: 250px" />
       </Card>
 
@@ -221,7 +224,7 @@ onMounted(fetchData);
           button-style="solid"
           size="small"
         />
-        <div class="flex-1" />
+        <div class="flex-1"></div>
         <Button size="small" @click="handleExport">导出</Button>
         <Button size="small" :loading="loading" @click="fetchData">刷新</Button>
       </div>
@@ -236,7 +239,10 @@ onMounted(fetchData);
             showSizeChanger: true,
             showTotal: (t: number) => `共 ${t} 条`,
           }"
-          :row-key="(record: PurchaseReport) => record.date + record.platform + record.orderNo"
+          :row-key="
+            (record: PurchaseReport) =>
+              record.date + record.platform + record.orderNo
+          "
           :scroll="{ x: 900 }"
           size="middle"
         >
@@ -255,7 +261,11 @@ onMounted(fetchData);
               </Tag>
             </template>
             <template v-else-if="column.key === 'totalAmount'">
-              {{ record.totalAmount > 0 ? `¥${record.totalAmount.toFixed(2)}` : '-' }}
+              {{
+                record.totalAmount > 0
+                  ? `¥${record.totalAmount.toFixed(2)}`
+                  : '-'
+              }}
             </template>
           </template>
 
@@ -273,7 +283,9 @@ onMounted(fetchData);
                 size="small"
               />
             </div>
-            <div v-else class="pl-4 text-sm text-gray-400 dark:text-gray-500">暂无无库存SKU</div>
+            <div v-else class="pl-4 text-sm text-gray-400 dark:text-gray-500">
+              暂无无库存SKU
+            </div>
           </template>
           <template #expandColumnTitle>
             <span title="展开查看无库存SKU">详情</span>

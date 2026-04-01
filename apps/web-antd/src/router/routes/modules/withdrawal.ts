@@ -12,6 +12,15 @@ const routes: RouteRecordRaw[] = [
     redirect: '/withdrawal/task',
     children: [
       {
+        name: 'WithdrawalTaskLegacy',
+        path: '/withdrawal-task',
+        redirect: '/withdrawal/task',
+        meta: {
+          hideInMenu: true,
+          title: '提现管理',
+        },
+      },
+      {
         name: 'WithdrawalTask',
         path: '/withdrawal/task',
         component: () => import('#/views/withdrawal-task/index.vue'),
@@ -26,7 +35,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/financial-report/index.vue'),
         meta: {
           icon: 'ant-design:file-text-outlined',
-          title: '财务报表',
+          title: '财务管理',
         },
       },
     ],

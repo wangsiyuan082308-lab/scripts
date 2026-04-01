@@ -208,7 +208,7 @@ onMounted(fetchActivities);
 </script>
 
 <template>
-  <Page title="活动中心">
+  <Page title="饿了么活动列表">
     <div class="p-4">
       <!-- 统计卡片 + 饼图 -->
       <Row :gutter="[16, 16]" class="mb-4">

@@ -2,312 +2,246 @@
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Button,
   Card,
   Col,
   Empty,
-  message,
-  Radio,
   Row,
-  Spin,
+  Space,
   Statistic,
   Table,
   Tag,
 } from 'ant-design-vue';
 
-import { requestClient } from '#/api/request';
-import { exportToExcel } from '#/utils/export-excel';
-
-interface NoStockSku {
-  name?: string;
-  reason?: string;
-  sku: string;
-}
-
-interface PurchaseReport {
-  date: string;
-  duration: string;
-  generatedAt: string;
-  itemCount: number;
-  noStockSkus: NoStockSku[];
-  orderNo: string;
-  platform: '牵牛花' | '翱象';
-  success: boolean;
-  suppliers: string[];
-  totalAmount: number;
-}
-
-interface Summary {
-  latestDate: string;
-  successCount: number;
-  successRate: number;
-  totalCount: number;
-}
+import {
+  getProcurementOverview,
+  type ProcurementAlertEvent,
+  type ProcurementOverviewResponse,
+  type ProcurementReport,
+  type ProcurementRun,
+} from '#/api/procurement';
 
 const loading = ref(false);
-const platformFilter = ref('');
-const summary = ref<Summary>({
-  totalCount: 0,
-  successCount: 0,
-  successRate: 0,
-  latestDate: '-',
-});
-const reports = ref<PurchaseReport[]>([]);
-const chartRef = ref();
-const { renderEcharts } = useEcharts(chartRef);
+const overview = ref<ProcurementOverviewResponse | null>(null);
 
-const platformOptions = [
-  { label: '全部', value: '' },
-  { label: '翱象', value: '翱象' },
-  { label: '牵牛花', value: '牵牛花' },
+const runColumns = [
+  { title: '运行ID', dataIndex: 'id', key: 'id', width: 180 },
+  { title: '平台', dataIndex: 'platform', key: 'platform', width: 100 },
+  { title: '阶段', dataIndex: 'currentStage', key: 'currentStage', width: 140 },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 140 },
+  { title: '触发来源', dataIndex: 'triggerSource', key: 'triggerSource', width: 120 },
+  { title: '开始时间', dataIndex: 'startedAt', key: 'startedAt', width: 180 },
 ];
 
-const columns = [
-  {
-    title: '日期',
-    dataIndex: 'date',
-    key: 'date',
-    width: 120,
-    sorter: (a: PurchaseReport, b: PurchaseReport) =>
-      (a.date || '').localeCompare(b.date || ''),
-  },
-  { title: '平台', dataIndex: 'platform', key: 'platform', width: 90 },
-  { title: '供应商', dataIndex: 'suppliers', key: 'suppliers', ellipsis: true },
-  { title: '状态', dataIndex: 'success', key: 'success', width: 80 },
-  { title: '商品数', dataIndex: 'itemCount', key: 'itemCount', width: 80 },
-  {
-    title: '金额(元)',
-    dataIndex: 'totalAmount',
-    key: 'totalAmount',
-    width: 110,
-    sorter: (a: PurchaseReport, b: PurchaseReport) =>
-      a.totalAmount - b.totalAmount,
-  },
-  { title: '耗时', dataIndex: 'duration', key: 'duration', width: 80 },
-  { title: '1688订单号', dataIndex: 'orderNo', key: 'orderNo', width: 220 },
+const reportColumns = [
+  { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
+  { title: '供应商', dataIndex: 'supplierName', key: 'supplierName', width: 180 },
+  { title: '平台', dataIndex: 'platform', key: 'platform', width: 100 },
+  { title: '商品数', dataIndex: 'itemCount', key: 'itemCount', width: 100 },
+  { title: '失败数', dataIndex: 'failedCount', key: 'failedCount', width: 100 },
+  { title: '金额', dataIndex: 'totalAmount', key: 'totalAmount', width: 120 },
 ];
 
-const noStockColumns = [
-  { title: 'SKU编码', dataIndex: 'sku', key: 'sku', width: 200 },
-  { title: '商品名称', dataIndex: 'name', key: 'name', ellipsis: true },
-  { title: '原因', dataIndex: 'reason', key: 'reason', width: 200 },
+const alertColumns = [
+  { title: '提醒类型', dataIndex: 'alertType', key: 'alertType', width: 160 },
+  { title: '来源', dataIndex: 'sourceType', key: 'sourceType', width: 120 },
+  { title: '摘要', dataIndex: 'payloadSummary', key: 'payloadSummary' },
+  { title: '状态', dataIndex: 'status', key: 'status', width: 120 },
+  { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
 ];
 
-const filteredReports = computed(() => {
-  if (!platformFilter.value) return reports.value;
-  return reports.value.filter((r) => r.platform === platformFilter.value);
-});
-
-function renderChart(data: PurchaseReport[]) {
-  if (data.length === 0) return;
-  // 按日期聚合金额
-  const dateMap = new Map<string, number>();
-  for (const r of data) {
-    if (!r.date) continue;
-    dateMap.set(r.date, (dateMap.get(r.date) || 0) + r.totalAmount);
-  }
-  const sorted = [...dateMap.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  );
-
-  const option: Record<string, any> = {
-    tooltip: { trigger: 'axis' },
-    grid: { left: 60, right: 20, top: 10, bottom: 30 },
-    xAxis: { type: 'category', data: sorted.map((d) => d[0]) },
-    yAxis: { type: 'value', name: '金额(¥)' },
-    series: [
-      {
-        type: 'line',
-        data: sorted.map((d) => Math.round(d[1] * 100) / 100),
-        smooth: true,
-        areaStyle: { opacity: 0.15 },
-        itemStyle: { color: '#1677ff' },
-      },
-    ],
+const stats = computed(() => {
+  const summary = overview.value?.summary;
+  return {
+    completedTasks: summary?.completedTasks ?? 0,
+    failedTasks: summary?.failedTasks ?? 0,
+    pendingTasks: summary?.pendingTasks ?? 0,
+    runningTasks: summary?.runningTasks ?? 0,
+    totalReports: summary?.totalReports ?? 0,
+    totalTasks: summary?.totalTasks ?? 0,
+    waitingRetryTasks: summary?.waitingRetryTasks ?? 0,
   };
-  renderEcharts(option);
+});
+
+function statusColor(status: string) {
+  switch (status) {
+    case 'succeeded':
+      return 'success';
+    case 'failed':
+      return 'error';
+    case 'waiting_retry':
+      return 'warning';
+    case 'running':
+      return 'processing';
+    case 'partial_success':
+      return 'gold';
+    default:
+      return 'default';
+  }
 }
 
-async function fetchData() {
+function alertTypeLabel(alertType: string) {
+  switch (alertType) {
+    case 'replenishment':
+      return '补货提醒';
+    case 'execution_exception':
+      return '执行异常';
+    case 'task_started':
+      return '任务开始';
+    case 'task_finished':
+      return '任务结束';
+    case 'task_waiting_retry':
+      return '待重试';
+    default:
+      return alertType;
+  }
+}
+
+async function fetchOverview() {
   loading.value = true;
   try {
-    const res = await requestClient.get<any>('/purchase/reports');
-    summary.value = res.summary || summary.value;
-    reports.value = res.reports || [];
-    renderChart(reports.value);
-  } catch {
-    reports.value = [];
-    message.error('获取采购数据失败');
+    overview.value = await getProcurementOverview();
   } finally {
     loading.value = false;
   }
 }
 
-function handleExport() {
-  const exportColumns = [
-    { title: '日期', dataIndex: 'date', width: 14 },
-    { title: '平台', dataIndex: 'platform', width: 10 },
-    { title: '状态', dataIndex: 'success', width: 8 },
-    { title: '商品数', dataIndex: 'itemCount', width: 10 },
-    { title: '金额', dataIndex: 'totalAmount', width: 12 },
-    { title: '耗时', dataIndex: 'duration', width: 10 },
-    { title: '订单号', dataIndex: 'orderNo', width: 28 },
-  ];
-  const data = filteredReports.value.map((r) => ({
-    ...r,
-    success: r.success ? '成功' : '失败',
-  }));
-  exportToExcel(exportColumns, data, '采购记录');
-}
-
-onMounted(fetchData);
+onMounted(fetchOverview);
 </script>
 
 <template>
-  <Page title="采购管理">
+  <Page title="采购总览">
     <div class="p-4">
-      <!-- 统计卡片 -->
       <Row :gutter="[16, 16]" class="mb-4">
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic
-              title="总采购次数"
-              :value="summary.totalCount"
-              :value-style="{ color: '#1677ff' }"
-            />
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="今日待采购" :value="stats.pendingTasks" />
           </Card>
         </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic
-              title="成功率"
-              :value="summary.successRate"
-              suffix="%"
-              :value-style="{
-                color: summary.successRate >= 80 ? '#52c41a' : '#faad14',
-              }"
-            />
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="采购中任务" :value="stats.runningTasks" />
           </Card>
         </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic title="最近采购" :value="summary.latestDate" />
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="待重试" :value="stats.waitingRetryTasks" />
           </Card>
         </Col>
-        <Col :xs="12" :sm="6">
-          <Card class="stat-card" size="small">
-            <Statistic
-              title="总金额"
-              :value="reports.reduce((s, r) => s + r.totalAmount, 0)"
-              :precision="2"
-              prefix="¥"
-              :value-style="{ color: '#f5222d' }"
-            />
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="已结束任务" :value="stats.completedTasks" />
+          </Card>
+        </Col>
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="失败任务" :value="stats.failedTasks" />
+          </Card>
+        </Col>
+        <Col :xs="12" :sm="8" :xl="4">
+          <Card>
+            <Statistic title="采购报告数" :value="stats.totalReports" />
           </Card>
         </Col>
       </Row>
 
-      <!-- 采购趋势图 -->
-      <Card class="mb-4" v-if="reports.length > 0">
-        <EchartsUI ref="chartRef" style="height: 250px" />
-      </Card>
+      <Alert
+        class="mb-4"
+        type="info"
+        show-icon
+        message="当前采购总览已切换为采购后端数据源，聚合了任务、运行、报告和提醒摘要。"
+      />
 
-      <!-- 工具栏 -->
-      <div class="mb-4 flex items-center gap-4">
-        <Radio.Group
-          v-model:value="platformFilter"
-          :options="platformOptions"
-          option-type="button"
-          button-style="solid"
-          size="small"
-        />
-        <div class="flex-1"></div>
-        <Button size="small" @click="handleExport">导出</Button>
-        <Button size="small" :loading="loading" @click="fetchData">刷新</Button>
-      </div>
-
-      <!-- 采购记录表格 -->
-      <Spin :spinning="loading">
-        <Table
-          :columns="columns"
-          :data-source="filteredReports"
-          :pagination="{
-            pageSize: 20,
-            showSizeChanger: true,
-            showTotal: (t: number) => `共 ${t} 条`,
-          }"
-          :row-key="
-            (record: PurchaseReport) =>
-              record.date + record.platform + record.orderNo
-          "
-          :scroll="{ x: 900 }"
-          size="middle"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'platform'">
-              <Tag :color="record.platform === '翱象' ? 'blue' : 'green'">
-                {{ record.platform }}
-              </Tag>
-            </template>
-            <template v-else-if="column.key === 'suppliers'">
-              {{ record.suppliers?.join('、') || '-' }}
-            </template>
-            <template v-else-if="column.key === 'success'">
-              <Tag :color="record.success ? 'success' : 'error'">
-                {{ record.success ? '成功' : '失败' }}
-              </Tag>
-            </template>
-            <template v-else-if="column.key === 'totalAmount'">
-              {{
-                record.totalAmount > 0
-                  ? `¥${record.totalAmount.toFixed(2)}`
-                  : '-'
-              }}
-            </template>
-          </template>
-
-          <!-- 可展开行：无库存SKU -->
-          <template #expandedRowRender="{ record }">
-            <div v-if="record.noStockSkus?.length" class="pl-4">
-              <div class="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                无库存SKU（{{ record.noStockSkus.length }}个）
-              </div>
-              <Table
-                :columns="noStockColumns"
-                :data-source="record.noStockSkus"
-                :pagination="false"
-                :row-key="(r: any) => r.sku"
-                size="small"
-              />
+      <Row :gutter="[16, 16]">
+        <Col :span="24">
+          <Card :loading="loading" title="失败与提醒摘要">
+            <div v-if="overview">
+              <Space wrap>
+                <Tag color="warning">待处理提醒 {{ overview.alertSummary.pending }}</Tag>
+                <Tag color="success">已发送提醒 {{ overview.alertSummary.sent }}</Tag>
+                <Tag>累计提醒 {{ overview.alertSummary.total }}</Tag>
+                <Tag color="processing">采购任务 {{ stats.totalTasks }}</Tag>
+              </Space>
             </div>
-            <div v-else class="pl-4 text-sm text-gray-400 dark:text-gray-500">
-              暂无无库存SKU
-            </div>
-          </template>
-          <template #expandColumnTitle>
-            <span title="展开查看无库存SKU">详情</span>
-          </template>
+            <Empty v-else description="暂无总览数据" />
+          </Card>
+        </Col>
 
-          <template #emptyText>
-            <Empty description="暂无采购数据" />
-          </template>
-        </Table>
-      </Spin>
+        <Col :xs="24" :xl="14">
+          <Card title="最近执行" :loading="loading">
+            <div class="mb-3 flex justify-end">
+              <Button size="small" @click="fetchOverview">刷新</Button>
+            </div>
+            <Table
+              :columns="runColumns"
+              :data-source="overview?.latestRuns || []"
+              :pagination="false"
+              :row-key="(record: ProcurementRun) => record.id"
+              :scroll="{ x: 900 }"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'status'">
+                  <Tag :color="statusColor(record.status)">
+                    {{ record.status }}
+                  </Tag>
+                </template>
+              </template>
+            </Table>
+          </Card>
+        </Col>
+
+        <Col :xs="24" :xl="10">
+          <Card title="最近提醒" :loading="loading">
+            <Table
+              :columns="alertColumns"
+              :data-source="overview?.latestAlerts || []"
+              :pagination="false"
+              :row-key="(record: ProcurementAlertEvent) => record.id"
+              :scroll="{ x: 780 }"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'alertType'">
+                  {{ alertTypeLabel(record.alertType) }}
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <Tag :color="record.status === 'pending' ? 'warning' : 'success'">
+                    {{ record.status }}
+                  </Tag>
+                </template>
+              </template>
+            </Table>
+          </Card>
+        </Col>
+
+        <Col :span="24">
+          <Card title="最近执行报告" :loading="loading">
+            <Table
+              :columns="reportColumns"
+              :data-source="overview?.latestReports || []"
+              :pagination="false"
+              :row-key="(record: ProcurementReport) => record.id"
+              :scroll="{ x: 900 }"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'platform'">
+                  <Tag :color="record.platform === 'Aoxiang' ? 'blue' : 'cyan'">
+                    {{ record.platform === 'Aoxiang' ? '翱象' : '牵牛花' }}
+                  </Tag>
+                </template>
+                <template v-else-if="column.key === 'totalAmount'">
+                  ¥{{ Number(record.totalAmount || 0).toFixed(2) }}
+                </template>
+              </template>
+            </Table>
+          </Card>
+        </Col>
+      </Row>
     </div>
   </Page>
 </template>
-
-<style scoped>
-.stat-card {
-  transition: all 0.2s;
-}
-.stat-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-.dark .stat-card:hover {
-  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.06);
-}
-</style>

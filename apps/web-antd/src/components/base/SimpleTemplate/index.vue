@@ -2,6 +2,7 @@
 import {
   computed,
   nextTick,
+  onActivated,
   onMounted,
   onUnmounted,
   reactive,
@@ -305,6 +306,10 @@ onMounted(() => {
     updateLayoutContentHeight();
   }, 100);
 
+  handleSearch();
+});
+
+onActivated(() => {
   handleSearch();
 });
 

@@ -57,12 +57,16 @@ let win: BrowserWindow | null;
 let currentAuthUser:
   | null
   | {
+      accessToken: string;
       id: string;
       merchantId?: string;
       name?: string;
       role: 'merchant_admin' | 'super_admin' | 'user';
       username: string;
     } = null;
+
+const ELECTRON_BACKEND_BASE_URL =
+  process.env.ELECTRON_BACKEND_BASE_URL || 'http://127.0.0.1:3030';
 
 function buildLocalAccessCodes(role: string) {
   if (role === 'super_admin') {
@@ -79,7 +83,7 @@ function buildLocalUserPayload() {
     return null;
   }
   return {
-    accessToken: `local-${currentAuthUser.username}`,
+    accessToken: currentAuthUser.accessToken,
     id: currentAuthUser.id,
     merchantId: currentAuthUser.merchantId,
     realName: currentAuthUser.name || currentAuthUser.username,
@@ -202,20 +206,61 @@ function registerIpcHandlers() {
   };
 
   ipcMain.handle('local-auth-login', async (_event, { password, username }) => {
-    const user = await authFeature.login(`${username || ''}`, `${password || ''}`);
-    if (!user) {
+    try {
+      const response = await fetch(`${ELECTRON_BACKEND_BASE_URL}/api/auth/login`, {
+        body: JSON.stringify({
+          password: `${password || ''}`,
+          username: `${username || ''}`,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            code?: number;
+            data?: Record<string, any>;
+            error?: string;
+            message?: string;
+          }
+        | null;
+
+      if (!response.ok || payload?.code !== 0 || !payload?.data?.accessToken) {
+        return {
+          message:
+            payload?.error ||
+            payload?.message ||
+            '用户名或密码错误。',
+          success: false,
+        };
+      }
+
+      const user = payload.data;
+      const role =
+        user.role === 'merchant_admin' || user.role === 'user'
+          ? user.role
+          : 'super_admin';
+
+      currentAuthUser = {
+        accessToken: `${user.accessToken}`,
+        id: `${user.userId || user.id || user.username || username || ''}`,
+        merchantId: `${user.merchantId || ''}` || undefined,
+        name: `${user.realName || user.username || ''}` || undefined,
+        role,
+        username: `${user.username || username || ''}`,
+      };
+
       return {
-        message: '用户名或密码错误。',
+        success: true,
+        user: buildLocalUserPayload(),
+      };
+    } catch (error: any) {
+      return {
+        message: error?.message || '登录失败，请确认后端服务可用。',
         success: false,
       };
     }
-
-    currentAuthUser = user;
-
-    return {
-      success: true,
-      user: buildLocalUserPayload(),
-    };
   });
 
   ipcMain.handle('local-auth-logout', async () => {
@@ -519,6 +564,11 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('execute-procurement-task', async (_event, task) => {
+    console.info('[execute-procurement-task]', {
+      platform: task?.platform,
+      runId: task?.runId,
+      taskId: task?.taskId,
+    });
     return await ProcurementTaskRunner.executeTask(task);
   });
 

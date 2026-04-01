@@ -18,8 +18,12 @@ defineOptions({ name: 'LayoutContent' });
 const tabbarStore = useTabbarStore();
 const { keepAlive } = usePreferences();
 
-const { getCachedTabs, getExcludeCachedTabs, renderRouteView } =
-  storeToRefs(tabbarStore);
+const {
+  getCachedTabs,
+  getExcludeCachedTabs,
+  renderRouteView,
+  routeViewRefreshKey,
+} = storeToRefs(tabbarStore);
 
 /**
  * 是否使用动画
@@ -94,6 +98,10 @@ function transformComponent(
 
   return component;
 }
+
+function getRouteViewKey(route: RouteLocationNormalizedLoadedGeneric) {
+  return `${getTabKey(route)}:${routeViewRefreshKey.value || 0}`;
+}
 </script>
 
 <template>
@@ -115,13 +123,13 @@ function transformComponent(
             :is="transformComponent(Component, route)"
             v-if="renderRouteView"
             v-show="!route.meta.iframeSrc"
-            :key="getTabKey(route)"
+            :key="getRouteViewKey(route)"
           />
         </KeepAlive>
         <component
           :is="Component"
           v-else-if="renderRouteView"
-          :key="getTabKey(route)"
+          :key="getRouteViewKey(route)"
         />
       </Transition>
       <template v-else>
@@ -134,13 +142,13 @@ function transformComponent(
             :is="transformComponent(Component, route)"
             v-if="renderRouteView"
             v-show="!route.meta.iframeSrc"
-            :key="getTabKey(route)"
+            :key="getRouteViewKey(route)"
           />
         </KeepAlive>
         <component
           :is="Component"
           v-else-if="renderRouteView"
-          :key="getTabKey(route)"
+          :key="getRouteViewKey(route)"
         />
       </template>
     </RouterView>

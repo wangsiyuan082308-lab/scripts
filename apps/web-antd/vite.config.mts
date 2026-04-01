@@ -1,10 +1,6 @@
-import type { Plugin } from 'vite';
-
-import process from 'node:process';
-
 import { defineConfig } from '@vben/vite-config';
-
 import electron from 'vite-plugin-electron/simple';
+import type { Plugin } from 'vite';
 import { loadEnv as loadViteEnv } from 'vite';
 
 /**
@@ -35,11 +31,7 @@ function esmDirnamePlugin(): Plugin {
   };
 }
 
-const AUTOMATION_EXTERNAL_PACKAGES = [
-  'playwright',
-  'playwright-core',
-  'chromium-bidi',
-];
+const AUTOMATION_EXTERNAL_PACKAGES = ['playwright', 'playwright-core', 'chromium-bidi'];
 
 const isAutomationRuntimeExternal = (id: string) => {
   return AUTOMATION_EXTERNAL_PACKAGES.some((pkg) => {
@@ -56,6 +48,17 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/u, '');
 }
 
+function createApiProxy(target: string) {
+  return {
+    changeOrigin: true,
+    rewrite: (path: string) => {
+      return target.endsWith('/api') ? path.replace(/^\/api/, '') : path;
+    },
+    target,
+    ws: true,
+  };
+}
+
 function resolveApiProxyTarget(mode: string) {
   const env = loadViteEnv(mode, process.cwd(), '');
   const apiUrl = `${env.VITE_GLOB_API_URL || ''}`.trim();
@@ -65,15 +68,22 @@ function resolveApiProxyTarget(mode: string) {
     return undefined;
   }
 
-  return configuredProxyTarget ? trimTrailingSlash(configuredProxyTarget) : undefined;
+  if (configuredProxyTarget) {
+    return trimTrailingSlash(configuredProxyTarget);
+  }
+
+  return 'http://127.0.0.1:3030/api';
 }
 
-export default defineConfig(async (_config) => {
+export default defineConfig(async (config) => {
   const isVitest = process.env.VITEST === 'true';
-  const proxyTarget = resolveApiProxyTarget(_config?.mode || 'development');
+  const isBuild = config?.command === 'build';
+  const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
 
   return {
-    application: {},
+    application: {
+      nitroMock: false,
+    },
     // @ts-ignore: Fix type mismatch
     vite: {
       base: './',
@@ -83,17 +93,17 @@ export default defineConfig(async (_config) => {
           external: (id) => {
             if (
               [
-                'core-js',
-                'electron',
                 'exceljs',
-                'node:buffer',
+                'xlsx',
+                'electron',
                 'node:fs',
                 'node:path',
+                'node:buffer',
                 'node:process',
                 'node:url',
                 // 确保这些模块不被打包
                 'regenerator-runtime',
-                'xlsx',
+                'core-js',
               ].includes(id)
             ) {
               return true;
@@ -139,16 +149,9 @@ export default defineConfig(async (_config) => {
             }),
           ],
       server: {
-        proxy: proxyTarget
-          ? {
-              '/api': {
-                changeOrigin: true,
-                rewrite: (path) => path.replace(/^\/api/, ''),
-                target: proxyTarget,
-                ws: true,
-              },
-            }
-          : undefined,
+        proxy: {
+          ...(proxyTarget ? { '/api': createApiProxy(proxyTarget) } : {}),
+        },
       },
     },
   };

@@ -1,5 +1,6 @@
 <script>
 import { getPropByPath, isDef, RenderDom } from '../utils';
+import dayjs from 'dayjs';
 
 import {
   Button,
@@ -173,6 +174,7 @@ export default {
       this.baseForm.updateModel(valueKey, value);
     },
     isDef,
+    dayjs,
   },
 };
 </script>
@@ -386,16 +388,38 @@ export default {
     <DatePicker
       v-else-if="renderType === 'monthPicker'"
       v-bind.prop="$attrs"
-      type="month"
+      picker="month"
       :style="styles"
-      :value="baseForm.model[$attrs.valueKey]"
-      @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
+      :placeholder="currentPlaceholder"
+      :value="
+        baseForm.model[$attrs.valueKey]
+          ? dayjs(baseForm.model[$attrs.valueKey], 'YYYY-MM')
+          : undefined
+      "
+      @update:value="
+        (val) =>
+          baseForm.updateModel(
+            $attrs.valueKey,
+            val ? dayjs(val).format('YYYY-MM') : '',
+          )
+      "
     />
   </div>
 </template>
 
 <style lang="scss" scoped>
 .baseFormRender {
+  width: 100%;
+
+  :deep(.ant-input),
+  :deep(.ant-input-number),
+  :deep(.ant-picker),
+  :deep(.ant-select),
+  :deep(.ant-cascader-picker),
+  :deep(.ant-time-picker) {
+    width: 100%;
+  }
+
   .el-select__tags-text {
     max-width: 70px !important;
   }

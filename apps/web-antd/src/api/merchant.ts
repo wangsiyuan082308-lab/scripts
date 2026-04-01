@@ -1,4 +1,4 @@
-import { requestClient } from '#/api/request';
+import { requestClient } from './request';
 
 export interface Merchant {
   id: string;
@@ -12,55 +12,73 @@ export interface Merchant {
   [key: string]: any;
 }
 
-type MerchantListResult = {
-  items?: Merchant[];
-  total?: number;
-};
+function createMerchantId() {
+  return `M${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, '0')}`;
+}
 
 function normalizeMerchant(data: Partial<Merchant>): Merchant {
+  const id = (data.id || '').trim() || createMerchantId();
   return {
     ...data,
-    address: `${data.address || ''}`.trim(),
-    contact: `${data.contact || ''}`.trim(),
-    id: `${data.id || ''}`.trim(),
-    name: `${data.name || ''}`.trim(),
-    phone: `${data.phone || ''}`.trim(),
+    address: (data.address || '').trim(),
+    contact: (data.contact || '').trim(),
+    id,
+    name: (data.name || '').trim(),
+    phone: (data.phone || '').trim(),
     updatedAt: new Date().toISOString(),
   };
 }
 
+function includesIgnoreCase(value: string, keyword: string) {
+  return value.toLowerCase().includes(keyword.toLowerCase());
+}
+
 export async function getMerchantList(params?: any) {
   const query = params?.data ?? params ?? {};
-  const result = await requestClient.get<MerchantListResult>('/merchant/list', {
-    params: {
-      name: `${query?.name || ''}`.trim(),
-      page: query?.page || 1,
-      pageSize: query?.pageSize || 1000,
+  const response = await requestClient.get<{ items: Merchant[]; total: number }>(
+    '/merchant/list',
+    {
+      params: {
+        page: 1,
+        pageSize: 500,
+        ...query,
+      },
     },
-  });
+  );
+  const merchants = response.items || [];
+  const keyword = `${query?.name || ''}`.trim();
+  if (!keyword) {
+    return merchants;
+  }
 
-  return Array.isArray(result?.items) ? result.items : [];
+  return merchants.filter((item) => includesIgnoreCase(item.name || '', keyword));
 }
 
 export async function addMerchant(data: Merchant) {
   const merchant = normalizeMerchant(data);
-  return requestClient.post('/merchant/list', merchant);
+  return requestClient.post<Merchant>('/merchant/list', {
+    ...merchant,
+    createdAt: merchant.createdAt || new Date().toISOString(),
+  });
 }
 
 export async function updateMerchant(data: Merchant) {
-  const merchant = normalizeMerchant(data);
-  if (!merchant.id) {
+  if (!data?.id) {
     throw new Error('商户ID不能为空');
   }
-  return requestClient.put('/merchant/list', merchant);
+  const existing = (await getMerchantList()).find((item) => item.id === data.id);
+  return requestClient.put<Merchant>('/merchant/list', {
+    ...(existing || {}),
+    ...normalizeMerchant(data),
+    createdAt: existing?.createdAt || data.createdAt || new Date().toISOString(),
+  });
 }
 
 export async function deleteMerchant(id: string) {
-  if (!`${id || ''}`.trim()) {
-    throw new Error('商户ID不能为空');
-  }
-
-  return requestClient.delete('/merchant/list', {
+  await requestClient.delete<boolean>('/merchant/list', {
     params: { id },
   });
+  return getMerchantList();
 }

@@ -116,6 +116,7 @@ const breadcrumbStyleType = defineModel<BreadcrumbStyleType>(
 const breadcrumbHideOnlyOne = defineModel<boolean>('breadcrumbHideOnlyOne');
 
 const tabbarEnable = defineModel<boolean>('tabbarEnable');
+const tabbarKeepAlive = defineModel<boolean>('tabbarKeepAlive');
 const tabbarShowIcon = defineModel<boolean>('tabbarShowIcon');
 const tabbarShowMore = defineModel<boolean>('tabbarShowMore');
 const tabbarShowMaximize = defineModel<boolean>('tabbarShowMaximize');
@@ -399,6 +400,7 @@ async function handleReset() {
               <Tabbar
                 v-model:tabbar-draggable="tabbarDraggable"
                 v-model:tabbar-enable="tabbarEnable"
+                v-model:tabbar-keep-alive="tabbarKeepAlive"
                 v-model:tabbar-persist="tabbarPersist"
                 v-model:tabbar-show-icon="tabbarShowIcon"
                 v-model:tabbar-show-maximize="tabbarShowMaximize"

@@ -64,6 +64,7 @@
   "tabbar": {
     "title": "标签栏",
     "enable": "启用标签栏",
+    "keepAlive": "启用页面缓存",
     "icon": "显示标签栏图标",
     "showMore": "显示更多按钮",
     "showMaximize": "显示最大化按钮",

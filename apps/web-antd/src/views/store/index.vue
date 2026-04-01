@@ -1,5 +1,7 @@
 <script lang="tsx" setup>
+import type { Merchant } from '#/api/merchant';
 import type { Store } from '#/api/store';
+import { getMerchantList } from '#/api/merchant';
 import {
   addStore,
   addStores,
@@ -9,14 +11,29 @@ import {
 } from '#/api/store';
 import { parseStoreImportExcel } from '#/api/system-settings-import';
 import { Button, message, Popconfirm, Upload } from 'ant-design-vue';
-import { h, ref } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
 
 // @ts-expect-error no .vue type declaration
 import BaseModelForm from '#/components/base/BaseModelForm/index.vue';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 // 搜索配置
-const searchFormItems = [
+type MerchantOption = {
+  label: string;
+  value: string;
+};
+
+const merchantOptions = ref<MerchantOption[]>([]);
+
+const searchFormItems = computed(() => [
+  {
+    label: '所属商户',
+    child: {
+      options: merchantOptions.value,
+      renderType: 'select',
+      valueKey: 'merchantId',
+    },
+  },
   {
     label: '门店名称',
     child:{
@@ -38,14 +55,22 @@ const searchFormItems = [
       },
     ],
   },
-];
+]);
 
 // 表格列配置
 const columns = [
+  { dataIndex: 'merchantName', title: '所属商户', minWidth: 140 },
   { dataIndex: 'storeId', title: '门店ID', width: 100 },
   { dataIndex: 'storeName', title: '门店名称', minWidth: 150 },
-  { dataIndex: 'platform', title: '平台', width: 120 },
+  {
+    dataIndex: 'platform',
+    title: '平台',
+    width: 120,
+    render: (_h: any, ctx: { text?: string }) =>
+      ctx?.text === 'Qianniuhua' ? '牵牛花' : ctx?.text === 'Aoxiang' ? '翱象' : (ctx?.text || '-'),
+  },
   { dataIndex: 'contact', title: '联系人', width: 100 },
+  { dataIndex: 'phone', title: '联系电话', width: 140 },
   { dataIndex: 'address', title: '地址', minWidth: 150 },
   {
     title: '操作',
@@ -121,11 +146,21 @@ const headerOptions = [
 const showModal = ref(false);
 const isUpdate = ref(false);
 const currentId = ref<string>('');
+const currentMerchantId = ref<string>('');
 const formModel = ref<Partial<Store>>({});
 const tableRef = ref();
 
 // 表单配置
-const formItems = ref([
+const formItems = computed(() => [
+  {
+    label: '所属商户',
+    child: {
+      options: merchantOptions.value,
+      renderType: 'select',
+      valueKey: 'merchantId',
+    },
+    rules: [{ required: true, message: '请选择所属商户' }],
+  },
   {
     label: '门店ID',
     show:isUpdate.value,
@@ -147,8 +182,8 @@ const formItems = ref([
       valueKey: 'platform',
       renderType:'select',
       options: [
-        { label: '翱象', value: '翱象' },
-        { label: '牵牛花', value: '牵牛花' },
+        { label: '翱象', value: 'Aoxiang' },
+        { label: '牵牛花', value: 'Qianniuhua' },
       ],
     },
   },
@@ -182,6 +217,19 @@ const formItems = ref([
   },
 ]);
 
+async function loadMerchants() {
+  try {
+    const merchants = await getMerchantList({ page: 1, pageSize: 500 });
+    merchantOptions.value = (merchants || []).map((item: Merchant) => ({
+      label: item.name,
+      value: item.id,
+    }));
+  } catch (error) {
+    console.error(error);
+    message.error('加载商户列表失败');
+  }
+}
+
 // 数据请求
 const serveMethods = async (params: any) => {
   const data = await getStoreList(params);
@@ -193,17 +241,21 @@ const serveMethods = async (params: any) => {
 };
 
 // 操作处理
-function handleAdd() {
+async function handleAdd() {
+  await loadMerchants();
   isUpdate.value = false;
   currentId.value = '';
+  currentMerchantId.value = '';
   formModel.value = {};
   // 启用门店ID输入
   showModal.value = true;
 }
 
-function handleEdit(row: Store) {
+async function handleEdit(row: Store) {
+  await loadMerchants();
   isUpdate.value = true;
   currentId.value = row.storeId;
+  currentMerchantId.value = row.merchantId || '';
   formModel.value = { ...row };
   // 禁用门店ID输入
   showModal.value = true;
@@ -211,11 +263,13 @@ function handleEdit(row: Store) {
 
 async function handleDelete(row: Store) {
   try {
-    await deleteStore(row.storeId);
+    await deleteStore(row.storeId, row.merchantId);
     message.success('删除成功');
     tableRef.value?.search();
-  } catch {
-    message.error('删除失败');
+  } catch (error: any) {
+    if (!error?.response) {
+      message.error(error?.message || '删除失败');
+    }
   }
 }
 
@@ -225,6 +279,7 @@ const handleSubmit = async (model: any) => {
     if (isUpdate.value) {
       await updateStore({
         ...model,
+        merchantId: model.merchantId || currentMerchantId.value,
         id: currentId.value,
         storeId: model.storeId || currentId.value,
       } as Store);
@@ -238,31 +293,35 @@ const handleSubmit = async (model: any) => {
     return true;
   } catch (error: any) {
     console.error(error);
-    message.error(error.message || (isUpdate.value ? '更新失败' : '添加失败'));
+    if (!error?.response) {
+      message.error(error?.message || (isUpdate.value ? '更新失败' : '添加失败'));
+    }
     return false;
   }
 };
+
+onMounted(() => {
+  loadMerchants();
+});
 </script>
 
 <template>
-  <div class="store-page">
-    <SimpleTemplate
-      ref="tableRef"
-      row-key="storeId"
-      :search-form-items="searchFormItems"
-      :columns="columns"
-      :serve-methods="serveMethods"
-      :header-options="headerOptions"
-      :show-page="false"
-    />
+  <SimpleTemplate
+    ref="tableRef"
+    row-key="id"
+    :search-form-items="searchFormItems"
+    :columns="columns"
+    :serve-methods="serveMethods"
+    :header-options="headerOptions"
+    :show-page="false"
+  />
 
-    <BaseModelForm
-      v-model:show="showModal"
-      :title="isUpdate ? '编辑门店' : '添加门店'"
-      :form-items="formItems"
-      v-model:model="formModel"
-      :submit="handleSubmit"
-      width="600px"
-    />
-  </div>
+  <BaseModelForm
+    v-model:show="showModal"
+    :title="isUpdate ? '编辑门店' : '添加门店'"
+    :form-items="formItems"
+    v-model:model="formModel"
+    :submit="handleSubmit"
+    width="600px"
+  />
 </template>

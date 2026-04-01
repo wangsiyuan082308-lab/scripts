@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'System',
     path: '/system',
-    redirect: '/system/account',
+    redirect: '/system/store',
     children: [
       {
         name: 'SystemAccountList',
@@ -17,7 +17,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/account/index.vue'),
         meta: {
           icon: 'ant-design:user-outlined',
-          title: '账户列表',
+          title: '用户管理',
         },
       },
       {

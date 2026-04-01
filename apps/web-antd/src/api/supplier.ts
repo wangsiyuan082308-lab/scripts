@@ -1,4 +1,4 @@
-import { requestClient } from '#/api/request';
+import { requestClient } from './request';
 
 export interface Supplier {
   supplierId: string;
@@ -11,11 +11,6 @@ export interface Supplier {
   minOrder?: string;
   settlementType?: string;
 }
-
-type SupplierListResult = {
-  items?: Supplier[];
-  total?: number;
-};
 
 function normalizeSupplier(data: Partial<Supplier>): Supplier {
   return {
@@ -33,17 +28,17 @@ function normalizeSupplier(data: Partial<Supplier>): Supplier {
 
 export async function getSupplierList(params: any) {
   const query = params?.data ?? params ?? {};
-  const result = await requestClient.get<SupplierListResult>('/supplier/list', {
-    params: {
-      merchantId: `${query?.merchantId || ''}`.trim() || undefined,
-      page: query?.page || 1,
-      pageSize: query?.pageSize || 1000,
-      supplierId: `${query?.supplierId || ''}`.trim(),
-      supplierName: `${query?.supplierName || ''}`.trim(),
+  const response = await requestClient.get<{ items: Supplier[]; total: number }>(
+    '/supplier/list',
+    {
+      params: {
+        page: 1,
+        pageSize: 500,
+        ...query,
+      },
     },
-  });
-
-  return Array.isArray(result?.items) ? result.items : [];
+  );
+  return response.items || [];
 }
 
 export async function addSupplier(data: Supplier) {
@@ -51,8 +46,7 @@ export async function addSupplier(data: Supplier) {
   if (!supplier.supplierId) {
     throw new Error('供应商ID不能为空');
   }
-
-  return requestClient.post('/supplier/list', supplier);
+  return requestClient.post<Supplier>('/supplier/list', supplier);
 }
 
 export async function updateSupplier(data: Supplier) {
@@ -60,24 +54,20 @@ export async function updateSupplier(data: Supplier) {
   if (!supplier.supplierId) {
     throw new Error('供应商ID不能为空');
   }
-
-  return requestClient.put('/supplier/list', supplier);
+  return requestClient.put<Supplier>('/supplier/list', supplier);
 }
 
 export async function deleteSupplier(id: string) {
-  if (!`${id || ''}`.trim()) {
-    throw new Error('供应商ID不能为空');
-  }
-
-  return requestClient.delete('/supplier/list', {
+  await requestClient.delete<boolean>('/supplier/list', {
     params: { supplierId: id },
   });
+  return true;
 }
 
 export async function addSuppliers(data: Supplier[]) {
   const suppliers = data
     .map((item) => normalizeSupplier(item))
     .filter((item) => item.supplierId || item.supplierName);
-
-  return requestClient.post('/supplier/list', suppliers);
+  await requestClient.post<number>('/supplier/list', suppliers);
+  return suppliers;
 }

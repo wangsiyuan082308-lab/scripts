@@ -39,6 +39,7 @@ interface TabbarState {
    * @zh_CN 是否刷新
    */
   renderRouteView?: boolean;
+  routeViewRefreshKey?: number;
   /**
    * @zh_CN 当前打开的标签页列表
    */
@@ -102,6 +103,11 @@ export const useTabbarStore = defineStore('core-tabbar', {
         path,
         query: query || {},
       };
+      const target = router.resolve(toParams);
+      if (target.fullPath === router.currentRoute.value.fullPath) {
+        await this.refresh(router);
+        return;
+      }
       await router.replace(toParams);
     },
     /**
@@ -354,13 +360,12 @@ export const useTabbarStore = defineStore('core-tabbar', {
       const { name } = currentRoute.value;
 
       this.excludeCachedTabs.add(name as string);
-      this.renderRouteView = false;
+      this.routeViewRefreshKey = (this.routeViewRefreshKey || 0) + 1;
       startProgress();
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       this.excludeCachedTabs.delete(name as string);
-      this.renderRouteView = true;
       stopProgress();
     },
 
@@ -576,6 +581,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
       'close-all',
     ],
     renderRouteView: true,
+    routeViewRefreshKey: 0,
     tabs: [],
     updateTime: Date.now(),
   }),

@@ -43,7 +43,6 @@ interface RunHistoryItem {
   summary: string;
 }
 
-const DEFAULT_STORE_NAMES = ['Oby便利超市(安吉店)', 'Oby便利超市(长兴店)'];
 const { isDark } = usePreferences();
 
 const isElectron = computed(
@@ -80,7 +79,12 @@ const historyColumns = [
 
 const selectedStoreLabel = computed(() =>
   selectedStores.value.length > 0
-    ? selectedStores.value.join('、')
+    ? selectedStores.value
+        .map((storeId) => {
+          const option = storeOptions.value.find((item) => item.value === storeId);
+          return option?.label || storeId;
+        })
+        .join('、')
     : '未选择门店',
 );
 const pageThemeClass = computed(() =>
@@ -203,26 +207,27 @@ function getTerminalClass(index: number) {
 }
 
 async function loadStores() {
+  if (loadingStores.value) return;
   loadingStores.value = true;
   try {
     const stores = await getStoreList({ page: 1, pageSize: 500 });
     storeOptions.value = (stores || []).map((item: any) => ({
       label: item.storeName,
       storeId: item.storeId || item.id || item.storeName,
-      value: item.storeName,
+      value: item.storeId || item.id || item.storeName,
     }));
 
-    if (selectedStores.value.length === 0) {
-      selectedStores.value = DEFAULT_STORE_NAMES.filter((name) =>
-        storeOptions.value.some((item) => item.value === name),
-      );
-    }
   } catch (error) {
     console.error(error);
     message.error('加载门店列表失败');
   } finally {
     loadingStores.value = false;
   }
+}
+
+async function handleStoreDropdownVisibleChange(open: boolean) {
+  if (!open) return;
+  await loadStores();
 }
 
 function appendLog(entry: WithdrawalLogEntry) {
@@ -237,11 +242,11 @@ function appendLog(entry: WithdrawalLogEntry) {
 function buildTaskPayload(): WithdrawalTask {
   const now = new Date().toISOString();
   const clientRequestId = `withdrawal_manual_${Date.now()}`;
-  const stores = selectedStores.value.map((storeName) => {
-    const option = storeOptions.value.find((item) => item.value === storeName);
+  const stores = selectedStores.value.map((selectedStoreId) => {
+    const option = storeOptions.value.find((item) => item.value === selectedStoreId);
     return {
-      storeId: option?.storeId || storeName,
-      storeName,
+      storeId: option?.storeId || selectedStoreId,
+      storeName: option?.label || selectedStoreId,
     };
   });
 
@@ -394,9 +399,6 @@ onBeforeUnmount(() => {
                 <div class="card-kicker">手动执行</div>
                 <div class="card-title">选择门店并启动提现</div>
               </div>
-              <Button :loading="loadingStores" @click="loadStores">
-                刷新门店
-              </Button>
             </div>
           </template>
 
@@ -404,14 +406,17 @@ onBeforeUnmount(() => {
             <div class="field-label">门店选择</div>
             <Select
               v-model:value="selectedStores"
-              mode="tags"
+              mode="multiple"
               size="large"
               show-search
               allow-clear
+              :field-names="{ label: 'label', value: 'value' }"
               :options="storeOptions"
               :loading="loadingStores"
+              @dropdownVisibleChange="handleStoreDropdownVisibleChange"
               option-filter-prop="label"
               placeholder="选择或输入要执行提现的门店"
+              :not-found-content="loadingStores ? '加载中...' : '暂无门店数据'"
               style="width: 100%"
             />
 

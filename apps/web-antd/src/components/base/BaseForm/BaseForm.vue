@@ -120,6 +120,9 @@ export default {
     getKey(item, index) {
       return item._key || item._id || item.label || index;
     },
+    getFormItemStyle(item) {
+      return item.formItemStyle || item.itemStyle || undefined;
+    },
     // form 搜索button
     onSearch() {
       this.$emit('search', this.model);
@@ -168,6 +171,7 @@ export default {
     ref="baseForm"
     v-loading="loading"
     v-bind.prop="$attrs"
+    :class="['base-form', { 'base-form--inline': layout === 'inline' }]"
     :layout="layout"
     :model="model"
     :label-suffix="labelSuffix"
@@ -192,7 +196,11 @@ export default {
       </div>
 
       <!-- 后缀按钮 -->
-      <FormItem v-else-if="['suffixButton'].includes(item.renderType)">
+      <FormItem
+        v-else-if="['suffixButton'].includes(item.renderType)"
+        class="base-form__suffix-item"
+        :style="getFormItemStyle(item)"
+      >
         <template v-for="child in item.options">
           <Button
             v-if="child.renderType === 'search'"
@@ -246,6 +254,8 @@ export default {
 
       <FormItem
         v-else
+        class="base-form__item"
+        :style="getFormItemStyle(item)"
         v-bind.prop="item"
         :label="!item.tooltip && !item.renderLabel ? item.label : undefined"
         :name="getProp(item)"
@@ -278,3 +288,39 @@ export default {
     </template>
   </Form>
 </template>
+
+<style scoped>
+.base-form--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.base-form--inline :deep(.ant-form-item) {
+  margin-inline-end: 0;
+  margin-bottom: 0;
+}
+
+.base-form--inline :deep(.base-form__item) {
+  flex: 1 1 0;
+}
+
+.base-form--inline :deep(.base-form__suffix-item) {
+  flex: 0 0 auto;
+}
+
+.base-form--inline :deep(.ant-form-item-control) {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .base-form--inline :deep(.base-form__item) {
+    flex-basis: 100%;
+  }
+
+  .base-form--inline :deep(.base-form__suffix-item) {
+    width: 100%;
+  }
+}
+</style>

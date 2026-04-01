@@ -136,11 +136,11 @@ const OPENCLAW_CONFIG_FILENAME = 'openclaw.json';
 
 const DEFAULT_MATCH_PROMPT_TEMPLATE = [
   '你是商品比对助手。',
-  '请从候选商品中为目标商品选择最可能的同款商品，只允许返回 JSON，不要返回 Markdown。',
+  '请从候选商品中为主货盘商品选择最可能的同款商品，只允许返回 JSON，不要返回 Markdown。',
   '判断时只考虑这些字段：商品名称、规格、供应商商品名称、供应商商品规格、供应商名称。',
   '如果没有把握，请返回 unmatched=false。',
   '',
-  '目标商品：',
+  '主货盘商品：',
   '{{target}}',
   '',
   '候选商品列表：',
@@ -323,7 +323,7 @@ function readOpenClawAliyunConfig(): OpenClawAliyunConfig {
 function buildSummary(stats: ProductCompareRunStats) {
   return [
     '商品比对完成',
-    `目标商品数: ${stats.targetCount}`,
+    `主货盘商品数: ${stats.targetCount}`,
     `候选商品数: ${stats.candidateCount}`,
     `UPC精确匹配: ${stats.exactMatchedCount}`,
     `AI模糊匹配: ${stats.aiMatchedCount}`,
@@ -682,9 +682,9 @@ function buildPriceCompareResult(
 
   let conclusion = '采购价信息不完整';
   if (cheaperSide === 'target') {
-    conclusion = '目标货盘采购价更低';
+    conclusion = '主货盘采购价更低';
   } else if (cheaperSide === 'reference') {
-    conclusion = '比对侧采购价更低';
+    conclusion = '对照货盘采购价更低';
   } else if (cheaperSide === 'equal') {
     conclusion = '双方采购价一致';
   }
@@ -708,7 +708,7 @@ function buildPriceCompareResult(
     priceDiff,
     reference: toSide(reference, reference.sourceLabel),
     resultType: hasComparablePrice ? 'price_compare' : 'invalid',
-    target: toSide(target, '目标货盘'),
+    target: toSide(target, '主货盘'),
   };
 }
 
@@ -727,7 +727,7 @@ function buildInvalidResult(
     priceDiff: null,
     reference: null,
     resultType: 'invalid',
-    target: toSide(row, '目标货盘'),
+    target: toSide(row, '主货盘'),
   };
 }
 
@@ -753,7 +753,7 @@ function buildUnmatchedResult(
     resultType: isNewProductCandidate
       ? 'new_product_candidate'
       : 'unmatched_pending',
-    target: toSide(row, '目标货盘'),
+    target: toSide(row, '主货盘'),
   };
 }
 
@@ -1085,7 +1085,7 @@ export async function runProductCompare(
     payload.sourceMode === 'productMaster' ? 'productMaster' : 'custom';
 
   const targetResult = await readExcelWithSchema(payload.targetBuffer, [...COMPARE_SCHEMA]);
-  assertSchemaCapability(targetResult.fieldMap, targetResult.headers, '目标货盘', {
+  assertSchemaCapability(targetResult.fieldMap, targetResult.headers, '主货盘', {
     requireAiText: true,
     requireUpc: true,
   });
@@ -1097,7 +1097,7 @@ export async function runProductCompare(
   );
 
   if (validTargetRows.length === 0) {
-    throw new Error('目标货盘未解析到有效商品数据');
+    throw new Error('主货盘未解析到有效商品数据');
   }
 
   let referenceCandidates: ComparisonCandidate[] = [];
@@ -1110,13 +1110,13 @@ export async function runProductCompare(
     referenceCandidates = buildProductMasterCandidates(productMasterIndex);
   } else {
     if (!payload.referenceBuffer || payload.referenceBuffer.length === 0) {
-      throw new Error('自定义双货盘模式必须上传比对货盘');
+      throw new Error('自定义双货盘模式必须上传对照货盘');
     }
     const referenceResult = await readExcelWithSchema(
       payload.referenceBuffer,
       [...COMPARE_SCHEMA],
     );
-    assertSchemaCapability(referenceResult.fieldMap, referenceResult.headers, '比对货盘', {
+    assertSchemaCapability(referenceResult.fieldMap, referenceResult.headers, '对照货盘', {
       requireAiText: true,
       requireUpc: true,
     });
@@ -1127,9 +1127,9 @@ export async function runProductCompare(
       'reference',
     );
     if (referenceRows.length === 0) {
-      throw new Error('比对货盘未解析到有效商品数据');
+      throw new Error('对照货盘未解析到有效商品数据');
     }
-    referenceCandidates = buildReferenceCandidates(referenceRows, '比对货盘');
+    referenceCandidates = buildReferenceCandidates(referenceRows, '对照货盘');
   }
 
   const stats: ProductCompareRunStats = {

@@ -91,7 +91,7 @@ describe('product compare runner', () => {
         sourceMode: 'custom',
         targetBuffer,
       }),
-    ).rejects.toThrow('必须上传比对货盘');
+    ).rejects.toThrow('必须上传对照货盘');
   });
 
   it('normalizes UPC and matches exact product in custom mode', async () => {
@@ -318,7 +318,7 @@ describe('product compare runner', () => {
           {
             message: {
               content:
-                '{"matched":true,"candidateId":"比对货盘-reference-1","confidence":0.93,"reason":"同规格同类商品"}',
+                '{"matched":true,"candidateId":"对照货盘-reference-1","confidence":0.93,"reason":"同规格同类商品"}',
             },
           },
         ],

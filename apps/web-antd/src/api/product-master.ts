@@ -117,5 +117,8 @@ export async function importProductMaster(file: File) {
       fileBase64: arrayBufferToBase64(buffer),
       fileName: file.name,
     },
+    {
+      timeout: 120_000,
+    },
   );
 }

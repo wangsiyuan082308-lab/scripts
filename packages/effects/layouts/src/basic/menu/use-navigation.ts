@@ -1,11 +1,14 @@
 import type { RouteRecordNormalized } from 'vue-router';
 
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
+import { useTabbarStore } from '@vben/stores';
 import { isHttpUrl, openRouteInNewWindow, openWindow } from '@vben/utils';
 
 function useNavigation() {
   const router = useRouter();
+  const route = useRoute();
+  const tabbarStore = useTabbarStore();
   const routeMetaMap = new Map<string, RouteRecordNormalized>();
 
   // 初始化路由映射
@@ -37,6 +40,15 @@ function useNavigation() {
     return router.resolve(path).href;
   };
 
+  const isSameRouteNavigation = (path: string, query: Record<string, any>) => {
+    const target = router.resolve({
+      path,
+      query,
+    });
+
+    return target.fullPath === route.fullPath;
+  };
+
   const navigation = async (path: string) => {
     try {
       const route = routeMetaMap.get(path);
@@ -52,6 +64,8 @@ function useNavigation() {
         openWindow(path, { target: '_blank' });
       } else if (openInNewWindow) {
         openRouteInNewWindow(resolveHref(path));
+      } else if (isSameRouteNavigation(path, query)) {
+        await tabbarStore.refresh(router);
       } else {
         await router.push({
           path,

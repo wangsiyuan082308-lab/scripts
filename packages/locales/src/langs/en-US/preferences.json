@@ -64,6 +64,7 @@
   "tabbar": {
     "title": "Tabbar",
     "enable": "Enable Tab Bar",
+    "keepAlive": "Enable Page Cache",
     "icon": "Show Tabbar Icon",
     "showMore": "Show More Button",
     "showMaximize": "Show Maximize Button",

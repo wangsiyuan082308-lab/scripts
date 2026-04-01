@@ -16,6 +16,7 @@ defineOptions({
 defineProps<{ disabled?: boolean }>();
 
 const tabbarEnable = defineModel<boolean>('tabbarEnable');
+const tabbarKeepAlive = defineModel<boolean>('tabbarKeepAlive');
 const tabbarShowIcon = defineModel<boolean>('tabbarShowIcon');
 const tabbarPersist = defineModel<boolean>('tabbarPersist');
 const tabbarDraggable = defineModel<boolean>('tabbarDraggable');
@@ -52,6 +53,9 @@ const styleItems = computed((): SelectOption[] => [
 <template>
   <SwitchItem v-model="tabbarEnable" :disabled="disabled">
     {{ $t('preferences.tabbar.enable') }}
+  </SwitchItem>
+  <SwitchItem v-model="tabbarKeepAlive" :disabled="disabled || !tabbarEnable">
+    {{ $t('preferences.tabbar.keepAlive') }}
   </SwitchItem>
   <SwitchItem v-model="tabbarPersist" :disabled="!tabbarEnable">
     {{ $t('preferences.tabbar.persist') }}

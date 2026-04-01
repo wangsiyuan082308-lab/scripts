@@ -21,7 +21,6 @@ dev-dist
 yarn.lock
 package-lock.json
 .VSCodeCounter
-**/backend-mock/data
 
 # local env files
 .env.local
@@ -60,7 +59,6 @@ apps/eleme-auto-withdraw/.env
 .trae/
 
 # Backend mock env (contains secrets)
-apps/backend-mock/.env
 
 # Build Artifacts
 **/release/

@@ -1,159 +1,88 @@
-<div align="center">
-  <a href="https://github.com/anncwb/vue-vben-admin">
-    <img alt="VbenAdmin Logo" width="215" src="https://unpkg.com/@vbenjs/static-source@0.1.7/source/logo-v1.webp">
-  </a>
-  <br>
-  <br>
+# scripts
 
-[![license](https://img.shields.io/github/license/anncwb/vue-vben-admin.svg)](LICENSE)
+> Frontend framework note: this repository's web app is built on Vben. For route cache, tabbar, preferences, and refresh behavior, read [docs/VBEN_FRONTEND_NOTES.md](./docs/VBEN_FRONTEND_NOTES.md) first.
 
-  <h1>Vue Vben Admin</h1>
-</div>
+`scripts` 是一个从 `vue-vben-admin` 演进而来的即时零售运营自动化平台 monorepo。
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vbenjs_vue-vben-admin&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vbenjs_vue-vben-admin) [![codeql](https://github.com/vbenjs/vue-vben-admin/actions/workflows/codeql.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/codeql.yml) [![build](https://github.com/vbenjs/vue-vben-admin/actions/workflows/build.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/build.yml) [![ci](https://github.com/vbenjs/vue-vben-admin/actions/workflows/ci.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/ci.yml) [![deploy](https://github.com/vbenjs/vue-vben-admin/actions/workflows/deploy.yml/badge.svg)](https://github.com/vbenjs/vue-vben-admin/actions/workflows/deploy.yml)
+当前仓库已经不再只是通用后台模板，而是同时承载：
 
-**English** | [中文](./README.zh-CN.md) | [日本語](./README.ja-JP.md)
+- Web 管理台
+- Electron 桌面能力
+- 本地 Excel 处理工具
+- 活动报名与提现自动化
+- 商品主数据、采购与决策辅助能力
 
-## Introduction
+## 仓库定位
 
-Vue Vben Admin is a free and open source middle and back-end template. Using the latest `vue3`, `vite`, `TypeScript` and other mainstream technology development, the out-of-the-box middle and back-end front-end solutions can also be used for learning reference.
+这个仓库主要负责“操作台”和“工具台”两层能力：
 
-## Upgrade Notice
+- `apps/web-antd`
+  - 主应用，提供 Web/Electron 双形态界面
+  - 聚合活动中心、采购、商品中心、门店/商户/供应商管理、提现任务等能力
+- `packages/*`
+  - 共享的 Vben 基础包与通用能力
+- `docs/*`
+  - 面向仓库维护者的项目说明、变更记录与发布流程
 
-This is the latest version, 5.0, and it is not compatible with previous versions. If you are starting a new project, it is recommended to use the latest version. If you wish to view the old version, please use the [v2 branch](https://github.com/vbenjs/vue-vben-admin/tree/v2).
+相邻仓库 `../scripts-backend` 是当前唯一后端服务入口；`scripts` 更偏前台工作台、桌面工具和自动化桥接。
 
-## Features
+## 当前主要产品域
 
-- **Latest Technology Stack**: Developed with cutting-edge front-end technologies like Vue 3 and Vite
-- **TypeScript**: A language for application-scale JavaScript
-- **Themes**: Multiple theme colors available with customizable options
-- **Internationalization**: Comprehensive built-in internationalization support
-- **Permissions**: Built-in solution for dynamic route-based permission generation
+- 活动中心
+  - 饿了么活动列表、记录、日志、推荐结果展示
+- 决策中心
+  - 站点选址、活动建议等 AI/规则辅助入口
+- 商品中心
+  - 商品总表导入、商品比价、结果查看
+- 采购域
+  - 采购工作台、任务、运行记录、告警规则、采购报告
+- 财务域
+  - 提现任务、财务报表
+- 基础资料
+  - 商户、门店、供应商、账号等管理页
 
-## Preview
+## 运行方式
 
-- [Vben Admin](https://vben.pro/) - Full version Chinese site
-
-Test Account: vben/123456
-
-<div align="center">
-  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview1.png">
-  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview2.png">
-  <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview3.png">
-</div>
-
-### Use Gitpod
-
-Open the project in Gitpod (free online dev environment for GitHub) and start coding immediately.
-
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/vbenjs/vue-vben-admin)
-
-## Documentation
-
-[Document](https://doc.vben.pro/)
-
-## Install and Use
-
-1. Get the project code
+建议使用 Node.js 20+ 与 pnpm 10+。
 
 ```bash
-git clone https://github.com/vbenjs/vue-vben-admin.git
-```
-
-2. Install dependencies
-
-```bash
-cd vue-vben-admin
-npm i -g corepack
 pnpm install
 ```
 
-3. Run
+常用命令：
 
 ```bash
+# 交互式 turbo 开发入口
 pnpm dev
+
+# 仅启动前端
+pnpm dev:antd
+
+# 前端 + Electron 调试
+pnpm dev:antd:electron
+
+# 运行提现 CLI
+pnpm dev:withdraw
 ```
 
-4. Build
+## 文档导航
 
-```bash
-pnpm build
-```
+- [项目总览](./docs/PROJECT_MAP.md)
+- [项目记忆](./docs/PROJECT_MEMORY.md)
+- [系统变更记录](./docs/CHANGELOG.md)
+- [Electron 发布流程](./docs/RELEASE_PROCESS.md)
+- [商家工具扩展方案](./docs/merchant-tool-extension.md)
+- [OpenClaw 财务分析说明](./docs/openclaw-finance-analysis.md)
 
-## Change Log
+## 需要先知道的事实
 
-[CHANGELOG](https://github.com/vbenjs/vue-vben-admin/releases)
+- 根仓库仍保留不少 `vue-vben-admin` 的基础设施和共享包。
+- 当前业务定位已经明显偏向“即时零售运营自动化平台”，不要再把它理解成纯后台模板。
+- 当前所有业务接口统一走 `scripts-backend`，不再依赖本仓库内的 mock 服务。
+- Electron 能力和自动化流程是这个仓库的重要组成部分，不是附属脚本。
 
-## How to Contribute
+## 补充说明
 
-You are very welcome to join! [Raise an issue](https://github.com/anncwb/vue-vben-admin/issues/new/choose) or submit a Pull Request.
-
-**Pull Request Process:**
-
-1. Fork the code
-2. Create your branch: `git checkout -b feat/xxxx`
-3. Submit your changes: `git commit -am 'feat(function): add xxxxx'`
-4. Push your branch: `git push origin feat/xxxx`
-5. Submit `pull request`
-
-## Git Contribution Submission Specification
-
-Reference [vue](https://github.com/vuejs/vue/blob/dev/.github/COMMIT_CONVENTION.md) specification ([Angular](https://github.com/conventional-changelog/conventional-changelog/tree/master/packages/conventional-changelog-angular))
-
-- `feat` Add new features
-- `fix` Fix the problem/BUG
-- `style` The code style is related and does not affect the running result
-- `perf` Optimization/performance improvement
-- `refactor` Refactor
-- `revert` Undo edit
-- `test` Test related
-- `docs` Documentation/notes
-- `chore` Dependency update/scaffolding configuration modification etc.
-- `ci` Continuous integration
-- `types` Type definition file changes
-
-## Browser Support
-
-The `Chrome 80+` browser is recommended for local development
-
-Support modern browsers, not IE
-
-| [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/edge/edge_48x48.png" alt="Edge" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Edge | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/firefox/firefox_48x48.png" alt="Firefox" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Firefox | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/chrome/chrome_48x48.png" alt="Chrome" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Chrome | [<img src="https://raw.githubusercontent.com/alrra/browser-logos/master/src/safari/safari_48x48.png" alt="Safari" width="24px" height="24px" />](http://godban.github.io/browsers-support-badges/)</br>Safari |
-| :-: | :-: | :-: | :-: |
-| last 2 versions | last 2 versions | last 2 versions | last 2 versions |
-
-## Maintainer
-
-[@Vben](https://github.com/anncwb)
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=vbenjs/vue-vben-admin&type=Date)](https://star-history.com/#vbenjs/vue-vben-admin&Date)
-
-## Donate
-
-If you think this project is helpful to you, you can help the author buy a cup of coffee to show your support!
-
-![donate](https://unpkg.com/@vbenjs/static-source@0.1.7/source/sponsor.png)
-
-<a style="display: block;width: 100px;height: 50px;line-height: 50px; color: #fff;text-align: center; background: #408aee;border-radius: 4px;" href="https://www.paypal.com/paypalme/cvvben">Paypal Me</a>
-
-## Contributors
-
-<a href="https://openomy.app/github/vbenjs/vue-vben-admin" target="_blank" style="display: block; width: 100%;" align="center">
-  <img src="https://openomy.app/svg?repo=vbenjs/vue-vben-admin&chart=bubble&latestMonth=3" target="_blank" alt="Contribution Leaderboard" style="display: block; width: 100%;" />
- </a>
-
-<a href="https://github.com/vbenjs/vue-vben-admin/graphs/contributors">
-  <img alt="Contributors" src="https://contrib.rocks/image?repo=vbenjs/vue-vben-admin" />
-</a>
-
-## Discord
-
-- [Github Discussions](https://github.com/anncwb/vue-vben-admin/discussions)
-
-## License
-
-[MIT © Vben-2020](./LICENSE)
-# scriptAi
-# scriptAi
+- `apps/eleme-auto-withdraw` 目录当前未见有效源码，现阶段不要把它当成主实现入口。
+- 真正投入使用的提现能力位于 `apps/web-antd/electron/features/withdrawal-task`。
+- 如需了解后端能力，请同时阅读 [`C:\Users\31314\Documents\GitHub\scripts-backend\README.md`](C:\Users\31314\Documents\GitHub\scripts-backend\README.md)。

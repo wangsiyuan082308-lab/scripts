@@ -62,7 +62,6 @@ function createApiProxy(target: string) {
 function resolveApiProxyTarget(mode: string) {
   const env = loadViteEnv(mode, process.cwd(), '');
   const apiUrl = `${env.VITE_GLOB_API_URL || ''}`.trim();
-  const mockEnabled = `${env.VITE_NITRO_MOCK || ''}`.trim() === 'true';
   const configuredProxyTarget = `${env.VITE_DEV_PROXY_TARGET || ''}`.trim();
 
   if (!apiUrl.startsWith('/')) {
@@ -73,10 +72,6 @@ function resolveApiProxyTarget(mode: string) {
     return trimTrailingSlash(configuredProxyTarget);
   }
 
-  if (mockEnabled) {
-    return 'http://localhost:5320/api';
-  }
-
   return 'http://127.0.0.1:3030/api';
 }
 
@@ -84,11 +79,10 @@ export default defineConfig(async (config) => {
   const isVitest = process.env.VITEST === 'true';
   const isBuild = config?.command === 'build';
   const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
-  const financeProxyTarget = 'http://localhost:5320/api';
 
   return {
     application: {
-      nitroMock: !isBuild,
+      nitroMock: false,
     },
     // @ts-ignore: Fix type mismatch
     vite: {
@@ -156,8 +150,6 @@ export default defineConfig(async (config) => {
           ],
       server: {
         proxy: {
-          '/api/finance': createApiProxy(financeProxyTarget),
-          '/api/decision': createApiProxy(financeProxyTarget),
           ...(proxyTarget ? { '/api': createApiProxy(proxyTarget) } : {}),
         },
       },

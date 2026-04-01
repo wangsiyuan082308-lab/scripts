@@ -119,7 +119,7 @@ onUnmounted(clearTimer);
 </script>
 
 <template>
-  <Page title="执行日志">
+  <Page title="饿了么执行日志">
     <div class="p-4">
       <div class="mb-4 flex items-center gap-2">
         <Select

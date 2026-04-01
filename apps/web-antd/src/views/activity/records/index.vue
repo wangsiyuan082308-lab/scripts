@@ -123,7 +123,7 @@ onMounted(fetchRecords);
 </script>
 
 <template>
-  <Page title="活动报名记录">
+  <Page title="饿了么报名记录">
     <div class="p-4">
       <!-- 统计 -->
       <Row :gutter="[16, 16]" class="mb-4">

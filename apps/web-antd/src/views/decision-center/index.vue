@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -14,6 +15,8 @@ import {
   InputNumber,
   message,
 } from 'ant-design-vue';
+
+const router = useRouter();
 
 interface ProductCompareAiConfig {
   apiKey: string;
@@ -66,30 +69,37 @@ async function saveConfig() {
   }
 }
 
+function goToSiteSelection() {
+  void router.push('/decision-center/site-selection');
+}
+
 void loadConfig();
 </script>
 
 <template>
-  <Page title="决策中心">
+  <Page title="模型配置">
     <div class="decision-center-page">
       <Card :bordered="false" class="center-card" :loading="loading">
         <div class="center-head">
           <div>
-            <div class="center-title">商品比对决策配置</div>
+            <div class="center-title">商品比对模型配置</div>
             <div class="center-subtitle">
-              当前先支持维护“新品引入候选”的月销判断阈值，后续可以继续扩展更多决策规则。
+              当前决策中心会复用这里的模型信息，先用于商品比对，门店选址等能力也会优先读取这套配置。
             </div>
           </div>
-          <Button type="primary" :loading="saving" @click="saveConfig">
-            保存配置
-          </Button>
+          <div class="center-actions">
+            <Button @click="goToSiteSelection">前往门店选址</Button>
+            <Button type="primary" :loading="saving" @click="saveConfig">
+              保存配置
+            </Button>
+          </div>
         </div>
 
         <Alert
           type="info"
           show-icon
           class="mb-4"
-          message="未匹配商品在商品比对中会按这里的月销阈值进行判断，超过阈值会归类为新品引入候选。"
+          message="未匹配商品在商品比对中会按这里的月销阈值进行判断，超过阈值会归类为新品引入候选。门店选址页也会优先复用这里保存的模型配置。"
         />
 
         <Form layout="vertical">
@@ -137,6 +147,11 @@ void loadConfig();
   margin-bottom: 20px;
 }
 
+.center-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .center-title {
   color: #0f172a;
   font-size: 18px;
@@ -152,6 +167,10 @@ void loadConfig();
 @media (max-width: 960px) {
   .center-head {
     flex-direction: column;
+  }
+
+  .center-actions {
+    width: 100%;
   }
 }
 </style>

@@ -1,9 +1,4 @@
-import {
-  listSuppliers,
-  removeSupplier,
-  saveSupplier,
-  saveSuppliers,
-} from './system-settings-repo';
+import { requestClient } from './request';
 
 export interface Supplier {
   supplierId: string;
@@ -31,21 +26,19 @@ function normalizeSupplier(data: Partial<Supplier>): Supplier {
   };
 }
 
-function includesIgnoreCase(value: string, keyword: string) {
-  return value.toLowerCase().includes(keyword.toLowerCase());
-}
-
 export async function getSupplierList(params: any) {
-  const suppliers = await listSuppliers();
   const query = params?.data ?? params ?? {};
-  const supplierName = `${query?.supplierName || ''}`.trim();
-  const supplierId = `${query?.supplierId || ''}`.trim();
-
-  return suppliers.filter((item) => {
-    const matchName = !supplierName || includesIgnoreCase(item.supplierName || '', supplierName);
-    const matchId = !supplierId || includesIgnoreCase(item.supplierId || '', supplierId);
-    return matchName && matchId;
-  });
+  const response = await requestClient.get<{ items: Supplier[]; total: number }>(
+    '/supplier/list',
+    {
+      params: {
+        page: 1,
+        pageSize: 500,
+        ...query,
+      },
+    },
+  );
+  return response.items || [];
 }
 
 export async function addSupplier(data: Supplier) {
@@ -53,8 +46,7 @@ export async function addSupplier(data: Supplier) {
   if (!supplier.supplierId) {
     throw new Error('供应商ID不能为空');
   }
-
-  return saveSupplier(supplier);
+  return requestClient.post<Supplier>('/supplier/list', supplier);
 }
 
 export async function updateSupplier(data: Supplier) {
@@ -62,19 +54,20 @@ export async function updateSupplier(data: Supplier) {
   if (!supplier.supplierId) {
     throw new Error('供应商ID不能为空');
   }
-  const existing = (await listSuppliers()).find((item) => item.supplierId === supplier.supplierId);
-  return saveSupplier({ ...(existing || {}), ...supplier });
+  return requestClient.put<Supplier>('/supplier/list', supplier);
 }
 
 export async function deleteSupplier(id: string) {
-  await removeSupplier(id);
-  return listSuppliers();
+  await requestClient.delete<boolean>('/supplier/list', {
+    params: { supplierId: id },
+  });
+  return true;
 }
 
 export async function addSuppliers(data: Supplier[]) {
   const suppliers = data
     .map((item) => normalizeSupplier(item))
     .filter((item) => item.supplierId || item.supplierName);
-  await saveSuppliers(suppliers);
+  await requestClient.post<number>('/supplier/list', suppliers);
   return suppliers;
 }

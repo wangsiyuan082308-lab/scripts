@@ -1,8 +1,4 @@
-import {
-  listMerchants,
-  removeMerchant,
-  saveMerchant,
-} from './system-settings-repo';
+import { requestClient } from './request';
 
 export interface Merchant {
   id: string;
@@ -10,7 +6,7 @@ export interface Merchant {
   contact?: string;
   phone?: string;
   address?: string;
-  status?: number; // 0: inactive, 1: active
+  status?: number | string;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: any;
@@ -40,8 +36,18 @@ function includesIgnoreCase(value: string, keyword: string) {
 }
 
 export async function getMerchantList(params?: any) {
-  const merchants = await listMerchants();
   const query = params?.data ?? params ?? {};
+  const response = await requestClient.get<{ items: Merchant[]; total: number }>(
+    '/merchant/list',
+    {
+      params: {
+        page: 1,
+        pageSize: 500,
+        ...query,
+      },
+    },
+  );
+  const merchants = response.items || [];
   const keyword = `${query?.name || ''}`.trim();
   if (!keyword) {
     return merchants;
@@ -52,7 +58,7 @@ export async function getMerchantList(params?: any) {
 
 export async function addMerchant(data: Merchant) {
   const merchant = normalizeMerchant(data);
-  return saveMerchant({
+  return requestClient.post<Merchant>('/merchant/list', {
     ...merchant,
     createdAt: merchant.createdAt || new Date().toISOString(),
   });
@@ -62,8 +68,8 @@ export async function updateMerchant(data: Merchant) {
   if (!data?.id) {
     throw new Error('商户ID不能为空');
   }
-  const existing = (await listMerchants()).find((item) => item.id === data.id);
-  return saveMerchant({
+  const existing = (await getMerchantList()).find((item) => item.id === data.id);
+  return requestClient.put<Merchant>('/merchant/list', {
     ...(existing || {}),
     ...normalizeMerchant(data),
     createdAt: existing?.createdAt || data.createdAt || new Date().toISOString(),
@@ -71,6 +77,8 @@ export async function updateMerchant(data: Merchant) {
 }
 
 export async function deleteMerchant(id: string) {
-  await removeMerchant(id);
-  return listMerchants();
+  await requestClient.delete<boolean>('/merchant/list', {
+    params: { id },
+  });
+  return getMerchantList();
 }

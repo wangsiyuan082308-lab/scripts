@@ -1,14 +1,13 @@
 import { defineEventHandler } from 'h3';
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { useResponseError } from '../../utils/response';
-
+import { getFinanceStatusSummary } from '../../utils/finance/report-reader';
 const SKILL_DIR = join(
   process.env.HOME || '/Users/mac',
   '.openclaw/workspace/skills/oby-finance-analyzer',
 );
-const OUTPUT_DIR = join(SKILL_DIR, '${args.output_dir}');
 const CONFIG_PATH = join(SKILL_DIR, 'store_config.json');
 
 export default defineEventHandler(() => {
@@ -19,42 +18,17 @@ export default defineEventHandler(() => {
       : { stores: {} };
     const storeCount = Object.keys(config.stores || {}).length;
 
-    // 报表统计
-    let reportCount = 0;
-    let latestReport: string | null = null;
-    let latestMtime: Date | null = null;
-    const months = new Set<string>();
-
-    function scan(dir: string) {
-      if (!existsSync(dir)) return;
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          scan(fullPath);
-        } else if (entry.name.endsWith('.xlsx') || entry.name.endsWith('.csv')) {
-          reportCount++;
-          const stat = statSync(fullPath);
-          if (!latestMtime || stat.mtime > latestMtime) {
-            latestMtime = stat.mtime;
-            latestReport = entry.name;
-          }
-          const monthMatch = entry.name.match(/(\d{4}-\d{2})月/);
-          if (monthMatch) months.add(monthMatch[1]!);
-        }
-      }
-    }
-
-    scan(OUTPUT_DIR);
+    const summary = getFinanceStatusSummary();
 
     return {
       code: 0,
       data: {
         storeCount,
-        reportCount,
-        monthCount: months.size,
-        months: Array.from(months).sort().reverse(),
-        latestReport,
-        latestMtime: latestMtime?.toISOString() || null,
+        reportCount: summary.reportCount,
+        monthCount: summary.monthCount,
+        months: summary.months,
+        latestReport: summary.latestReport,
+        latestMtime: summary.latestMtime,
       },
     };
   } catch (e: any) {

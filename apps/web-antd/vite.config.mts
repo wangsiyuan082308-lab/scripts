@@ -48,6 +48,17 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/u, '');
 }
 
+function createApiProxy(target: string) {
+  return {
+    changeOrigin: true,
+    rewrite: (path: string) => {
+      return target.endsWith('/api') ? path.replace(/^\/api/, '') : path;
+    },
+    target,
+    ws: true,
+  };
+}
+
 function resolveApiProxyTarget(mode: string) {
   const env = loadViteEnv(mode, process.cwd(), '');
   const apiUrl = `${env.VITE_GLOB_API_URL || ''}`.trim();
@@ -66,15 +77,19 @@ function resolveApiProxyTarget(mode: string) {
     return 'http://localhost:5320/api';
   }
 
-  return undefined;
+  return 'http://127.0.0.1:3030/api';
 }
 
 export default defineConfig(async (config) => {
   const isVitest = process.env.VITEST === 'true';
+  const isBuild = config?.command === 'build';
   const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
+  const financeProxyTarget = 'http://localhost:5320/api';
 
   return {
-    application: {},
+    application: {
+      nitroMock: !isBuild,
+    },
     // @ts-ignore: Fix type mismatch
     vite: {
       base: './',
@@ -140,16 +155,11 @@ export default defineConfig(async (config) => {
             }),
           ],
       server: {
-        proxy: proxyTarget
-          ? {
-              '/api': {
-                changeOrigin: true,
-                rewrite: (path) => path.replace(/^\/api/, ''),
-                target: proxyTarget,
-                ws: true,
-              },
-            }
-          : undefined,
+        proxy: {
+          '/api/finance': createApiProxy(financeProxyTarget),
+          '/api/decision': createApiProxy(financeProxyTarget),
+          ...(proxyTarget ? { '/api': createApiProxy(proxyTarget) } : {}),
+        },
       },
     },
   };

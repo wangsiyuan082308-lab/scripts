@@ -21,7 +21,10 @@ export default defineEventHandler(() => {
     // 转为列表格式，方便前端展示
     const list = Object.entries(stores).map(([fullName, cfg]: [string, any]) => {
       const fc = cfg.fixed_costs || {};
-      const totalFixedCost = Object.values(fc).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+      const totalFixedCost = Object.values(fc as Record<string, unknown>).reduce<number>(
+        (sum, value) => sum + (Number(value) || 0),
+        0,
+      );
       return {
         name: fullName,
         shortName: cfg.short_name || fullName,

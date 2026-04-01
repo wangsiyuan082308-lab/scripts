@@ -1,73 +1,132 @@
+import {
+  createProcurementTask,
+  deleteProcurementTask as deleteTaskApi,
+  executeProcurementTask,
+  getProcurementTaskDetail,
+  getProcurementTaskRuns,
+  getProcurementTasks,
+  type ProcurementRun,
+  type ProcurementTask as ProcurementTaskEntity,
+  updateProcurementTask as updateTaskApi,
+} from './procurement';
+
 export interface ProcurementTask {
+  alertCount?: number;
+  autoRetryEnabled?: boolean;
   id: string;
-  taskId: string;
-  platform: 'Aoxiang' | 'Qianniuhua';
-  supplierIds: string[];
-  supplierId?: string;
-  supplierName?: string;
-  status: 'Pending' | 'InProgress' | 'Completed' | 'Failed';
-  scheduleType: 'Instant' | 'Weekly';
-  schedule?: string; // e.g. "Weekly Wed" or "Instant"
-  weekDay?: string; // 'Mon', 'Tue', etc.
   lastRunTime?: string;
+  latestRunId?: string;
+  latestRunStatus?: string;
+  maxItems?: number;
+  platform: 'Aoxiang' | 'Qianniuhua';
+  ruleSetId?: null | string;
+  schedule?: string;
+  scheduleType: 'Instant' | 'Weekly';
+  status:
+    | 'cancelled'
+    | 'closed'
+    | 'draft'
+    | 'failed'
+    | 'partial_success'
+    | 'pending'
+    | 'running'
+    | 'succeeded'
+    | 'waiting_retry';
   storeIds: string[];
   storeNames?: string[];
-  maxItems?: number;
+  supplierId?: string;
+  supplierIds: string[];
+  supplierName?: string;
+  supplierNames?: string[];
+  tagIds?: string[];
+  tagNames?: string[];
+  taskId: string;
+  taskName?: string;
+  weekDay?: string;
 }
 
-async function invokeIpc<T>(channel: string, ...args: any[]): Promise<T> {
-  const result = await window.ipcRenderer.invoke(channel, ...args);
-  if (result && typeof result === 'object' && 'code' in result && 'data' in result) {
-    if (result.code === 0) {
-      return result.data;
-    }
-    throw new Error(result.message || 'IPC Operation Failed');
-  }
-  return result;
-}
-
-function normalizeProcurementTask(task: Partial<ProcurementTask>): ProcurementTask {
-  const id = String(task.id ?? task.taskId ?? '');
-  const supplierIds = Array.isArray(task.supplierIds)
-    ? task.supplierIds.filter(Boolean)
-    : task.supplierId
-      ? [task.supplierId]
-      : [];
-
+function normalizeTask(task: ProcurementTaskEntity): ProcurementTask {
   return {
-    id,
-    taskId: String(task.taskId ?? task.id ?? ''),
-    platform: (task.platform ?? 'Qianniuhua') as ProcurementTask['platform'],
-    supplierIds,
-    supplierId: task.supplierId ?? supplierIds[0],
-    supplierName: task.supplierName,
-    status: (task.status ?? 'Pending') as ProcurementTask['status'],
-    scheduleType: (task.scheduleType ?? 'Instant') as ProcurementTask['scheduleType'],
-    schedule: task.schedule,
+    alertCount: task.alertCount,
+    autoRetryEnabled: task.autoRetryEnabled,
+    id: task.id,
+    lastRunTime: task.lastRunAt,
+    latestRunId: task.latestRunId,
+    latestRunStatus: task.latestRunStatus,
+    maxItems: task.maxItems,
+    platform: task.platform,
+    ruleSetId: task.ruleSetId,
+    schedule:
+      task.scheduleType === 'Weekly' && task.weekDay
+        ? `Weekly ${task.weekDay}`
+        : task.scheduleType,
+    scheduleType: task.scheduleType,
+    status: task.status,
+    storeIds: task.storeIds,
+    storeNames: task.storeNames,
+    supplierId: task.supplierIds[0],
+    supplierIds: task.supplierIds,
+    supplierName: task.supplierNames[0],
+    supplierNames: task.supplierNames,
+    tagIds: task.tagIds,
+    tagNames: task.tagNames,
+    taskId: task.id,
+    taskName: task.taskName,
     weekDay: task.weekDay,
-    lastRunTime: task.lastRunTime,
-    storeIds: Array.isArray(task.storeIds) ? task.storeIds.filter(Boolean) : [],
-    storeNames: Array.isArray(task.storeNames) ? task.storeNames.filter(Boolean) : [],
-    maxItems:
-      typeof task.maxItems === 'number' && Number.isFinite(task.maxItems)
-        ? Math.min(Math.max(Math.floor(task.maxItems), 1), 500)
-        : 500,
   };
 }
 
 export async function getProcurementTaskList(params: any) {
-  const data = await invokeIpc<ProcurementTask[]>('get-tasks', params);
-  return Array.isArray(data) ? data.map(normalizeProcurementTask) : [];
+  const data = await getProcurementTasks(params?.data ?? params ?? {});
+  return Array.isArray(data?.items) ? data.items.map(normalizeTask) : [];
 }
 
 export async function addProcurementTask(data: ProcurementTask) {
-  return invokeIpc('add-task', normalizeProcurementTask(data));
+  return createProcurementTask({
+    autoRetryEnabled: data.autoRetryEnabled,
+    maxItems: data.maxItems,
+    platform: data.platform,
+    ruleSetId: data.ruleSetId,
+    scheduleType: data.scheduleType,
+    status: data.status,
+    storeIds: data.storeIds,
+    supplierIds: data.supplierIds,
+    tagIds: data.tagIds || [],
+    taskName: data.taskName || data.supplierName || '采购任务',
+    weekDay: data.weekDay,
+  });
 }
 
 export async function updateProcurementTask(data: ProcurementTask) {
-  return invokeIpc('update-task', normalizeProcurementTask(data));
+  return updateTaskApi(data.id || data.taskId, {
+    autoRetryEnabled: data.autoRetryEnabled,
+    maxItems: data.maxItems,
+    platform: data.platform,
+    ruleSetId: data.ruleSetId,
+    scheduleType: data.scheduleType,
+    status: data.status,
+    storeIds: data.storeIds,
+    supplierIds: data.supplierIds,
+    tagIds: data.tagIds || [],
+    taskName: data.taskName || data.supplierName || '采购任务',
+    weekDay: data.weekDay,
+  });
 }
 
 export async function deleteProcurementTask(id: string) {
-  return invokeIpc('delete-task', id);
+  return deleteTaskApi(id);
 }
+
+export async function executeTask(id: string) {
+  return executeProcurementTask(id, { triggerSource: 'ui' });
+}
+
+export async function getTaskDetail(id: string) {
+  return getProcurementTaskDetail(id);
+}
+
+export async function getTaskRuns(id: string) {
+  return getProcurementTaskRuns(id);
+}
+
+export type ProcurementTaskRun = ProcurementRun;

@@ -21,6 +21,7 @@ import {
   message,
 } from 'ant-design-vue';
 
+import { getStoreList } from '#/api/store';
 import { readFileAsBuffer } from '#/utils/file';
 
 interface ProductMasterListItem {
@@ -205,13 +206,17 @@ async function loadStatus() {
 
 async function loadFilterOptions() {
   try {
+    const stores = await getStoreList({ page: 1, pageSize: 500 });
     const result = await window.ipcRenderer.invoke(
       'get-product-master-filter-options',
     );
     if (!result.success) {
       throw new Error(result.message || '获取商品总表筛选项失败');
     }
-    storeOptions.value = result.data?.storeOptions || [];
+    storeOptions.value = (stores || []).map((item: any) => ({
+      label: item.storeName,
+      value: item.storeName,
+    }));
     supplierOptions.value = result.data?.supplierOptions || [];
   } catch (error: any) {
     message.error(error.message || '获取商品总表筛选项失败');

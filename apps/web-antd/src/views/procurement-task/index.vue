@@ -75,7 +75,6 @@ const form = reactive({
   maxItems: 500,
   platform: 'Aoxiang',
   scheduleType: 'Instant',
-  status: 'pending',
   storeIds: [] as string[],
   supplierIds: [] as string[],
   tagIds: [] as string[],
@@ -120,7 +119,6 @@ function resetForm() {
   form.maxItems = 500;
   form.platform = 'Aoxiang';
   form.scheduleType = 'Instant';
-  form.status = 'pending';
   form.storeIds = [];
   form.supplierIds = [];
   form.tagIds = [];
@@ -156,7 +154,6 @@ function handleEdit(task: ProcurementTask) {
   form.maxItems = task.maxItems;
   form.platform = task.platform;
   form.scheduleType = task.scheduleType;
-  form.status = task.status;
   form.storeIds = [...task.storeIds];
   form.supplierIds = [...task.supplierIds];
   form.tagIds = [...task.tagIds];
@@ -170,7 +167,6 @@ async function handleSubmit() {
     maxItems: form.maxItems,
     platform: form.platform,
     scheduleType: form.scheduleType,
-    status: form.status,
     storeIds: form.storeIds,
     supplierIds: form.supplierIds,
     tagIds: form.tagIds,
@@ -182,7 +178,7 @@ async function handleSubmit() {
     message.success('采购任务已更新');
   } else {
     await createProcurementTask(payload);
-    message.success('采购任务已创建');
+    message.success('采购任务已创建，状态将由系统在执行时自动更新');
   }
 
   modalOpen.value = false;
@@ -366,6 +362,19 @@ const headerOptions = computed(() => [
   },
 ]);
 
+function normalizeNameList(value?: string | string[]) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => `${item || ''}`.trim());
+  }
+  const text = `${value || ''}`.trim();
+  return text ? [text] : [];
+}
+
+function formatNameList(value?: string | string[]) {
+  const list = normalizeNameList(value);
+  return list.length > 0 ? list.join('、') : '-';
+}
+
 const taskColumns = computed(() => [
   { title: '任务名称', dataIndex: 'taskName', key: 'taskName', width: 220 },
   {
@@ -373,11 +382,11 @@ const taskColumns = computed(() => [
     dataIndex: 'platform',
     key: 'platform',
     width: 100,
-    render: (value: string) =>
+    render: (_h: any, { text }: { text: string }) =>
       h(
         Tag,
-        { color: value === 'Aoxiang' ? 'blue' : 'cyan' },
-        { default: () => (value === 'Aoxiang' ? '翱象' : '牵牛花') },
+        { color: text === 'Aoxiang' ? 'blue' : 'cyan' },
+        { default: () => (text === 'Aoxiang' ? '翱象' : '牵牛花') },
       ),
   },
   {
@@ -385,26 +394,29 @@ const taskColumns = computed(() => [
     dataIndex: 'supplierNames',
     key: 'supplierNames',
     width: 220,
-    render: (value: string[] = []) => value.join('、') || '-',
+    render: (_h: any, { text }: { text?: string | string[] }) => formatNameList(text),
   },
   {
     title: '门店',
     dataIndex: 'storeNames',
     key: 'storeNames',
     width: 220,
-    render: (value: string[] = []) => value.join('、') || '-',
+    render: (_h: any, { text }: { text?: string | string[] }) => formatNameList(text),
   },
   {
     title: '标签',
     dataIndex: 'tagNames',
     key: 'tagNames',
     width: 180,
-    render: (value: string[] = []) =>
+    render: (_h: any, { text }: { text?: string | string[] }) =>
       h(
         Space,
         { wrap: true },
         {
-          default: () => value.map((tagName) => h(Tag, { key: tagName }, { default: () => tagName })),
+          default: () =>
+            normalizeNameList(text).map((tagName) =>
+              h(Tag, { key: tagName }, { default: () => tagName }),
+            ),
         },
       ),
   },
@@ -413,16 +425,16 @@ const taskColumns = computed(() => [
     dataIndex: 'status',
     key: 'status',
     width: 120,
-    render: (value: string) =>
-      h(Tag, { color: statusColor(value) }, { default: () => value }),
+    render: (_h: any, { text }: { text: string }) =>
+      h(Tag, { color: statusColor(text) }, { default: () => text }),
   },
   {
     title: '最近运行',
     dataIndex: 'latestRunStatus',
     key: 'latestRunStatus',
     width: 140,
-    render: (value: string) =>
-      h(Tag, { color: statusColor(value || '') }, { default: () => value || '-' }),
+    render: (_h: any, { text }: { text: string }) =>
+      h(Tag, { color: statusColor(text || '') }, { default: () => text || '-' }),
   },
   { title: '提醒', dataIndex: 'alertCount', key: 'alertCount', width: 80 },
   { title: '上次执行', dataIndex: 'lastRunAt', key: 'lastRunAt', width: 180 },
@@ -431,7 +443,7 @@ const taskColumns = computed(() => [
     key: 'action',
     width: 260,
     fixed: 'right' as const,
-    render: (_value: unknown, row: ProcurementTask) =>
+    render: (_h: any, { row }: { row: ProcurementTask }) =>
       h(
         Space,
         { wrap: true },
@@ -549,6 +561,7 @@ onMounted(() => {
           </div>
           <div class="mt-2 text-[12px] text-[#64748b]">
             系统会根据平台、供应商和门店范围自动生成，不需要手动填写。
+            任务创建后默认待执行，点击“执行”后由系统自动推进状态。
           </div>
         </Form.Item>
         <Form.Item label="平台">
@@ -598,9 +611,6 @@ onMounted(() => {
             ]"
           />
         </Form.Item>
-        <Form.Item label="任务状态">
-          <Select v-model:value="form.status" :options="statusOptions" />
-        </Form.Item>
         <Form.Item label="单次采购限制">
           <Input v-model:value="form.maxItems" type="number" />
         </Form.Item>
@@ -636,13 +646,13 @@ onMounted(() => {
             {{ currentTaskDetail.autoRetryEnabled ? '启用' : '禁用' }}
           </Descriptions.Item>
           <Descriptions.Item label="供应商">
-            {{ currentTaskDetail.supplierNames.join('、') || '-' }}
+            {{ formatNameList(currentTaskDetail.supplierNames) }}
           </Descriptions.Item>
           <Descriptions.Item label="门店">
-            {{ currentTaskDetail.storeNames.join('、') || '-' }}
+            {{ formatNameList(currentTaskDetail.storeNames) }}
           </Descriptions.Item>
           <Descriptions.Item label="标签">
-            {{ currentTaskDetail.tagNames.join('、') || '-' }}
+            {{ formatNameList(currentTaskDetail.tagNames) }}
           </Descriptions.Item>
           <Descriptions.Item label="提醒数">
             {{ currentTaskDetail.alertCount }}

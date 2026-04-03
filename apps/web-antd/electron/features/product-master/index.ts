@@ -230,6 +230,10 @@ function getProcurementDimensions(record: ProductMasterRecord) {
   };
 }
 
+export function getProductMasterProcurementPricing(record: ProductMasterRecord) {
+  return getProcurementDimensions(record);
+}
+
 function getDefaultRuntimeRoot() {
   if (process.env.PRODUCT_MASTER_HOME) {
     return process.env.PRODUCT_MASTER_HOME;

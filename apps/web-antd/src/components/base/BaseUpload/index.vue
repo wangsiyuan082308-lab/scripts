@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UploadFile, UploadProps } from 'ant-design-vue';
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { Button, message, Upload } from 'ant-design-vue';
 
@@ -90,6 +90,7 @@ const emit = defineEmits<{
 
 // 文件列表
 const fileList = ref<UploadFile[]>([]);
+const syncingFromModel = ref(false);
 
 // 监听外部传入的文件列表
 const modelValue = defineModel<UploadFile[]>('fileList', { default: [] });
@@ -97,9 +98,15 @@ const modelValue = defineModel<UploadFile[]>('fileList', { default: [] });
 watch(
   modelValue,
   (newVal) => {
-    if (newVal) {
-      fileList.value = newVal;
+    if (!newVal || newVal === fileList.value) {
+      return;
     }
+
+    syncingFromModel.value = true;
+    fileList.value = newVal;
+    void nextTick(() => {
+      syncingFromModel.value = false;
+    });
   },
   { immediate: true, deep: true },
 );
@@ -107,6 +114,9 @@ watch(
 watch(
   fileList,
   (newVal) => {
+    if (syncingFromModel.value) {
+      return;
+    }
     modelValue.value = newVal;
     emit('update:fileList', newVal);
   },

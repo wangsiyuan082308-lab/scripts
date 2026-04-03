@@ -8,6 +8,10 @@ const props = defineProps({
     type: [String, Function],
     default: 'id',
   },
+  rowSelection: {
+    type: Object,
+    default: null,
+  },
   columns: {
     type: Array,
     default: () => [],
@@ -71,6 +75,7 @@ const onChange = (pagination, filters, sorter, extra) => {
     :loading="loading"
     :dataSource="dataSource"
     :row-key="rowKey"
+    :row-selection="rowSelection || undefined"
     size="small"
     @change="onChange"
   >

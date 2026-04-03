@@ -63,7 +63,25 @@ interface QianniuhuaAutomationReport {
   totalRounds: number;
 }
 
-const DEFAULT_BACKEND_BASE_URL = 'http://127.0.0.1:3030';
+interface AoxiangAutomationReport {
+  date: string;
+  durationMinutes: number;
+  endTime: string;
+  errorMessage: string;
+  failedCount: number;
+  failedOrders: Array<Record<string, unknown>>;
+  noStockSkus: Array<Record<string, unknown>>;
+  planOrderId: string;
+  platform: 'aoixiang';
+  startTime: string;
+  stepAddAudit?: Record<string, unknown>;
+  steps: Array<Record<string, unknown>>;
+  successCount: number;
+  supplier: string;
+  totalItems: number;
+}
+
+const DEFAULT_BACKEND_BASE_URL = 'http://120.55.244.232';
 const RUNNING_TASKS = new Map<string, Promise<void>>();
 
 function normalizeText(value: unknown) {
@@ -96,10 +114,29 @@ function getQianniuhuaScriptPath() {
   );
 }
 
+function getAoxiangScriptPath() {
+  return path.resolve(
+    __dirname,
+    'automation',
+    'aoixiang',
+    'auto-purchase-v4.ts',
+  );
+}
+
 function getQianniuhuaReportDir() {
   return path.resolve(
     __dirname,
     'automation',
+    'data',
+    'reports',
+  );
+}
+
+function getAoxiangReportDir() {
+  return path.resolve(
+    __dirname,
+    'automation',
+    'aoixiang',
     'data',
     'reports',
   );
@@ -133,6 +170,24 @@ function buildUnsupportedMessage(task: ProcurementTask) {
     `门店: ${stores.length > 0 ? stores.join('、') : '未指定门店'}`,
     '原因: 翱象桌面端真实执行链路尚未完整迁入当前仓库，当前先回写失败状态，避免任务长期停留在 running。',
   ].join(' ');
+}
+
+function parseAoxiangCheckSummary(report: AoxiangAutomationReport) {
+  const step = report.steps.find((item) => item?.step === 'check') as
+    | undefined
+    | {
+        data?: {
+          failedCount?: number;
+          failedOrders?: Array<Record<string, unknown>>;
+          pendingCount?: number;
+          storeAmounts?: Record<string, { amount?: number }>;
+          successCount?: number;
+          successOrders?: Array<{ storeName?: string }>;
+          totalAmount?: number;
+        };
+      };
+
+  return step?.data || {};
 }
 
 function inferStageFromLine(line: string) {
@@ -192,6 +247,71 @@ function mapQianniuhuaReportToBackendPayload(
     successCount,
     supplierName: pickSupplierName(task),
     totalAmount: Number(report.totalAmount || 0),
+  };
+}
+
+function mapAoxiangReportToBackendPayload(
+  task: ProcurementTask,
+  report: AoxiangAutomationReport,
+): BackendReportPayload {
+  const checkSummary = parseAoxiangCheckSummary(report);
+  const noStockCount = Array.isArray(report.noStockSkus) ? report.noStockSkus.length : 0;
+  const failedCount = Math.max(
+    Number(report.failedCount || 0),
+    Number(checkSummary.failedCount || 0),
+  );
+  const successCount = Math.max(
+    Number(report.successCount || 0),
+    Number(checkSummary.successCount || 0),
+  );
+  const pendingCount = Number(checkSummary.pendingCount || 0);
+  const itemCount = Math.max(
+    Number(report.totalItems || 0),
+    successCount + failedCount + pendingCount,
+  );
+  const totalAmount =
+    Number(checkSummary.totalAmount || 0) ||
+    Object.values(checkSummary.storeAmounts || {}).reduce((sum, item) => {
+      return sum + Number(item?.amount || 0);
+    }, 0);
+  const successOrderStores = Array.isArray(checkSummary.successOrders)
+    ? checkSummary.successOrders
+        .map((item) => normalizeText(item?.storeName))
+        .filter(Boolean)
+    : [];
+  const failedOrderStores = Array.isArray(report.failedOrders)
+    ? report.failedOrders
+        .map((item) => normalizeText((item as any)?.storeName))
+        .filter(Boolean)
+    : [];
+  const storeCount = new Set([
+    ...pickStoreNames(task),
+    ...successOrderStores,
+    ...failedOrderStores,
+  ]).size;
+
+  let status: BackendRunStatus = 'succeeded';
+  if (noStockCount > 0) {
+    status = 'waiting_retry';
+  } else if (failedCount > 0 && successCount > 0) {
+    status = 'partial_success';
+  } else if (failedCount > 0 || normalizeText(report.errorMessage)) {
+    status = 'failed';
+  }
+
+  return {
+    failedCount,
+    itemCount,
+    noStockCount,
+    notifyStatus: 'pending',
+    orderCount: successCount + failedCount + pendingCount,
+    platform: task.platform,
+    report: report as unknown as Record<string, unknown>,
+    status,
+    storeCount,
+    successCount,
+    supplierName: pickSupplierName(task),
+    totalAmount,
   };
 }
 
@@ -306,36 +426,40 @@ async function waitForChildCompletion(
     return;
   }
 
-  if (task.platform === 'Aoxiang') {
-    await postFailureAndExit(
-      backendClient,
-      task,
-      runId,
-      buildUnsupportedMessage(task),
-    );
-    return;
-  }
-
-  const scriptPath = getQianniuhuaScriptPath();
+  const isAoxiang = task.platform === 'Aoxiang';
+  const scriptPath = isAoxiang ? getAoxiangScriptPath() : getQianniuhuaScriptPath();
   if (!fs.existsSync(scriptPath)) {
     await postFailureAndExit(
       backendClient,
       task,
       runId,
-      `桌面端执行失败：未找到牵牛花自动化入口 ${scriptPath}`,
+      `桌面端执行失败：未找到${isAoxiang ? '翱象' : '牵牛花'}自动化入口 ${scriptPath}`,
     );
     return;
   }
 
   const args = ['exec', 'tsx', scriptPath, '--supplier', supplierName];
-  for (const storeName of storeNames) {
-    args.push('--store', storeName);
+  if (isAoxiang) {
+    if (storeNames.length > 0) {
+      storeNames.forEach((storeName, index) => {
+        args.push(
+          '--store',
+          `${storeName}|${normalizeText(task.storeIds?.[index])}|${Number(task.maxItems || 0)}`,
+        );
+      });
+    } else if (task.maxItems && task.maxItems > 0) {
+      args.push('--max-per-store', String(task.maxItems));
+    }
+  } else {
+    for (const storeName of storeNames) {
+      args.push('--store', storeName);
+    }
   }
-  if (task.maxItems && task.maxItems > 0) {
+  if (!isAoxiang && task.maxItems && task.maxItems > 0) {
     args.push('--max-items', String(task.maxItems));
   }
 
-  const reportDir = getQianniuhuaReportDir();
+  const reportDir = isAoxiang ? getAoxiangReportDir() : getQianniuhuaReportDir();
   const reportCandidatesBefore = fs.existsSync(reportDir)
     ? new Set(fs.readdirSync(reportDir))
     : new Set<string>();
@@ -448,10 +572,12 @@ async function waitForChildCompletion(
         if (reportPath && fs.existsSync(reportPath)) {
           const report = JSON.parse(
             fs.readFileSync(reportPath, 'utf-8'),
-          ) as QianniuhuaAutomationReport;
+          ) as AoxiangAutomationReport | QianniuhuaAutomationReport;
           await backendClient.saveRunReport(
             runId,
-            mapQianniuhuaReportToBackendPayload(task, report),
+            isAoxiang
+              ? mapAoxiangReportToBackendPayload(task, report as AoxiangAutomationReport)
+              : mapQianniuhuaReportToBackendPayload(task, report as QianniuhuaAutomationReport),
           );
           await backendClient.appendRunLog(runId, {
             action: 'desktop-report',
@@ -531,11 +657,11 @@ async function startTaskExecution(task: ProcurementTask) {
     message:
       task.platform === 'Qianniuhua'
         ? '桌面端已开始接管牵牛花采购任务，运行日志会持续回写到采购中心。'
-        : '桌面端已接管任务，并会把不支持原因回写到采购中心。',
+        : '桌面端已开始接管翱象采购任务，运行日志会持续回写到采购中心。',
   };
 }
 
-export { inferStageFromLine, mapQianniuhuaReportToBackendPayload };
+export { inferStageFromLine, mapAoxiangReportToBackendPayload, mapQianniuhuaReportToBackendPayload };
 
 export const ProcurementTaskRunner = {
   async executeTask(task: ProcurementTask) {

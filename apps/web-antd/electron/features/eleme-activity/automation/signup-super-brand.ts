@@ -173,18 +173,13 @@ async function main() {
       await page.waitForTimeout(5000);
     }
 
-    // 6. 先切到：品牌活动 -> 未报名活动 -> 超级品牌红包（含计数）
-    log('info', '切换筛选：品牌活动 -> 未报名活动 -> 超级品牌红包...');
+    // 6. 切到：品牌活动 -> 超级品牌红包（含计数）
+    // 超级品牌红包不依赖“未报名活动”分类，应直接在品牌活动视图下处理。
+    log('info', '切换筛选：品牌活动 -> 超级品牌红包...');
     try {
       const brandTab = targetFrame.getByText(/品牌活动/).first();
       if (await brandTab.count() > 0) {
         await brandTab.click();
-        await page.waitForTimeout(2500);
-      }
-
-      const unsignedTab = targetFrame.getByText(/未报名活动/).first();
-      if (await unsignedTab.count() > 0) {
-        await unsignedTab.click();
         await page.waitForTimeout(2500);
       }
 
@@ -193,7 +188,7 @@ async function main() {
       if (await sbFilter.count() > 0) {
         await sbFilter.click();
         await page.waitForTimeout(3000);
-        log('info', '已切换到"未报名活动 / 超级品牌红包"视图');
+        log('info', '已切换到"品牌活动 / 超级品牌红包"视图');
       } else {
         log('warn', '未找到"超级品牌红包(计数)"筛选，继续当前视图扫描');
       }

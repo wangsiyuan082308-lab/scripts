@@ -1,14 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 import { PurchaseReport } from './types-v2';
-import { createLogger, Logger } from '@oby/logger';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const LOGS_DIR = path.join(ROOT, 'logs');
 const REPORTS_DIR = path.join(ROOT, 'data/reports');
 
 const startTime = Date.now();
-let _logger: Logger | null = null;
 
 export type ObsStage =
   | 'flow.main'
@@ -24,12 +24,11 @@ export interface ObsFields {
 }
 
 /** 初始化共享日志（在main入口调用一次） */
-export function initLogger(): Logger {
-  _logger = createLogger('qianniuhua-purchase', { console: false });
-  return _logger;
+export function initLogger() {
+  return null;
 }
 
-export function getLogger(): Logger | null { return _logger; }
+export function getLogger() { return null; }
 
 export function log(msg: string) {
   const now = new Date();
@@ -41,12 +40,6 @@ export function log(msg: string) {
   const logFile = path.join(LOGS_DIR, `purchase_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.log`);
   fs.appendFileSync(logFile, line + '\n');
 
-  // 同步写入结构化日志
-  if (_logger) {
-    const level = msg.includes('❌') || msg.includes('失败') ? 'error'
-                : msg.includes('⚠️') || msg.includes('警告') ? 'warn' : 'info';
-    _logger[level]('log', { message: msg, elapsed_s: elapsed });
-  }
 }
 
 export function obs(level: 'info' | 'warn' | 'error', message: string, fields: ObsFields, extra: Record<string, any> = {}) {
@@ -67,9 +60,6 @@ export function obs(level: 'info' | 'warn' | 'error', message: string, fields: O
   const obsFile = path.join(LOGS_DIR, `obs_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.jsonl`);
   fs.appendFileSync(obsFile, JSON.stringify(obsLine) + '\n');
 
-  if (_logger) {
-    _logger[level]('obs', payload);
-  }
 }
 
 export function savePurchaseReport(report: PurchaseReport): string {

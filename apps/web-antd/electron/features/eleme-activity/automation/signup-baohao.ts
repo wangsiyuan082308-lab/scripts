@@ -2,14 +2,17 @@
  * 爆好价活动自动报名（最终闭环版）
  * 流程：活动列表 → 详情报名 → 选择门店 → 导出商品数据 → 转换Excel → 上传 → 提交
  */
-import { chromium, Frame, Page, Download } from 'playwright';
+import { chromium, Frame, Page, Download, Request, Response } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as ExcelJS from 'exceljs';
+import ExcelJS from 'exceljs';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { getTargetFrame, clickSignupButton, selectStoresAndNext } from './shared-utils';
-import { transformBaohaojia } from './transform-baohao';
+import { transformBaohaojiaWithArtifacts } from './transform-baohao';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -17,13 +20,113 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
 const LOG_FILE = path.join(LOG_DIR, `baohao_${today}.log`);
-const ACTIVITY_URL = 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/';
+const ACTIVITY_URL_BASE = 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next';
 const KNOWN_BAOHAO_KEYWORDS = [
   '宁波-热销品-3-6月',
   '宁波-畅销品爆好价-3-6月',
   '宁波-高搜流量品-3-6月',
   '【组包】宁波-高搜流量品-3-6月',
 ];
+
+type RuntimeOptions = {
+  continueAction?: 'continue_review' | 'rerun_recorded';
+  initialStock: number;
+  continueManifestPath?: string;
+  reportPath?: string;
+  reviewMode: 'auto' | 'manual';
+  signupMode: 'all' | 'repeat_only' | 'unsigned_only';
+};
+
+function parseRuntimeOptions(): RuntimeOptions {
+  let initialStock = 9999;
+  let reviewMode: 'auto' | 'manual' = 'auto';
+  let signupMode: 'all' | 'repeat_only' | 'unsigned_only' = 'all';
+  let reportPath = '';
+  let continueManifestPath = '';
+  let continueAction: 'continue_review' | 'rerun_recorded' = 'continue_review';
+
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const arg = process.argv[index];
+
+    if (arg === '--initial-stock' && process.argv[index + 1]) {
+      const parsed = Number.parseInt(process.argv[index + 1], 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        initialStock = parsed;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--review-mode' && process.argv[index + 1]) {
+      const raw = `${process.argv[index + 1] || ''}`.trim();
+      if (raw === 'manual' || raw === 'auto') {
+        reviewMode = raw;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--signup-mode' && process.argv[index + 1]) {
+      const raw = `${process.argv[index + 1] || ''}`.trim();
+      if (raw === 'all' || raw === 'repeat_only' || raw === 'unsigned_only') {
+        signupMode = raw;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--report-path' && process.argv[index + 1]) {
+      reportPath = `${process.argv[index + 1] || ''}`.trim();
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--continue-manifest' && process.argv[index + 1]) {
+      continueManifestPath = `${process.argv[index + 1] || ''}`.trim();
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--continue-action' && process.argv[index + 1]) {
+      const raw = `${process.argv[index + 1] || ''}`.trim();
+      if (raw === 'continue_review' || raw === 'rerun_recorded') {
+        continueAction = raw;
+      }
+      index += 1;
+    }
+  }
+
+  return {
+    continueAction: continueManifestPath ? continueAction : undefined,
+    continueManifestPath: continueManifestPath || undefined,
+    initialStock,
+    reportPath: reportPath || undefined,
+    reviewMode,
+    signupMode,
+  };
+}
+
+type ActivitySourceTab = '已报名活动' | '未报名活动';
+type ActivityListTab = '全部活动' | ActivitySourceTab;
+
+type ScannedActivity = {
+  fullText: string;
+  hasSignupBtn: boolean;
+  id: string;
+  index: number;
+  name: string;
+  sourceTab: ActivitySourceTab;
+};
+
+type ContinueManifest = {
+  activities: Array<{
+    activityId?: string;
+    activityName: string;
+    detailRoute?: string;
+    sourceTab: ActivitySourceTab;
+    uploadPath?: string;
+  }>;
+};
 
 function log(level: string, msg: string, data?: any) {
   const ts = new Date().toISOString();
@@ -44,14 +147,75 @@ function isTarget(name: string, fullText: string): boolean {
   return true;
 }
 
+function extractActivityIdFromText(value: string) {
+  const patterns = [
+    /activityId["'=:\s]+(\d{5,})/iu,
+    /"activityId"\s*:\s*"?(\d{5,})"?/iu,
+    /activityId%22\s*:\s*%22?(\d{5,})/iu,
+    /activityId=(\d{5,})/iu,
+    /activity_id=(\d{5,})/iu,
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return '';
+}
+
+function tryExtractActivityIdFromRequest(request?: Request | null) {
+  if (!request) return '';
+  const url = decodeURIComponent(request.url() || '');
+  const direct = extractActivityIdFromText(url);
+  if (direct) return direct;
+
+  const postData = decodeURIComponent(request.postData() || '');
+  const fromPostData = extractActivityIdFromText(postData);
+  if (fromPostData) return fromPostData;
+
+  try {
+    const payload = request.postDataJSON?.();
+    const raw = JSON.stringify(payload);
+    return extractActivityIdFromText(raw);
+  } catch {
+    return '';
+  }
+}
+
+async function getActivityContext(page: Page, frame: Frame) {
+  const pageUrl = decodeURIComponent(page.url() || '');
+  const frameUrl = decodeURIComponent(frame.url() || '');
+  const pageHref = await page
+    .evaluate(() => decodeURIComponent(window.location.href || ''))
+    .catch(() => '');
+  const frameHref = await frame
+    .evaluate(() => decodeURIComponent(window.location.href || ''))
+    .catch(() => '');
+
+  const activityId =
+    extractActivityIdFromText(frameUrl) ||
+    extractActivityIdFromText(pageUrl) ||
+    extractActivityIdFromText(frameHref) ||
+    extractActivityIdFromText(pageHref) ||
+    '';
+
+  return {
+    activityId,
+    detailRoute: frameUrl || frameHref || pageUrl || pageHref,
+  };
+}
+
 async function saveShot(page: Page, name: string): Promise<string> {
   const file = `${name}_${Date.now()}.png`;
   await page.screenshot({ path: path.join(LOG_DIR, file), fullPage: false }).catch(() => {});
   return file;
 }
 
+function buildActivityUrl() {
+  return `${ACTIVITY_URL_BASE}?codexReload=${Date.now()}#/pc/platformActivitiesPc/`;
+}
+
 async function ensureActivityPage(page: Page): Promise<void> {
-  await page.goto(ACTIVITY_URL, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(buildActivityUrl(), { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(8000);
 
   if (page.url().includes('login') || page.url().includes('sso')) {
@@ -65,13 +229,20 @@ async function ensureActivityPage(page: Page): Promise<void> {
   await page.waitForTimeout(3000);
 }
 
-async function scanCards(frame: Frame) {
+async function scanCards(frame: Frame, sourceTab: ActivitySourceTab): Promise<ScannedActivity[]> {
   return frame.evaluate(() => {
+    const normalizeCardIdentity = (rawText: string) => {
+      return rawText
+        .replace(/\s+/g, ' ')
+        .replace(/查看详情|立即报名|追加报名|继续报名|报名中|已报名|下载查看|刷新/gu, '')
+        .trim();
+    };
     const cards = Array.from(document.querySelectorAll('.zs-act-view-v2, .zs-act-view, [class*="act-view"]'));
     return cards.map((card, i) => {
       const text = (card.textContent || '').replace(/\s+/g, ' ');
-      const id = text.substring(0, 120);
-      const name = text.substring(0, 120).trim();
+      const normalizedText = normalizeCardIdentity(text);
+      const id = normalizedText.substring(0, 200);
+      const name = normalizedText.substring(0, 160).trim();
       const status = text.includes('已结束') ? 'expired' : text.includes('已报名') ? 'signed_up' : 'available';
       const hasSignupBtn = Array.from(card.querySelectorAll('button, a, span')).some(el => {
         const t = (el.textContent || '').trim();
@@ -79,7 +250,12 @@ async function scanCards(frame: Frame) {
       });
       return { index: i, name, fullText: text.substring(0, 800), status, id, hasSignupBtn };
     });
-  });
+  }).then((items) =>
+    items.map((item) => ({
+      ...item,
+      sourceTab,
+    })),
+  );
 }
 
 async function toPage(frame: Frame, pageNum: number): Promise<void> {
@@ -91,28 +267,55 @@ async function toPage(frame: Frame, pageNum: number): Promise<void> {
 }
 
 async function openDownloadCenter(page: Page, frame: Frame): Promise<void> {
-  const clickedInPage = await page.evaluate(() => {
-    const findAndClick = () => {
-      const els = Array.from(document.querySelectorAll('a, button, span, div'));
-      for (const el of els) {
-        const text = (el.textContent || '').trim();
-        const rect = el.getBoundingClientRect();
-        const visible = rect.width > 0 && rect.height > 0;
-        if (!visible || !text.includes('下载中心')) continue;
-
-        const clickable =
-          (el.closest('button, a, [role="button"], .ant-btn, .ant-dropdown-trigger') as HTMLElement | null) ||
-          (el as HTMLElement);
-        clickable.click();
-        return true;
+  const tryOpen = async (targetPage: Page, targetFrame: Frame) => {
+    const clickedIcon = await targetPage.evaluate(() => {
+      const selectors = [
+        '.eb-task-open',
+        '[class*="task-open"]',
+        '[class*="download-center"]',
+        '[aria-label*="下载"]',
+      ];
+      for (const selector of selectors) {
+        const target = document.querySelector(selector) as HTMLElement | null;
+        if (!target) continue;
+        const rect = target.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        target.click();
+        return selector;
       }
-      return false;
-    };
-    return findAndClick();
-  });
+      return '';
+    }).catch(() => '');
 
-  if (!clickedInPage) {
-    const clickedInFrame = await frame.evaluate(() => {
+    if (clickedIcon) {
+      log('info', '  → 已点击下载中心图标', { selector: clickedIcon });
+      await targetPage.waitForTimeout(1200);
+      return true;
+    }
+
+    const clickDownloadView = async (surface: Page | Frame) => {
+      return surface.evaluate(() => {
+        const isVisible = (el: Element) => {
+          const rect = (el as HTMLElement).getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+
+        const nodes = Array.from(document.querySelectorAll('button, a, span, div, [role="button"], .ant-btn'));
+        for (const node of nodes) {
+          const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!isVisible(node) || !text) continue;
+          if (text === '下载查看' || text.includes('下载查看')) {
+            const clickable =
+              (node.closest('button, a, [role="button"], .ant-btn') as HTMLElement | null) ||
+              (node as HTMLElement);
+            clickable.click();
+            return text;
+          }
+        }
+        return '';
+      }).catch(() => '');
+    };
+
+    const clickedInPage = await targetPage.evaluate(() => {
       const findAndClick = () => {
         const els = Array.from(document.querySelectorAll('a, button, span, div'));
         for (const el of els) {
@@ -132,12 +335,52 @@ async function openDownloadCenter(page: Page, frame: Frame): Promise<void> {
       return findAndClick();
     });
 
-    if (!clickedInFrame) {
-      throw new Error('未找到下载中心入口');
+    if (!clickedInPage) {
+      const clickedInFrame = await targetFrame.evaluate(() => {
+        const findAndClick = () => {
+          const els = Array.from(document.querySelectorAll('a, button, span, div'));
+          for (const el of els) {
+            const text = (el.textContent || '').trim();
+            const rect = el.getBoundingClientRect();
+            const visible = rect.width > 0 && rect.height > 0;
+            if (!visible || !text.includes('下载中心')) continue;
+
+            const clickable =
+              (el.closest('button, a, [role="button"], .ant-btn, .ant-dropdown-trigger') as HTMLElement | null) ||
+              (el as HTMLElement);
+            clickable.click();
+            return true;
+          }
+          return false;
+        };
+        return findAndClick();
+      });
+
+      if (!clickedInFrame) {
+        const clickedDownloadView =
+          (await clickDownloadView(targetFrame)) || (await clickDownloadView(targetPage));
+        if (!clickedDownloadView) {
+          return false;
+        }
+        log('info', '  → 已点击下载查看入口', { text: clickedDownloadView });
+      }
     }
+
+    await targetPage.waitForTimeout(1200);
+    return true;
+  };
+
+  if (await tryOpen(page, frame)) {
+    return;
   }
 
-  await page.waitForTimeout(1200);
+  await ensureActivityPage(page);
+  const refreshedFrame = await getTargetFrame(page);
+  if (await tryOpen(page, refreshedFrame)) {
+    return;
+  }
+
+  throw new Error('未找到下载中心入口');
 }
 
 async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download> {
@@ -147,6 +390,56 @@ async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download
       page.waitForTimeout(waitMs + 200).then(() => null),
     ]);
     return dl;
+  };
+
+  const clickTaskDownload = async (surface: Page | Frame) => {
+    return surface.evaluate(() => {
+      const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+      const isVisible = (element: Element) => {
+        const rect = (element as HTMLElement).getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+
+      const wrappers = Array.from(
+        document.querySelectorAll(
+          '.task-item-wrapper, .task-item, [class*="task-item"], [class*="download-item"]',
+        ),
+      ).filter(isVisible);
+
+      const targetWrapper = wrappers.find((wrapper) => {
+        const text = normalize(wrapper.textContent || '');
+        if (!text) return false;
+        const looksLikeTemplate = /模板/.test(text);
+        const looksLikeExportData =
+          /导出.*商品数据|商品数据|邀约商品/.test(text) && !looksLikeTemplate;
+        return looksLikeExportData;
+      });
+
+      if (targetWrapper) {
+        (targetWrapper as HTMLElement).dispatchEvent(
+          new MouseEvent('mouseover', { bubbles: true }),
+        );
+        const action =
+          Array.from(
+            targetWrapper.querySelectorAll(
+              '.task-item-btn, button, a, [role="button"], .ant-btn, .ant-btn-link',
+            ),
+          )
+            .map((item) => item as HTMLElement)
+            .find((item) => {
+              const text = normalize(item.textContent || '');
+              return isVisible(item) && /(下载|重新下载|立即下载|下载文件)/.test(text);
+            }) ||
+          (targetWrapper.querySelector('.task-item-btn') as HTMLElement | null);
+
+        if (action) {
+          action.click();
+          return `clicked-task:${normalize(targetWrapper.textContent || '')}`;
+        }
+      }
+
+      return '';
+    });
   };
 
   const clickFromPage = async () => {
@@ -159,7 +452,7 @@ async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download
       const normalize = (t: string) => t.replace(/\s+/g, ' ').trim();
       const actionText = /^(立即下载|重新下载|下载文件|下载)$/;
       const weakActionText = /(下载|重下|重新)/;
-      const nonActionText = /(下载中心|下载已完成|已下载|下载完成|导出邀约商品数据|任务详情|记录|时间|状态|文件名)/;
+      const nonActionText = /(下载中心|下载已完成|已下载|下载完成|任务详情|记录|时间|状态|文件名|模板)/;
 
       const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], .ant-btn, .ant-btn-link'));
 
@@ -209,7 +502,7 @@ async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download
       const normalize = (t: string) => t.replace(/\s+/g, ' ').trim();
       const actionText = /^(立即下载|重新下载|下载文件|下载)$/;
       const weakActionText = /(下载|重下|重新)/;
-      const nonActionText = /(下载中心|下载已完成|已下载|下载完成|导出邀约商品数据|任务详情|记录|时间|状态|文件名)/;
+      const nonActionText = /(下载中心|下载已完成|已下载|下载完成|任务详情|记录|时间|状态|文件名|模板)/;
 
       const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], .ant-btn, .ant-btn-link'));
 
@@ -249,25 +542,67 @@ async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download
     });
   };
 
-  for (let i = 1; i <= 25; i++) {
-    const pageResult = await clickFromPage();
-    const frameResult = pageResult.startsWith('clicked:') ? 'skip' : await clickFromFrame();
+  const readTaskPanelSnapshot = async () => {
+    return page.evaluate(() => {
+      const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+      const wrappers = Array.from(
+        document.querySelectorAll(
+          '.task-item-wrapper, .task-item, [class*="task-item"], [class*="download-item"]',
+        ),
+      ).map((item) => normalize(item.textContent || '')).filter(Boolean);
+      return wrappers.slice(0, 10);
+    }).catch(() => [] as string[]);
+  };
 
-    if (pageResult.startsWith('clicked:') || frameResult.startsWith('clicked:')) {
+  for (let i = 1; i <= 120; i++) {
+    const pageTaskResult = await clickTaskDownload(page).catch(() => '');
+    const frameTaskResult = pageTaskResult
+      ? ''
+      : await clickTaskDownload(frame).catch(() => '');
+
+    let pageResult = pageTaskResult;
+    let frameResult = frameTaskResult;
+
+    if (!pageResult && !frameResult) {
+      pageResult = await clickFromPage();
+      frameResult = pageResult.startsWith('clicked:') ? 'skip' : await clickFromFrame();
+    }
+
+    if (
+      pageResult.startsWith('clicked:') ||
+      frameResult.startsWith('clicked:') ||
+      pageResult.startsWith('clicked-task:') ||
+      frameResult.startsWith('clicked-task:')
+    ) {
       log('info', `  → 下载中心点击下载尝试#${i}`, { pageResult, frameResult });
       const maybeDownload = await waitDownloadAfterAction(4500);
       if (maybeDownload) return maybeDownload;
     } else if (i === 1 || i % 5 === 0) {
-      log('info', `  → 下载中心尚未出现下载动作#${i}`, { pageResult, frameResult });
+      const taskItems = i === 1 || i % 10 === 0 ? await readTaskPanelSnapshot() : [];
+      log('info', `  → 下载中心尚未出现下载动作#${i}`, {
+        frameResult,
+        pageResult,
+        taskItems,
+      });
+    }
+
+    if (i % 15 === 0) {
+      await openDownloadCenter(page, frame).catch(() => {});
     }
 
     await page.waitForTimeout(1200);
   }
 
+  await page.screenshot({
+    path: path.join(LOG_DIR, `baohao_download_center_timeout_${Date.now()}.png`),
+  }).catch(() => {});
   throw new Error('下载中心中未找到可点击的下载按钮（已轮询等待）');
 }
 
-async function exportTemplate(page: Page, frame: Frame): Promise<string> {
+async function exportTemplate(
+  page: Page,
+  frame: Frame,
+): Promise<{ activityId?: string; exportTaskId?: string; savePath: string }> {
   log('info', '  → 导出商品数据模板（导出后进入下载中心下载）');
 
   const candidateButtons = [
@@ -278,6 +613,14 @@ async function exportTemplate(page: Page, frame: Frame): Promise<string> {
   ];
 
   let clicked = false;
+  const exportTaskResponsePromise = page
+    .waitForResponse(
+      (response) =>
+        /download\.exporttask/i.test(response.url()) &&
+        response.request().method() === 'POST',
+      { timeout: 20_000 },
+    )
+    .catch(() => null);
 
   for (const sel of candidateButtons) {
     const btn = frame.locator(sel);
@@ -293,6 +636,25 @@ async function exportTemplate(page: Page, frame: Frame): Promise<string> {
     throw new Error('未找到导出按钮（导出商品数据/导出招商文件）');
   }
 
+  const exportTaskResponse = await exportTaskResponsePromise;
+
+  let exportTaskId = '';
+  let activityId = '';
+  if (exportTaskResponse) {
+    try {
+      const payload = (await exportTaskResponse.json()) as any;
+      exportTaskId =
+        `${payload?.data?.data?.taskId || payload?.data?.taskId || ''}`.trim();
+      activityId =
+        `${payload?.data?.data?.activityId || payload?.data?.activityId || ''}`.trim() ||
+        tryExtractActivityIdFromRequest(exportTaskResponse.request());
+      log('info', '  → 导出任务已创建', {
+        activityId: activityId || 'unknown',
+        taskId: exportTaskId || 'unknown',
+      });
+    } catch {}
+  }
+
   await page.waitForTimeout(2000);
 
   let download: Download | null = null;
@@ -301,9 +663,36 @@ async function exportTemplate(page: Page, frame: Frame): Promise<string> {
     log('info', '  → 导出后直接触发下载（兜底路径）');
     download = directDownload;
   } else {
+    if (exportTaskId) {
+      const exportReady = await page
+        .waitForResponse(
+          async (response) => {
+            if (!/gei\.readtask/i.test(response.url())) return false;
+            if (!decodeURIComponent(response.url()).includes(exportTaskId)) return false;
+            try {
+              const payload = (await response.json()) as any;
+              return payload?.data?.data === true;
+            } catch {
+              return false;
+            }
+          },
+          { timeout: 90_000 },
+        )
+        .catch(() => null);
+
+      if (exportReady) {
+        log('info', '  → 导出任务已完成，可开始下载', { taskId: exportTaskId });
+      } else {
+        log('warn', '  → 导出任务等待超时，转入下载中心兜底轮询', {
+          taskId: exportTaskId,
+        });
+      }
+    }
+
     await openDownloadCenter(page, frame);
     await page.waitForTimeout(1500);
-    download = await clickDownloadInCenter(page, frame);
+    const downloadFrame = await getTargetFrame(page);
+    download = await clickDownloadInCenter(page, downloadFrame);
     log('info', '  → 已在下载中心点击下载');
   }
 
@@ -311,7 +700,11 @@ async function exportTemplate(page: Page, frame: Frame): Promise<string> {
   const savePath = path.join(DATA_DIR, `${Date.now()}_${suggested}`);
   await download.saveAs(savePath);
   log('info', '  → 导出文件已保存', { file: savePath });
-  return savePath;
+  return {
+    activityId: activityId || undefined,
+    exportTaskId: exportTaskId || undefined,
+    savePath,
+  };
 }
 
 async function countExcelDataRows(filePath: string): Promise<number> {
@@ -500,7 +893,8 @@ async function clickFilterTag(page: Page, frame: Frame, tagText: string): Promis
     const candidates = Array.from(document.querySelectorAll('span, a, div, label, button, [class*="tag"], [class*="filter"], [class*="label"]'));
     const target = candidates.find(el => {
       const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-      return isVisible(el) && (text === tag || text.startsWith(tag));
+      if (!isVisible(el) || !text || text.length > 24) return false;
+      return text === tag || text.startsWith(tag);
     }) as HTMLElement | undefined;
 
     if (target) {
@@ -516,6 +910,79 @@ async function clickFilterTag(page: Page, frame: Frame, tagText: string): Promis
     await page.waitForTimeout(3000);
   }
   return clicked;
+}
+
+async function clickVisibleText(
+  page: Page,
+  frame: Frame,
+  textPattern: string,
+): Promise<boolean> {
+  const clickWithPattern = async (surface: Page | Frame) => {
+    return surface.evaluate((rawPattern) => {
+      const pattern = new RegExp(rawPattern);
+      const isVisible = (el: Element) => {
+        const rect = (el as HTMLElement).getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+
+      const nodes = Array.from(document.querySelectorAll('.ant-tabs-tab, button, a, span, div, label'));
+      const tab = nodes.find((el) => {
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        return isVisible(el) && text.length <= 24 && pattern.test(text);
+      }) as HTMLElement | undefined;
+
+      if (!tab) return false;
+      const clickable =
+        (tab.closest('[role="tab"], .ant-tabs-tab, button, a, label') as HTMLElement | null) || tab;
+      clickable.click();
+      return true;
+    }, textPattern).catch(() => false);
+  };
+
+  const clickedInFrame = await clickWithPattern(frame);
+  if (clickedInFrame) return true;
+  return await clickWithPattern(page);
+}
+
+async function switchToBaohaoTab(page: Page, frame: Frame): Promise<void> {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const clicked = await clickFilterTag(page, frame, '爆好价');
+    if (clicked) {
+      await page.waitForTimeout(2500);
+      return;
+    }
+
+    if (attempt < 4) {
+      log('warn', `未找到“爆好价”营销标签，准备重试`, { attempt });
+      await ensureActivityPage(page);
+      frame = await getTargetFrame(page);
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    const frameText = await frame
+      .evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 600))
+      .catch(() => '');
+    const pageText = await page
+      .evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 600))
+      .catch(() => '');
+    throw new Error(
+      `未找到“爆好价”营销标签 | frame=${frameText.substring(0, 120)} | page=${pageText.substring(0, 120)}`,
+    );
+  }
+}
+
+async function switchToActivityTab(
+  page: Page,
+  frame: Frame,
+  sourceTab: ActivitySourceTab,
+): Promise<void> {
+  const clicked = await clickVisibleText(page, frame, sourceTab);
+  if (!clicked) {
+    throw new Error(`未找到活动 tab: ${sourceTab}`);
+  }
+  log('info', `已切换活动 tab: ${sourceTab}`);
+  await page.waitForTimeout(2500);
 }
 
 async function switchToAllActivities(page: Page, frame: Frame): Promise<void> {
@@ -559,48 +1026,99 @@ async function switchToAllActivities(page: Page, frame: Frame): Promise<void> {
   await page.waitForTimeout(2000);
 }
 
+export function resolveListTabForSource(sourceTab: ActivitySourceTab): ActivityListTab {
+  return sourceTab === '已报名活动' ? '全部活动' : '未报名活动';
+}
+
+export function isRepeatSignupCandidate(item: Pick<ScannedActivity, 'fullText' | 'hasSignupBtn'>) {
+  if (/已结束/u.test(item.fullText)) return false;
+  if (/报名中|已报名/u.test(item.fullText)) return true;
+  if (/查看详情|操作进度/u.test(item.fullText) && !/立即报名/u.test(item.fullText)) return true;
+  return false;
+}
+
 async function backToList(page: Page, frame: Frame): Promise<Frame> {
-  const bc = frame.locator('text=平台活动').first();
-  if (await bc.count() > 0) {
-    await bc.click();
-    await page.waitForTimeout(3000);
-  } else {
-    await ensureActivityPage(page);
-  }
+  await page.evaluate(() => {
+    const closeSelectors = [
+      '.ant-modal-close',
+      '.ant-modal-close-x',
+      '.ant-modal .ant-btn',
+      '.ant-modal .ant-btn-primary',
+    ];
+    for (const selector of closeSelectors) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      for (const node of nodes) {
+        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+        const rect = (node as HTMLElement).getBoundingClientRect();
+        const visible = rect.width > 0 && rect.height > 0;
+        if (!visible) continue;
+        if (
+          selector.includes('close') ||
+          ['关闭', '我知道了', '确认', '确定'].some((label) => text.includes(label))
+        ) {
+          (node as HTMLElement).click();
+          return true;
+        }
+      }
+    }
+    return false;
+  }).catch(() => false);
+  await page.waitForTimeout(800);
+  await ensureActivityPage(page);
   return await getTargetFrame(page);
 }
 
-async function runOneActivity(page: Page, frame: Frame, target: any, idx: number) {
+async function runOneActivity(
+  page: Page,
+  frame: Frame,
+  target: ScannedActivity,
+  idx: number,
+  runtimeOptions: RuntimeOptions,
+  options: {
+    continueUploadPath?: string;
+    isContinueSubmit?: boolean;
+    skipOpenFromList?: boolean;
+  } = {},
+) {
   const shots: string[] = [];
+  let detailContext = await getActivityContext(page, frame);
+  let detailFrame = frame;
 
-  const card = frame.locator('.zs-act-view-v2, .zs-act-view, [class*="act-view"]').nth(target.index);
-  const cardSignupBtn = card.locator('text=/立即报名|追加报名|继续报名/');
-  if (await cardSignupBtn.count() > 0) {
-    await cardSignupBtn.first().click();
-  } else {
-    const opened = await card.evaluate((el) => {
-      const candidates = Array.from(el.querySelectorAll('button, a, span, div'));
-      const targetEl = candidates.find(node => {
-        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-        return text.includes('已报名') || text.includes('追加报名') || text.includes('继续报名');
-      }) as HTMLElement | undefined;
-      if (targetEl) {
-        const clickable = (targetEl.closest('button, a, [role="button"], .ant-btn') as HTMLElement | null) || targetEl;
-        clickable.click();
-        return true;
+  if (!options.skipOpenFromList) {
+    const card = frame.locator('.zs-act-view-v2, .zs-act-view, [class*="act-view"]').nth(target.index);
+    const cardSignupBtn = card.locator('text=/立即报名|追加报名|继续报名/');
+    if (await cardSignupBtn.count() > 0) {
+      await cardSignupBtn.first().click();
+    } else {
+      const opened = await card.evaluate((el) => {
+        const candidates = Array.from(el.querySelectorAll('button, a, span, div'));
+        const targetEl = candidates.find(node => {
+          const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+          return text.includes('已报名') || text.includes('追加报名') || text.includes('继续报名');
+        }) as HTMLElement | undefined;
+        if (targetEl) {
+          const clickable = (targetEl.closest('button, a, [role="button"], .ant-btn') as HTMLElement | null) || targetEl;
+          clickable.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (!opened) {
+        await card.click().catch(() => {});
       }
-      return false;
-    });
-
-    if (!opened) {
-      await card.click().catch(() => {});
     }
+
+    await page.waitForTimeout(5000);
+    shots.push(await saveShot(page, `baohao_detail_${idx}`));
+
+    detailFrame = await getTargetFrame(page);
+    detailContext = await getActivityContext(page, detailFrame);
+  } else {
+    detailFrame = await getTargetFrame(page);
+    detailContext = await getActivityContext(page, detailFrame);
+    shots.push(await saveShot(page, `baohao_detail_${idx}`));
   }
-
-  await page.waitForTimeout(5000);
-  shots.push(await saveShot(page, `baohao_detail_${idx}`));
-
-  let detailFrame = await getTargetFrame(page);
 
   // 诊断：详情页按钮快照
   const detailBtns = await detailFrame.evaluate(() => {
@@ -730,10 +1248,19 @@ async function runOneActivity(page: Page, frame: Frame, target: any, idx: number
 
   await page.waitForTimeout(5000);
 
-  const storeResult = await selectStoresAndNext(detailFrame, page);
+  const storeResult = await selectStoresAndNext(
+    detailFrame,
+    page,
+  );
   if (!storeResult.success) {
     return {
       success: false,
+      sourceTab: target.sourceTab,
+      storeCount: storeResult.storeCount,
+      storeIds: storeResult.storeIds,
+      storeNames: storeResult.storeNames,
+      activityId: detailContext.activityId || target.id,
+      detailRoute: detailContext.detailRoute || page.url(),
       message: `门店/向导步骤失败: ${storeResult.error || '未知错误'}`,
       screenshots: shots,
     };
@@ -741,60 +1268,531 @@ async function runOneActivity(page: Page, frame: Frame, target: any, idx: number
 
   shots.push(await saveShot(page, `baohao_step2_${idx}`));
 
-  const exported = await exportTemplate(page, detailFrame);
-  shots.push(await saveShot(page, `baohao_exported_${idx}`));
+  let exported = '';
+  let exportedRowCount = 0;
+  let exportTaskId = '';
+  let processedPath = options.continueUploadPath || '';
+  let auditPath = '';
+  let processedRowCount = 0;
 
-  const exportedRowCount = await countExcelDataRows(exported);
-  log('info', '  → 导出文件数据行统计', { file: exported, rows: exportedRowCount });
+  if (!options.isContinueSubmit) {
+    const exportResult = await exportTemplate(page, detailFrame);
+    exported = exportResult.savePath;
+    exportTaskId = exportResult.exportTaskId || '';
+    if (exportResult.activityId) {
+      detailContext.activityId = exportResult.activityId;
+    }
+    shots.push(await saveShot(page, `baohao_exported_${idx}`));
 
-  if (exportedRowCount === 0) {
-    return {
-      success: false,
-      message: '导出商品数据为空，已跳过上传和提交（无需执行下一步）',
-      screenshots: shots,
+    exportedRowCount = await countExcelDataRows(exported);
+    log('info', '  → 导出文件数据行统计', { file: exported, rows: exportedRowCount });
+
+    if (exportedRowCount === 0) {
+      return {
+        success: false,
+        activityId: detailContext.activityId || target.id,
+        detailRoute: detailContext.detailRoute || page.url(),
+        sourceTab: target.sourceTab,
+        message: '导出商品数据为空，已跳过上传和提交（无需执行下一步）',
+        screenshots: shots,
+        exported,
+        exportTaskId,
+        processed: null,
+        storeCount: storeResult.storeCount,
+        storeIds: storeResult.storeIds,
+        storeNames: storeResult.storeNames,
+        exportedRowCount,
+        processedRowCount: 0,
+      };
+    }
+
+    const transformed = await transformBaohaojiaWithArtifacts(
       exported,
-      processed: null,
-      storeCount: storeResult.storeCount,
-      exportedRowCount,
-      processedRowCount: 0,
-    };
+      runtimeOptions.initialStock,
+    );
+    processedPath = transformed.uploadPath;
+    auditPath = transformed.auditPath;
+    processedRowCount = await countExcelDataRows(transformed.uploadPath);
+    log('info', '  → 转换完成', {
+      audit: transformed.auditPath,
+      input: exported,
+      output: transformed.uploadPath,
+      rows: processedRowCount,
+    });
+
+    if (processedRowCount === 0) {
+      return {
+        success: false,
+        audit: transformed.auditPath,
+        activityId: detailContext.activityId || target.id,
+        detailRoute: detailContext.detailRoute || page.url(),
+        sourceTab: target.sourceTab,
+        message: '转换后Excel为空，已跳过上传和提交（需人工核查转换规则）',
+        screenshots: shots,
+        exported,
+        exportTaskId,
+        processed: transformed.uploadPath,
+        storeCount: storeResult.storeCount,
+        storeIds: storeResult.storeIds,
+        storeNames: storeResult.storeNames,
+        exportedRowCount,
+        processedRowCount,
+      };
+    }
+
+    if (runtimeOptions.reviewMode === 'manual') {
+      return {
+        success: false,
+        activityId: detailContext.activityId || target.id,
+        audit: transformed.auditPath,
+        detailRoute: detailContext.detailRoute || page.url(),
+        exported,
+        exportedRowCount,
+        exportTaskId,
+        message: '已生成上传文件和审计文件，等待人工审核',
+        processed: transformed.uploadPath,
+        processedRowCount,
+        screenshots: shots,
+        sourceTab: target.sourceTab,
+        status: 'waiting_review',
+        storeCount: storeResult.storeCount,
+        storeIds: storeResult.storeIds,
+        storeNames: storeResult.storeNames,
+        waitingReview: true,
+      };
+    }
+  } else {
+    processedRowCount = await countExcelDataRows(processedPath);
   }
 
-  const processed = await transformBaohaojia(exported, 9999);
-  const processedRowCount = await countExcelDataRows(processed);
-  log('info', '  → 转换完成', { input: exported, output: processed, rows: processedRowCount });
-
-  if (processedRowCount === 0) {
-    return {
-      success: false,
-      message: '转换后Excel为空，已跳过上传和提交（需人工核查转换规则）',
-      screenshots: shots,
-      exported,
-      processed,
-      storeCount: storeResult.storeCount,
-      exportedRowCount,
-      processedRowCount,
-    };
-  }
-
-  await uploadProcessedExcel(page, detailFrame, processed);
+  await uploadProcessedExcel(page, detailFrame, processedPath);
   shots.push(await saveShot(page, `baohao_uploaded_${idx}`));
 
   const submitResult = await submitAndVerify(page, detailFrame);
   shots.push(await saveShot(page, `baohao_submitted_${idx}`));
 
   return {
+    activityId: detailContext.activityId || target.id,
+    exportTaskId: exportTaskId || undefined,
+    audit: auditPath || undefined,
+    detailRoute: detailContext.detailRoute || page.url(),
+    exported: exported || undefined,
+    exportedRowCount,
+    processed: processedPath,
+    processedRowCount,
     success: submitResult.success,
     message: submitResult.message,
     screenshots: shots,
-    exported,
-    processed,
+    sourceTab: target.sourceTab,
     storeCount: storeResult.storeCount,
+    storeIds: storeResult.storeIds,
+    storeNames: storeResult.storeNames,
   };
+}
+
+function normalizeComparableText(value: string) {
+  return value.replace(/\s+/g, '').replace(/[()（）]/g, '').trim();
+}
+
+function matchActivityName(candidate: string, targetName: string) {
+  const left = normalizeComparableText(candidate);
+  const right = normalizeComparableText(targetName);
+  return left.includes(right) || right.includes(left);
+}
+
+async function waitForActivityCards(page: Page, frame: Frame) {
+  try {
+    await frame.waitForSelector('.zs-act-view-v2', { timeout: 30000 });
+  } catch {
+    await page.waitForTimeout(5000);
+  }
+}
+
+async function getTotalPages(frame: Frame) {
+  return await frame.evaluate(() => {
+    const pag = document.querySelector('.ant-pagination');
+    if (!pag) return 1;
+    let max = 1;
+    pag.querySelectorAll('li').forEach((li) => {
+      const n = parseInt(li.textContent?.trim() || '');
+      if (!isNaN(n)) max = Math.max(max, n);
+    });
+    return max;
+  });
+}
+
+async function enterBaohaoTabView(page: Page, sourceTab: ActivitySourceTab) {
+  let frame = await getTargetFrame(page);
+  await switchToBaohaoTab(page, frame);
+  frame = await getTargetFrame(page);
+  const listTab = resolveListTabForSource(sourceTab);
+  if (listTab === '全部活动') {
+    await switchToAllActivities(page, frame);
+  } else {
+    await switchToActivityTab(page, frame, sourceTab);
+  }
+  frame = await getTargetFrame(page);
+  await waitForActivityCards(page, frame);
+  return frame;
+}
+
+async function findActivityInTab(
+  page: Page,
+  frame: Frame,
+  sourceTab: ActivitySourceTab,
+  activityName: string,
+): Promise<null | { pageNum: number; target: ScannedActivity }> {
+  const totalPages = await getTotalPages(frame);
+  for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
+    if (pageNum > 1) {
+      await toPage(frame, pageNum);
+      await page.waitForTimeout(4000);
+      frame = await getTargetFrame(page);
+    }
+
+    const cards = await scanCards(frame, sourceTab);
+    const target = cards.find(
+      (item) => isTarget(item.name, item.fullText) && matchActivityName(item.name, activityName),
+    );
+    if (target) {
+      return { pageNum, target };
+    }
+  }
+
+  return null;
+}
+
+async function runScanMode(
+  page: Page,
+  runtimeOptions: RuntimeOptions,
+) {
+  const results: any[] = [];
+  const processedIds = new Set<string>();
+  let found = 0;
+  let stopScanning = false;
+
+  const sourceTabs: ActivitySourceTab[] =
+    runtimeOptions.signupMode === 'unsigned_only'
+      ? ['未报名活动']
+      : runtimeOptions.signupMode === 'repeat_only'
+        ? ['已报名活动']
+        : ['未报名活动', '已报名活动'];
+
+  for (const sourceTab of sourceTabs) {
+    if (stopScanning) break;
+    let frame = await enterBaohaoTabView(page, sourceTab);
+    const totalPages = await getTotalPages(frame);
+    const listTab = resolveListTabForSource(sourceTab);
+    log('info', `爆好价 ${sourceTab}（列表:${listTab}）共 ${totalPages} 页`);
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum += 1) {
+      if (stopScanning) break;
+      log('info', `--- ${sourceTab}（列表:${listTab}）第 ${pageNum}/${totalPages} 页 ---`);
+
+      while (true) {
+        const cards = await scanCards(frame, sourceTab);
+        const target = cards.find((item) => {
+          const processedKey = `${sourceTab}::${item.id}`;
+          if (!isTarget(item.name, item.fullText) || processedIds.has(processedKey)) return false;
+          if (sourceTab === '未报名活动') {
+            return item.hasSignupBtn && !/报名中|已报名/u.test(item.fullText);
+          }
+          return isRepeatSignupCandidate(item);
+        });
+
+        if (!target) {
+          log('info', `${sourceTab}（列表:${listTab}）当前页无更多未处理爆好价活动`);
+          break;
+        }
+
+        processedIds.add(`${sourceTab}::${target.id}`);
+        found += 1;
+        log('info', `[爆好价][${sourceTab}] #${found} ${target.name}`);
+
+        try {
+          const result = await runOneActivity(page, frame, target, found, runtimeOptions);
+          results.push({ name: target.name, ...result });
+          log('info', `  → 活动处理完成: ${result.message}`);
+        } catch (err: any) {
+          const errShot = await saveShot(page, `baohao_error_${found}`);
+          results.push({
+            activityId: target.id,
+            detailRoute: page.url(),
+            message: `流程异常: ${err?.message || '未知错误'}`,
+            name: target.name,
+            screenshots: [errShot],
+            sourceTab,
+            success: false,
+          });
+          log('error', '  → 活动处理异常', { error: err?.message || String(err) });
+        }
+
+        try {
+          frame = await backToList(page, await getTargetFrame(page));
+          frame = await enterBaohaoTabView(page, sourceTab);
+          if (pageNum > 1) {
+            await toPage(frame, pageNum);
+            await page.waitForTimeout(3000);
+            frame = await getTargetFrame(page);
+          }
+        } catch (err: any) {
+          log('warn', '活动处理后无法恢复到爆好价筛选视图，提前结束本轮扫描', {
+            error: err?.message || String(err),
+            lastActivity: target.name,
+            sourceTab,
+          });
+          stopScanning = true;
+          break;
+        }
+      }
+
+      if (!stopScanning && pageNum < totalPages) {
+        await toPage(frame, pageNum + 1);
+        await page.waitForTimeout(4000);
+        frame = await getTargetFrame(page);
+      }
+    }
+  }
+
+  return { found, results };
+}
+
+async function runContinueMode(
+  page: Page,
+  runtimeOptions: RuntimeOptions,
+) {
+  if (!runtimeOptions.continueManifestPath) {
+    throw new Error('缺少审核继续执行清单');
+  }
+
+  const manifest = JSON.parse(
+    fs.readFileSync(runtimeOptions.continueManifestPath, 'utf-8'),
+  ) as ContinueManifest;
+  const results: any[] = [];
+  let found = 0;
+
+  const resolveRecordedDetailRoute = async (activity: ContinueManifest['activities'][number]) => {
+    const rawRoute = decodeURIComponent(`${activity.detailRoute || ''}`.trim());
+    const hasDirectDetailRoute =
+      !!rawRoute &&
+      (!!activity.activityId ? rawRoute.includes(`activityId=${activity.activityId}`) : true) &&
+      /activity-detail-v2|activityId=/u.test(rawRoute);
+
+    if (hasDirectDetailRoute) {
+      return rawRoute;
+    }
+
+    if (!activity.activityId) {
+      return '';
+    }
+
+    const urlCandidates = [
+      rawRoute,
+      decodeURIComponent(page.url() || ''),
+      ...(page.frames().map((frame) => {
+        try {
+          return decodeURIComponent(frame.url() || '');
+        } catch {
+          return '';
+        }
+      })),
+    ].filter(Boolean);
+
+    for (const candidate of urlCandidates) {
+      if (!/ebai-zs-webapp|common-next/u.test(candidate)) continue;
+      try {
+        const url = new URL(candidate);
+        return `${url.origin}${url.pathname}${url.search}#/activity-detail-v2?activityId=${activity.activityId}&from=`;
+      } catch {}
+    }
+
+    return '';
+  };
+
+  const tryOpenRecordedDetail = async (activity: ContinueManifest['activities'][number]) => {
+    if (runtimeOptions.continueAction !== 'rerun_recorded') {
+      return false;
+    }
+
+    const detailRoute = await resolveRecordedDetailRoute(activity);
+    if (!detailRoute) {
+      return false;
+    }
+
+    try {
+      await page.goto(detailRoute, {
+        timeout: 90_000,
+        waitUntil: 'domcontentloaded',
+      });
+      await page.waitForTimeout(8000);
+      const frame = await getTargetFrame(page);
+      const context = await getActivityContext(page, frame);
+      const currentPageUrl = decodeURIComponent(page.url() || '');
+      const currentFrameUrl = decodeURIComponent(frame.url() || '');
+      const frameText = await frame
+        .evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 1000))
+        .catch(() => '');
+
+      const activityIdMatches =
+        !activity.activityId ||
+        !context.activityId ||
+        context.activityId === activity.activityId;
+      const routeLooksLikeDetail =
+        /activity-detail-v2|activityId=/u.test(currentPageUrl) ||
+        /activity-detail-v2|activityId=/u.test(currentFrameUrl);
+      const looksLikeDetailPage =
+        /活动报名/u.test(frameText) && /操作进度|立即报名|追加报名|继续报名|取消报名/u.test(frameText);
+
+      if (activityIdMatches && routeLooksLikeDetail && looksLikeDetailPage) {
+        log('info', '已通过活动详情路由直达重跑目标', {
+          activityId: activity.activityId || 'unknown',
+          detailRoute,
+        });
+        return true;
+      }
+    } catch {}
+
+    return false;
+  };
+
+  for (const activity of manifest.activities || []) {
+    const recordedSourceTab = activity.sourceTab || '未报名活动';
+    const directOpened = await tryOpenRecordedDetail(activity);
+
+    if (directOpened) {
+      found += 1;
+      const target: ScannedActivity = {
+        fullText: activity.activityName,
+        hasSignupBtn: false,
+        id: activity.activityId || activity.activityName,
+        index: 0,
+        name: activity.activityName,
+        sourceTab: recordedSourceTab,
+      };
+
+      try {
+        const result = await runOneActivity(page, await getTargetFrame(page), target, found, runtimeOptions, {
+          skipOpenFromList: true,
+        });
+        results.push({
+          name: activity.activityName,
+          ...result,
+        });
+        log('info', `  → 活动重跑完成: ${result.message}`);
+      } catch (err: any) {
+        const errShot = await saveShot(page, `baohao_continue_error_${found}`);
+        results.push({
+          activityId: activity.activityId || target.id,
+          detailRoute: page.url(),
+          message: `活动重跑异常: ${err?.message || '未知错误'}`,
+          name: activity.activityName,
+          screenshots: [errShot],
+          sourceTab: recordedSourceTab,
+          success: false,
+        });
+        log('error', '  → 活动重跑异常', { error: err?.message || String(err) });
+      }
+
+      await backToList(page, await getTargetFrame(page));
+      continue;
+    }
+
+    const candidateSourceTabs: ActivitySourceTab[] =
+      runtimeOptions.continueAction === 'rerun_recorded'
+        ? recordedSourceTab === '未报名活动'
+          ? ['未报名活动', '已报名活动']
+          : ['已报名活动', '未报名活动']
+        : [recordedSourceTab];
+
+    let matchedSourceTab: ActivitySourceTab | null = null;
+    let match: null | { pageNum: number; target: ScannedActivity } = null;
+    let frame: Frame | null = null;
+
+    for (const sourceTab of candidateSourceTabs) {
+      frame = await enterBaohaoTabView(page, sourceTab);
+      match = await findActivityInTab(page, frame, sourceTab, activity.activityName);
+      if (match) {
+        matchedSourceTab = sourceTab;
+        break;
+      }
+    }
+
+    if (!match) {
+      results.push({
+        activityId: activity.activityId || activity.activityName,
+        detailRoute: page.url(),
+        message:
+          runtimeOptions.continueAction === 'rerun_recorded'
+            ? `活动重跑失败：未在任务记录对应视图中找到活动（已尝试 ${candidateSourceTabs.join('、')}）`
+            : `审核继续执行失败：未在 ${recordedSourceTab} 视图中找到活动`,
+        name: activity.activityName,
+        sourceTab: recordedSourceTab,
+        success: false,
+      });
+      continue;
+    }
+
+    const sourceTab = matchedSourceTab || recordedSourceTab;
+    frame = frame || (await enterBaohaoTabView(page, sourceTab));
+
+    found += 1;
+    log(
+      'info',
+      `${
+        runtimeOptions.continueAction === 'rerun_recorded' ? '[爆好价重跑]' : '[爆好价继续执行]'
+      }[${sourceTab}] #${found} ${activity.activityName}`,
+    );
+
+    if (match.pageNum > 1) {
+      await toPage(frame, match.pageNum);
+      await page.waitForTimeout(4000);
+      frame = await getTargetFrame(page);
+    }
+
+    try {
+      const result =
+        runtimeOptions.continueAction === 'rerun_recorded'
+          ? await runOneActivity(page, frame, match.target, found, runtimeOptions)
+          : await runOneActivity(page, frame, match.target, found, runtimeOptions, {
+              continueUploadPath: activity.uploadPath,
+              isContinueSubmit: true,
+            });
+      results.push({
+        name: activity.activityName,
+        ...result,
+      });
+      log(
+        'info',
+        `  → ${runtimeOptions.continueAction === 'rerun_recorded' ? '活动重跑完成' : '审核继续执行完成'}: ${result.message}`,
+      );
+    } catch (err: any) {
+      const errShot = await saveShot(page, `baohao_continue_error_${found}`);
+      results.push({
+        activityId: activity.activityId || match.target.id,
+        detailRoute: page.url(),
+        message: `审核继续执行异常: ${err?.message || '未知错误'}`,
+        name: activity.activityName,
+        screenshots: [errShot],
+        sourceTab,
+        success: false,
+      });
+      log(
+        'error',
+        `  → ${runtimeOptions.continueAction === 'rerun_recorded' ? '活动重跑异常' : '审核继续执行异常'}`,
+        { error: err?.message || String(err) },
+      );
+    }
+
+    await backToList(page, await getTargetFrame(page));
+  }
+
+  return { found, results };
 }
 
 async function main() {
   log('info', '=== 爆好价活动最终闭环报名启动 ===');
+  const runtimeOptions = parseRuntimeOptions();
+  log('info', '运行参数', runtimeOptions);
 
   const userDataDir = path.join(__dirname, '..', 'user_data');
   const context = await chromium.launchPersistentContext(userDataDir, {
@@ -806,152 +1804,56 @@ async function main() {
 
   const page = context.pages()[0] || await context.newPage();
   await page.addInitScript(() => {
+    (window as any).__name = (target: any) => target;
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   });
 
-  const results: any[] = [];
-  const processedIds = new Set<string>();
-  let found = 0;
-
   try {
     await ensureActivityPage(page);
-    let frame = await getTargetFrame(page);
-    await switchToAllActivities(page, frame);
-    frame = await getTargetFrame(page);
-    // 不再搜索特定关键词，直接扫描未报名活动
-    // await searchKeyword(page, frame, '宁波');
-    await page.waitForTimeout(3000);
-    frame = await getTargetFrame(page);
+    const { found, results } = runtimeOptions.continueManifestPath
+      ? await runContinueMode(page, runtimeOptions)
+      : await runScanMode(page, runtimeOptions);
 
-    // 如果搜索没生效，尝试点击"商品特价"筛选标签
-    const cardsAfterSearch = await scanCards(frame);
-    const hasTarget = cardsAfterSearch.some(c => isTarget(c.name, c.fullText));
-    if (!hasTarget) {
-      log('info', '搜索后未找到目标，尝试点击"商品特价"筛选标签');
-      await clickFilterTag(page, frame, '商品特价');
-      frame = await getTargetFrame(page);
-    }
-
-    // 诊断：搜索后页面内容快照
-    const diagCards = await frame.evaluate(() => {
-      const selectors = ['.zs-act-view-v2', '.zs-act-view', '[class*="act-view"]', '[class*="activity"]', '[class*="card"]'];
-      const result: Record<string, number> = {};
-      for (const sel of selectors) {
-        result[sel] = document.querySelectorAll(sel).length;
-      }
-      return result;
-    }).catch(() => ({}));
-
-    const diagPageCards = await page.evaluate(() => {
-      const selectors = ['.zs-act-view-v2', '.zs-act-view', '[class*="act-view"]', '[class*="activity"]', '[class*="card"]'];
-      const result: Record<string, number> = {};
-      for (const sel of selectors) {
-        result[sel] = document.querySelectorAll(sel).length;
-      }
-      return result;
-    }).catch(() => ({}));
-
-    const diagBodyText = await frame.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 1500)).catch(() => '');
-    const diagPageText = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 1500)).catch(() => '');
-
-    log('info', '诊断-frame选择器命中', diagCards);
-    log('info', '诊断-page选择器命中', diagPageCards);
-    log('info', '诊断-frame文本快照', { text: diagBodyText.substring(0, 800) });
-    log('info', '诊断-page文本快照', { text: diagPageText.substring(0, 800) });
-
-    await saveShot(page, 'diag_after_search');
-
-
-    try {
-      await frame.waitForSelector('.zs-act-view-v2', { timeout: 30000 });
-    } catch {
-      await page.waitForTimeout(5000);
-    }
-
-    const totalPages = await frame.evaluate(() => {
-      const pag = document.querySelector('.ant-pagination');
-      if (!pag) return 1;
-      let max = 1;
-      pag.querySelectorAll('li').forEach(li => {
-        const n = parseInt(li.textContent?.trim() || '');
-        if (!isNaN(n)) max = Math.max(max, n);
-      });
-      return max;
-    });
-
-    log('info', `共 ${totalPages} 页，开始扫描爆好价活动`);
-
-    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-      log('info', `--- 第 ${pageNum}/${totalPages} 页 ---`);
-
-      while (true) {
-        const cards = await scanCards(frame);
-        if (cards.length === 0) {
-          const bodySample = await frame.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 500)).catch(() => '');
-          log('warn', '当前页未扫描到活动卡片', { pageNum, bodySample });
-        }
-
-        for (const c of cards) {
-          if (isTarget(c.name, c.fullText) && !processedIds.has(c.id)) {
-            log('info', `  发现: [${c.status}] ${c.name.substring(0, 60)} ${c.hasSignupBtn ? '(可报名)' : ''}`);
-          }
-        }
-
-        const target = cards.find((c: any) =>
-          isTarget(c.name, c.fullText) && c.status !== 'expired' && !processedIds.has(c.id)
-        );
-
-        if (!target) {
-          log('info', '本页无更多未处理爆好价活动');
-          break;
-        }
-
-        processedIds.add(target.id);
-        found++;
-        log('info', `[爆好价] #${found} ${target.name}`);
-
-        try {
-          const result = await runOneActivity(page, frame, target, found);
-          results.push({ name: target.name, ...result });
-          log('info', `  → 活动处理完成: ${result.message}`);
-        } catch (err: any) {
-          const errShot = await saveShot(page, `baohao_error_${found}`);
-          results.push({ name: target.name, success: false, message: `流程异常: ${err?.message || '未知错误'}`, screenshots: [errShot] });
-          log('error', '  → 活动处理异常', { error: err?.message || String(err) });
-        }
-
-        frame = await backToList(page, frame);
-        await page.waitForTimeout(2000);
-
-        if (pageNum > 1) {
-          await toPage(frame, pageNum);
-          await page.waitForTimeout(3000);
-        }
-      }
-
-      if (pageNum < totalPages) {
-        await toPage(frame, pageNum + 1);
-        await page.waitForTimeout(5000);
-      }
-    }
+    const successCount = results.filter((item) => item.success).length;
+    const waitingReviewCount = results.filter((item) => item.status === 'waiting_review').length;
+    const failedCount = results.filter(
+      (item) => !item.success && item.status !== 'waiting_review',
+    ).length;
 
     log('info', '=== 爆好价报名汇总 ===');
     log('info', `找到: ${found} 个`);
-    log('info', `成功: ${results.filter(r => r.success).length}`);
-    log('info', `失败/需人工: ${results.filter(r => !r.success).length}`);
+    log('info', `成功: ${successCount}`);
+    log('info', `待审核: ${waitingReviewCount}`);
+    log('info', `失败/需人工: ${failedCount}`);
 
     console.log('\n══════════════════════════════════════════');
     console.log(`  爆好价活动报名结果 | ${new Date().toISOString().split('T')[0]}`);
     console.log('══════════════════════════════════════════');
     for (const r of results) {
-      console.log(`  ${r.success ? '✅' : '❌'} ${r.name.substring(0, 60)}`);
+      const icon = r.status === 'waiting_review' ? '🟡' : r.success ? '✅' : '❌';
+      console.log(`  ${icon} ${r.name.substring(0, 60)}`);
       console.log(`     ${r.message}`);
     }
     console.log('══════════════════════════════════════════\n');
 
+    const finalReportPath =
+      runtimeOptions.reportPath || path.join(DATA_DIR, `baohao_signup_${today}.json`);
     fs.writeFileSync(
-      path.join(DATA_DIR, `baohao_signup_${today}.json`),
-      JSON.stringify({ timestamp: new Date().toISOString(), found, results }, null, 2)
+      finalReportPath,
+      JSON.stringify(
+        {
+          reviewMode:
+            runtimeOptions.continueAction === 'continue_review'
+              ? 'manual'
+              : runtimeOptions.reviewMode,
+          signupMode: runtimeOptions.signupMode,
+          timestamp: new Date().toISOString(),
+          found,
+          results,
+        },
+        null,
+        2,
+      ),
     );
   } catch (err: any) {
     log('error', '执行失败', { error: err?.message || String(err) });
@@ -963,7 +1865,15 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('Fatal:', err);
-  process.exit(1);
-});
+const isDirectRun =
+  typeof process !== 'undefined' &&
+  Array.isArray(process.argv) &&
+  !!process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(__filename);
+
+if (isDirectRun) {
+  main().catch(err => {
+    console.error('Fatal:', err);
+    process.exit(1);
+  });
+}

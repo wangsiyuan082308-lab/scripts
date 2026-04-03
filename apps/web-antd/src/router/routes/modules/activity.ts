@@ -7,37 +7,78 @@ const routes: RouteRecordRaw[] = [
       order: 1,
       title: '运营中心',
     },
-    name: 'Operations',
+    name: 'Activity',
     path: '/activity',
-    redirect: '/activity/eleme',
+    redirect: '/activity/taobao/baohaojia',
     children: [
       {
-        name: 'ElemeOperations',
-        path: '/activity/eleme',
-        component: () => import('#/views/activity/eleme/index.vue'),
-        meta: {
-          icon: 'lucide:utensils-crossed',
-          title: '饿了么运营',
-        },
-      },
-      {
-        name: 'MeituanOperations',
-        path: '/activity/meituan',
-        component: () => import('#/views/activity/meituan/index.vue'),
-        meta: {
-          icon: 'lucide:shopping-bag',
-          title: '美团运营',
-        },
-      },
-      {
-        name: 'ActivityList',
-        path: '/activity/list',
+        name: 'ActivityOverview',
+        path: '/activity/overview',
         component: () => import('#/views/activity/list/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '饿了么活动列表',
-          activePath: '/activity/eleme',
+          title: '运营总览',
         },
+      },
+      {
+        name: 'TaobaoOperation',
+        path: '/activity/taobao',
+        redirect: '/activity/taobao/baohaojia',
+        meta: {
+          icon: 'lucide:shopping-bag',
+          title: '淘宝运营',
+        },
+        children: [
+          {
+            name: 'TaobaoBaohaojiaTask',
+            path: '/activity/taobao/baohaojia',
+            component: () => import('#/views/activity/taobao-baohaojia/index.vue'),
+            meta: {
+              icon: 'lucide:ticket-percent',
+              title: '爆好价活动报名',
+            },
+          },
+          {
+            name: 'TaobaoSuperBrandTask',
+            path: '/activity/taobao/super-brand',
+            component: () => import('#/views/activity/taobao-super-brand/index.vue'),
+            meta: {
+              icon: 'lucide:gift',
+              sceneKey: 'super_brand',
+              title: '超级品牌红包报名',
+            },
+          },
+          {
+            name: 'TaobaoMarketingTagTask',
+            path: '/activity/taobao/tag/:sceneKey',
+            component: () => import('#/views/activity/taobao-super-brand/index.vue'),
+            meta: {
+              activePath: '/activity/taobao/super-brand',
+              hideInMenu: true,
+              title: '营销标签活动报名',
+            },
+          },
+        ],
+      },
+      {
+        name: 'MeituanOperation',
+        path: '/activity/meituan',
+        redirect: '/activity/meituan/overview',
+        meta: {
+          icon: 'lucide:store',
+          title: '美团运营',
+        },
+        children: [
+          {
+            name: 'MeituanOperationOverview',
+            path: '/activity/meituan/overview',
+            component: () => import('#/views/activity/meituan/index.vue'),
+            meta: {
+              icon: 'lucide:layout-dashboard',
+              title: '运营看板',
+            },
+          },
+        ],
       },
       {
         name: 'ActivityDetail',
@@ -45,8 +86,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/activity/detail/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '饿了么活动详情',
-          activePath: '/activity/eleme',
+          title: '活动详情',
+          activePath: '/activity/overview',
         },
       },
       {
@@ -55,8 +96,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/activity/records/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '饿了么报名记录',
-          activePath: '/activity/eleme',
+          title: '报名记录',
         },
       },
       {
@@ -65,8 +105,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/activity/execution-logs/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '饿了么执行日志',
-          activePath: '/activity/eleme',
+          title: '执行日志',
         },
       },
     ],

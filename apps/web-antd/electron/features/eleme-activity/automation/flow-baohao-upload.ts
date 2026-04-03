@@ -1,11 +1,32 @@
+import fs from 'node:fs';
 import { chromium } from 'playwright';
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 import { getTargetFrame, selectStoresAndNext, clickSignupButton } from './shared-utils';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(__dirname, '..', 'logs');
-const UPLOAD_FILE = path.join(__dirname, '..', 'data', '连锁、总管、代运营导出邀约商品数据_报名.xlsx');
+
+function resolveLatestUploadFile() {
+  const dataDir = path.join(__dirname, '..', 'data');
+  const candidates = fs
+    .readdirSync(dataDir)
+    .filter((file) => file.endsWith('_报名.xlsx'))
+    .sort((left, right) => {
+      const leftStat = fs.statSync(path.join(dataDir, left)).mtimeMs;
+      const rightStat = fs.statSync(path.join(dataDir, right)).mtimeMs;
+      return rightStat - leftStat;
+    });
+
+  if (candidates.length === 0) {
+    throw new Error('未找到可用的爆好价上传文件');
+  }
+
+  return path.join(dataDir, candidates[0]!);
+}
 
 async function main() {
+  const uploadFile = resolveLatestUploadFile();
   const userDataDir = path.join(__dirname, '..', 'user_data');
   const url = 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/';
 
@@ -17,6 +38,7 @@ async function main() {
 
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.addInitScript(() => {
+    (window as any).__name = (target: any) => target;
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
   });
 
@@ -53,8 +75,8 @@ async function main() {
     console.log('【4】上传文件...');
     const fileInput = frame.locator('input[type="file"]');
     if (await fileInput.count() === 0) { console.log('❌ 未找到file input'); return; }
-    await fileInput.first().setInputFiles(UPLOAD_FILE);
-    console.log('✅ 已上传: ' + path.basename(UPLOAD_FILE));
+    await fileInput.first().setInputFiles(uploadFile);
+    console.log('✅ 已上传: ' + path.basename(uploadFile));
     await page.waitForTimeout(8000);
     await page.screenshot({ path: path.join(LOG_DIR, 'upload_v3_result.png') });
 
@@ -77,6 +99,43 @@ async function main() {
         .filter(t => t.length > 0 && t.length < 20)
     );
     console.log('可用按钮: ' + btns.join(', '));
+
+    console.log('【5】提交报名...');
+    const submitClicked = await frame.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (item) => (item.textContent || '').trim() === '确认提交' && !item.disabled,
+      ) as HTMLButtonElement | undefined;
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+
+    if (!submitClicked) {
+      console.log('❌ 未找到可点击的确认提交按钮');
+      return;
+    }
+
+    await page.waitForTimeout(3000);
+
+    const modalConfirm = page.locator('.ant-modal .ant-btn-primary');
+    if (await modalConfirm.count()) {
+      await modalConfirm.first().click();
+      console.log('✅ 已确认弹窗');
+      await page.waitForTimeout(3000);
+    }
+
+    await page.screenshot({ path: path.join(LOG_DIR, 'upload_v3_submitted.png') });
+
+    const submitResult = await frame.evaluate(() => {
+      const text = document.body.innerText.replace(/\s+/g, ' ').trim();
+      return text.substring(0, 800);
+    }).catch(() => '');
+    const pageResult = await page.evaluate(() => {
+      return document.body.innerText.replace(/\s+/g, ' ').trim().substring(0, 800);
+    }).catch(() => '');
+
+    console.log('提交后(frame): ' + submitResult);
+    console.log('提交后(page): ' + pageResult);
 
   } catch (err: any) {
     console.error('错误: ' + err.message);

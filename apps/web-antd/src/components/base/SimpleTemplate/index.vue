@@ -54,6 +54,7 @@ interface Props {
   /** 是否显示操作列 */
   showOption?: boolean;
   rowKey?: string;
+  rowSelection?: any;
 }
 
 /**
@@ -79,6 +80,7 @@ const props = withDefaults(defineProps<Props>(), {
   showOption: false,
   maxHeight: 800,
   rowKey: 'id',
+  rowSelection: null,
 });
 
 const emit = defineEmits<Emits>();
@@ -190,6 +192,7 @@ const tableProps = computed(() => ({
   showSummary: attrs['show-summary'],
   summaryMethod: attrs['summary-method'],
   rowKey: props.rowKey,
+  rowSelection: props.rowSelection,
   emptyText: '暂无数据', // 直接使用中文
 }));
 

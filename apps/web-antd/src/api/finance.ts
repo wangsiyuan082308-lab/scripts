@@ -37,6 +37,13 @@ export interface FinanceReportItem {
   typeLabel: string;
 }
 
+export interface FinanceReportSummarySnapshot {
+  netProfit: null | number;
+  netProfitRate: null | number;
+  orderCount: null | number;
+  profitStatus: 'break_even' | 'loss' | 'profit' | 'unknown';
+}
+
 export interface FinanceSheetSummary {
   columnCount: number;
   name: string;
@@ -116,6 +123,22 @@ export async function getFinanceReports(params?: {
     list: FinanceReportItem[];
     total: number;
   }>('/finance/reports', {
+    params,
+  });
+}
+
+export async function getFinanceReportSummaries(params?: {
+  month?: string;
+  store?: string;
+  type?: '' | FinanceReportType;
+}) {
+  return requestClient.get<{
+    list: Array<{
+      relativePath: string;
+      summary: FinanceReportSummarySnapshot | null;
+    }>;
+    total: number;
+  }>('/finance/reports/summaries', {
     params,
   });
 }

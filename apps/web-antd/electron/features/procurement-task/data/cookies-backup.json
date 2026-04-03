@@ -1,0 +1,76 @@
+[
+  {
+    "name": "cbc",
+    "value": "T2gAGKpl7J3TJDyifF3VWUTei7Y9P0w4mA2uvtAhcPNORsuRuTBaUP1Ny7lnGuW17xQ=",
+    "domain": ".ynuf.aliapp.org",
+    "path": "/",
+    "expires": 1806730916.084825,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://ele.me",
+    "_crHasCrossSiteAncestor": true
+  },
+  {
+    "name": "LOGIN_SOURCE",
+    "value": "SAAS",
+    "domain": ".ele.me",
+    "path": "/",
+    "expires": 1777787036.487098,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "SAAS_TOKEN",
+    "value": "ZGRHMZMjAyNTA5MjQ0MTAwNDc0MzI4OVB0aU5NQzI2UA__",
+    "domain": ".ele.me",
+    "path": "/",
+    "expires": 1777787036.487149,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "SWITCH_MERCHANT",
+    "value": "GFJPtQxjmIQ4rCYxtQRwq0IMk1trScBM760nRQwR9tUz2YTyTpBnwG8HfLO1PnNdDCZtRxsigdzG5EK3D8jxVZvoo48qx+fxyp8X9xg+d6hhuiPnj1aRVcXz64QJq1TmfRD/ngWvsWG/Uo9CjS/NqGfvTRKbTI7H+ed2yKOpkwg=",
+    "domain": ".ele.me",
+    "path": "/",
+    "expires": 1777787038.807159,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "arms_uid",
+    "value": "d95566af-0935-44d3-a0d7-965db7ed6396",
+    "domain": "im.ele.me",
+    "path": "/",
+    "expires": 1790752088.552093,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None",
+    "partitionKey": "https://ele.me",
+    "_crHasCrossSiteAncestor": false
+  },
+  {
+    "name": "tfstk",
+    "value": "fZ5jBW69NGCyepbWjKUrPd2rdHR6liNFDVTO-NhqWIdvXCsNSKLaohR_1gxP3CzcW1G62hxv7rAa5fs5cjSwMGP6XwAvIt-w0hO1SMazYWPFoZAMgkrUT39DAdRMX5RODrlxgCEUY7kryKq26Z-k05x5y3YsMFdOXQKJ5eR9kEKTP3L6-AnAXCU5y3YIMfh9kYdJ7eYS_jTzl3bbWRlxmL3kSZKSOafWkLHck3Gt6_6WhHh2VfhONE_tmnArMWtR3OC2wsE-xQQhUiLWO5g6P9_JMEsgtjAAJaB9h1wZ-hX5y9J5EqzDPs_C1e9j2rtGgi16n6EEZnB5Z1OVUoGejdBPipf42jOdKZRVBgUt6h6JWgSmTHt45AgWKfTWYzaSIASttYitlQWIxKLkzlz7Pv7MHUYWkzaSIb9vrUobPzMFR",
+    "domain": ".ele.me",
+    "path": "/",
+    "expires": 1790755165,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "isg",
+    "value": "BCQkshYZEVjJsWUUvRbdZDaN9SQWvUgnchk8rT5Ft--y6cSzZs4ctWRDrUFxMYB_",
+    "domain": ".ele.me",
+    "path": "/",
+    "expires": 1790755165,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  }
+]

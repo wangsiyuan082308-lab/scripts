@@ -37,6 +37,7 @@ export default {
       <Button
         v-if="option.renderType === 'button'"
         :key="option.name"
+        :danger="option.danger || false"
         :ghost="option.ghost || false"
         :type="option.type || 'primary'"
         :disabled="option.disabled"

@@ -45,6 +45,16 @@ const routes: RouteRecordRaw[] = [
       },
       {
         meta: {
+          icon: 'ant-design:table-outlined',
+          title: '门店售罄日志',
+          order: 10,
+        },
+        name: 'ProcurementDailySummary',
+        path: '/purchase/daily-summary',
+        component: () => import('#/views/purchase/daily-summary/index.vue'),
+      },
+      {
+        meta: {
           hideInMenu: true,
           icon: 'lucide:bell-ring',
           title: '提醒中心',

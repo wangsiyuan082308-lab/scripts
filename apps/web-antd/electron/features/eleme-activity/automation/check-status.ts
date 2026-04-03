@@ -97,13 +97,17 @@ async function main() {
   }
 
   // 特别检查品类红包和超级品牌
+  // 注意：超级品牌红包通常在“品牌活动”视图下检查，这里的“未报名”统计不应作为超级品牌的唯一口径。
   const unsignedCategory = unsigned.filter(a => a.type === '品类红包' || a.text.includes('品类红包'));
-  const unsignedBrand = unsigned.filter(a => a.type === '超级品牌' || a.text.includes('超级品牌') || a.text.includes('品牌红包'));
+  const superBrandCandidatesInUnsigned = unsigned.filter(
+    (a) => a.type === '超级品牌' || a.text.includes('超级品牌') || a.text.includes('品牌红包'),
+  );
   const unsignedCoupon = unsigned.filter(a => a.text.includes('专属券') || a.text.includes('专享券'));
 
   console.log('\n🔍 重点检查:');
   console.log(`  品类红包未报名: ${unsignedCategory.length}个`);
-  console.log(`  超级品牌未报名: ${unsignedBrand.length}个`);
+  console.log(`  超级品牌(未报名口径，仅供参考): ${superBrandCandidatesInUnsigned.length}个`);
+  console.log('  超级品牌红包请优先在“品牌活动”视图下确认');
   console.log(`  专属券未报名: ${unsignedCoupon.length}个`);
 
   console.log(`\n总计: ${allActivities.length}个活动, ${unsigned.length}个未报名, ${signed.length}个已处理`);

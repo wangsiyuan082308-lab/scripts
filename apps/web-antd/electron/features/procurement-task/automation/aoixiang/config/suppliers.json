@@ -1,0 +1,94 @@
+{
+  "// 说明": "翱象供应商配置 - 支持语义搜索和别名映射",
+  "version": 1,
+  "updated": "2026-03-06",
+  
+  "suppliers": [
+    {
+      "id": "jicai-jisheng",
+      "name": "集采-计生",
+      "aliases": ["集采计生", "计生", "集采-计生", "集采-计生供应商"],
+      "channel": "1688",
+      "category": "计生用品",
+      "enabled": true,
+      "procurementRules": {
+        "strict": true,
+        "requireQueryAfterFilter": true,
+        "requireResultVerification": true,
+        "requireNonEmptyCartBeforeOrder": true,
+        "stopOnSupplierMismatch": true
+      }
+    },
+    {
+      "id": "jicai-shark",
+      "name": "集采-山东物选逻辑（鲨鱼菲特）",
+      "aliases": ["鲨鱼菲特", "集采鲨鱼菲特", "山东物选逻辑", "集采-山东物选逻辑"],
+      "channel": "1688",
+      "category": "零食",
+      "enabled": true,
+      "notes": "页面加载可能较慢，需要耐心等待",
+      "procurementRules": {
+        "strict": true,
+        "requireQueryAfterFilter": true,
+        "requireResultVerification": true,
+        "requireNonEmptyCartBeforeOrder": true,
+        "stopOnSupplierMismatch": true
+      }
+    },
+    {
+      "id": "jicai-weishengjin",
+      "name": "集采-卫生巾供应商",
+      "aliases": ["集采卫生巾", "卫生巾", "集采-卫生巾"],
+      "channel": "1688",
+      "category": "卫生用品",
+      "enabled": true
+    },
+    {
+      "id": "jicai-shiyuejiejing",
+      "name": "集采-十月结晶",
+      "aliases": ["十月结晶", "集采十月结晶"],
+      "channel": "1688",
+      "category": "母婴用品",
+      "enabled": true
+    },
+    {
+      "id": "jicai-shuke",
+      "name": "集采-舒客",
+      "aliases": ["舒客", "集采舒客"],
+      "channel": "1688",
+      "category": "口腔护理",
+      "enabled": true
+    },
+    {
+      "id": "1688-platform",
+      "name": "1688平台",
+      "aliases": ["1688", "1688平台供应商"],
+      "channel": "1688",
+      "category": "线上采购",
+      "enabled": true,
+      "notes": "按销量排序取前300个商品",
+      "procurementRules": {
+        "sortBySales": true,
+        "strict": false
+      }
+    },
+    {
+      "id": "changxing-jisheng",
+      "name": "（长兴）计生",
+      "aliases": ["长兴计生"],
+      "channel": "长兴",
+      "category": "计生用品",
+      "enabled": true
+    }
+  ],
+  
+  "channelPrefixes": ["集采", "长兴", "安吉", "济阳", "杭州", "全国", "山东"],
+  
+  "categoryKeywords": {
+    "计生": ["计生", "安全套", "验孕"],
+    "卫生巾": ["卫生巾", "护垫", "女性护理"],
+    "零食": ["鲨鱼菲特", "零食", "代餐"],
+    "母婴": ["十月结晶", "母婴", "孕产"],
+    "口腔": ["舒客", "牙刷", "牙膏"]
+  }
+}

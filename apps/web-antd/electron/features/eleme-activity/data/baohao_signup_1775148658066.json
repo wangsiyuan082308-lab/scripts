@@ -1,0 +1,40 @@
+{
+  "reviewMode": "manual",
+  "signupMode": "unsigned_only",
+  "timestamp": "2026-04-02T16:54:08.707Z",
+  "found": 0,
+  "results": [
+    {
+      "activityId": "66455334002",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next?codexReload=1775148660657#/pc/platformActivitiesPc/",
+      "message": "审核继续执行失败：未在 未报名活动 视图中找到活动",
+      "name": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、图文筛首坑等全域加权【商品补贴】：商品含补89天后 报名截止",
+      "sourceTab": "未报名活动",
+      "success": false
+    },
+    {
+      "activityId": "66455486002",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next?codexReload=1775148660657#/pc/platformActivitiesPc/",
+      "message": "审核继续执行失败：未在 未报名活动 视图中找到活动",
+      "name": "爆好价4-6月-组包品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "sourceTab": "未报名活动",
+      "success": false
+    },
+    {
+      "activityId": "66455578001",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next?codexReload=1775148660657#/pc/platformActivitiesPc/",
+      "message": "审核继续执行失败：未在 未报名活动 视图中找到活动",
+      "name": "爆好价4-6月-畅销非食商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "sourceTab": "未报名活动",
+      "success": false
+    },
+    {
+      "activityId": "66455560001",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next?codexReload=1775148660657#/pc/platformActivitiesPc/",
+      "message": "审核继续执行失败：未在 未报名活动 视图中找到活动",
+      "name": "爆好价4-6月-畅销食品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "sourceTab": "未报名活动",
+      "success": false
+    }
+  ]
+}

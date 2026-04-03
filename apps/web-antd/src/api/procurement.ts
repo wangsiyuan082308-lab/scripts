@@ -151,6 +151,85 @@ export interface ProcurementAlertDelivery {
   status: string;
 }
 
+export interface AoxiangStoreSummary {
+  activeNeedReplenish: number;
+  overallStoreSoldRate?: number;
+  productMasterTotalItems?: number;
+  recommendItems: number;
+  sellItems: number;
+  soldItems: number;
+  soldRate: number;
+  stageCounts: {
+    NEEDLESS: number;
+    RECOMMEND: number;
+    SELL: number;
+    SOLD: number;
+  };
+  storeCode: string;
+  storeName: string;
+  totalItems: number;
+}
+
+export interface AoxiangReplenishmentItem {
+  actualQty: number;
+  arrivalMethod: string;
+  barcode: string;
+  dailySales: string;
+  inStock: number;
+  moq: number;
+  moqDesc: string;
+  purchasePrice: number;
+  sellableDays: number;
+  skuCode: string;
+  skuName: string;
+  stage: 'SELL' | 'SOLD' | 'RECOMMEND' | 'NEEDLESS';
+  stageDesc: string;
+  storeCode: string;
+  storeName: string;
+  suggestedQty: number;
+  supplierCode: string;
+  supplierName: string;
+}
+
+export interface AoxiangSupplierReplenishmentReport {
+  countData: {
+    needlessTotal: number;
+    recommondTotal: number;
+    sellTotal: number;
+    soldTotal: number;
+    stopTotal: number;
+  };
+  items: AoxiangReplenishmentItem[];
+  matchedSupplierName: string;
+  stageCounts: {
+    NEEDLESS: number;
+    RECOMMEND: number;
+    SELL: number;
+    SOLD: number;
+  };
+  storeSummaries: AoxiangStoreSummary[];
+  supplier: string;
+  supplierCode: string;
+  totalAmount: number;
+  totalItems: number;
+  totalQty: number;
+  triggeredStores: AoxiangStoreSummary[];
+}
+
+export interface AoxiangReplenishmentSummaryResponse {
+  apiBaseUrl: string;
+  cookieBackupPath: string;
+  generatedAt: string;
+  message: string;
+  reports: AoxiangSupplierReplenishmentReport[];
+  stages: Array<'SELL' | 'SOLD' | 'RECOMMEND' | 'NEEDLESS'>;
+  totals: {
+    itemCount: number;
+    recommendCount: number;
+    supplierCount: number;
+  };
+}
+
 export interface ProcurementOverviewResponse {
   alertSummary: {
     pending: number;
@@ -319,5 +398,12 @@ export async function getProcurementAlertEvents(params: Record<string, any> = {}
 export async function getProcurementAlertDeliveries() {
   return requestClient.get<{ items: ProcurementAlertDelivery[]; total: number }>(
     '/procurement/alerts/deliveries',
+  );
+}
+
+export async function getAoxiangReplenishmentSummary(params: Record<string, any> = {}) {
+  return requestClient.get<AoxiangReplenishmentSummaryResponse>(
+    '/procurement/aoxiang/replenishment-summary',
+    { params },
   );
 }

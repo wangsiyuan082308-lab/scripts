@@ -82,9 +82,9 @@ void loadConfig();
       <Card :bordered="false" class="center-card" :loading="loading">
         <div class="center-head">
           <div>
-            <div class="center-title">商品比对模型配置</div>
+            <div class="center-title">本地模型配置</div>
             <div class="center-subtitle">
-              当前决策中心会复用这里的模型信息，先用于商品比对，门店选址等能力也会优先读取这套配置。
+              当前决策中心会复用这里的本地模型信息，商品比对和其他 AI 能力都会优先读取这套配置。
             </div>
           </div>
           <div class="center-actions">
@@ -99,7 +99,7 @@ void loadConfig();
           type="info"
           show-icon
           class="mb-4"
-          message="未匹配商品在商品比对中会按这里的月销阈值进行判断，超过阈值会归类为新品引入候选。门店选址页也会优先复用这里保存的模型配置。"
+          message="未匹配商品在商品比对中会按这里的月销阈值进行判断，超过阈值会归类为新品引入候选。其他 AI 能力也会优先复用这里保存的本地模型配置。"
         />
 
         <Form layout="vertical">

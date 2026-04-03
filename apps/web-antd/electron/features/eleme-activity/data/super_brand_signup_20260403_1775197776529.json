@@ -1,0 +1,28 @@
+{
+  "actualStoreCount": 0,
+  "actualStoreIds": [],
+  "actualStoreNames": [],
+  "entryScope": "brand_activity",
+  "failedCount": 0,
+  "foundCount": 1,
+  "marketingTag": "超级品牌红包",
+  "results": [
+    {
+      "activityId": "超级品牌红包认养一头牛超级品牌券超级品牌红包淘宝闪购最高补7_活动时间：04/0_1_1",
+      "activityName": "超级品牌红包认养一头牛超级品牌券超级品牌红包淘宝闪购最高补7 活动时间：04/03 ~ 04/304610127天后",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTOEp3INXMqUwqCEeVQcpejppbSptEXaB%2ByUXtnBdSjPvLSJ8GJkje9Qi%0D5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE%3D&token=0hfHDsYQxsTN38G9kluBTOEp3INXMqUwqCEeVQcpejppbSptEXaB%2ByUXtnBdSjPvLSJ8GJkje9Qi%0D5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE%3D#/activity-detail-v2?activityId=66458974001&from=",
+      "marketingTag": "超级品牌红包",
+      "merchantRatio": 0.3,
+      "message": "报名成功",
+      "screenshot": "signup_super_brand_1775197771367.png",
+      "sourceTab": "品牌活动",
+      "status": "succeeded",
+      "storeCount": 0,
+      "storeIds": [],
+      "storeNames": [],
+      "success": true
+    }
+  ],
+  "successCount": 1,
+  "timestamp": "2026-04-03T06:29:36.529Z"
+}

@@ -28,6 +28,21 @@ afterEach(async () => {
 });
 
 describe('product master runtime storage', () => {
+  it('derives base unit procurement cost from carton pricing', async () => {
+    const { getProductMasterProcurementPricing } = await loadProductMasterModule();
+
+    const pricing = getProductMasterProcurementPricing({
+      cartonSize: '12瓶/箱',
+      procurementCost: 10.8,
+      productName: '测试商品',
+      upc: 'UPC-BOX',
+    });
+
+    expect(pricing.cartonProcurementCost).toBe(10.8);
+    expect(pricing.baseUnitProcurementCost).toBe(0.9);
+    expect(pricing.cartonSize).toBe('12瓶/箱');
+  });
+
   it('does not auto-import on first load', async () => {
     const runtimeDir = await createTempDir('product-master-runtime-');
     const {

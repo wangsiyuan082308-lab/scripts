@@ -31,6 +31,10 @@ export default {
       type: String,
       default: 'id',
     },
+    rowSelection: {
+      type: Object,
+      default: null,
+    },
     page: {
       type: Number,
       default: 1,
@@ -192,6 +196,7 @@ export default {
     <BaseTable
       :data="data"
       :row-key="rowKey"
+      :row-selection="rowSelection"
       :height="height"
       :columns="columns"
       :loading="loading"

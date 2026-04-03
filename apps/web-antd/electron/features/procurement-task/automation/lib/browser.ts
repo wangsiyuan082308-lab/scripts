@@ -1,17 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as http from 'http';
-import * as crypto from 'crypto';
+import { fileURLToPath } from 'node:url';
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { log } from './utils';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_USER_DATA_DIR = path.resolve(__dirname, '../../../eleme-activity-assistant/user_data');
 const COOKIE_BACKUP_FILE = path.resolve(__dirname, '../../data/cookies-backup.json');
 const DEFAULT_CDP_PORT = 18792;
 const DEFAULT_VIEWPORT = { width: 1440, height: 900 };
-const RELAY_TOKEN_CONTEXT = 'openclaw-extension-relay-v1';
-const RELAY_AUTH_HEADER = 'x-openclaw-relay-token';
 
 let muteViolationCount = 0;
 
@@ -56,31 +54,6 @@ async function launchPersistentContextWithFallback(
     const context = await chromium.launchPersistentContext(tempUserDataDir, launchOptions);
     return { context, actualUserDataDir: tempUserDataDir, usingTempProfile: true };
   }
-}
-
-/**
- * 从环境变量或 openclaw.json 获取 gateway token
- */
-function resolveGatewayToken(): string | null {
-  const envToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || process.env.CLAWDBOT_GATEWAY_TOKEN?.trim();
-  if (envToken) return envToken;
-
-  try {
-    const configPath = path.join(process.env.HOME || '', '.openclaw', 'openclaw.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    return config?.gateway?.auth?.token?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 派生 relay auth token
- */
-function deriveRelayToken(gatewayToken: string, port: number): string {
-  return crypto.createHmac('sha256', gatewayToken)
-    .update(`${RELAY_TOKEN_CONTEXT}:${port}`)
-    .digest('hex');
 }
 
 function getMuteInitScript(): string {
@@ -187,8 +160,7 @@ async function enforceMutePolicy(context: BrowserContext): Promise<void> {
 }
 
 /**
- * 尝试通过 CDP 连接已登录的 Chrome（OpenClaw Browser Relay）
- * 失败则 fallback 到 persistent context（复用 cookie）
+ * 启动持久化浏览器上下文并复用本地 cookie
  */
 export async function launchBrowser(options?: BrowserOptions): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
   const cdpPort = options?.cdpPort || DEFAULT_CDP_PORT;

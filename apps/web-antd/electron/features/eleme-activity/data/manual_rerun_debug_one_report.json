@@ -1,0 +1,34 @@
+{
+  "reviewMode": "auto",
+  "signupMode": "unsigned_only",
+  "timestamp": "2026-04-02T17:36:19.332Z",
+  "found": 1,
+  "results": [
+    {
+      "name": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、图文筛首坑等全域加权【商品补贴】：商品含补89天后 报名截止",
+      "success": false,
+      "activityId": "66455334002",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTHPP6dPFTP8/RTuQvCPlEENpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=&token=0hfHDsYQxsTN38G9kluBTHPP6dPFTP8/RTuQvCPlEENpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=#/activity-detail-v2?activityId=66455334002&from=",
+      "sourceTab": "未报名活动",
+      "message": "导出商品数据为空，已跳过上传和提交（无需执行下一步）",
+      "screenshots": [
+        "baohao_detail_1_1775151229945.png",
+        "baohao_progress_1_1775151235046.png",
+        "baohao_step2_1_1775151252666.png",
+        "baohao_exported_1_1775151367221.png"
+      ],
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775151367154_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportTaskId": "GEI@ele_newretail_investment_invite_upc_by_commodity_group@260403013412@0727",
+      "processed": null,
+      "storeCount": 1,
+      "storeIds": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "exportedRowCount": 0,
+      "processedRowCount": 0
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -11,6 +12,26 @@ import pkg from '../package.json';
 
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
+import {
+  createLocalBaohaojiaRun,
+  createLocalBaohaojiaTask,
+  deleteLocalBaohaojiaTask,
+  getLocalBaohaojiaTaskDetail,
+  listLocalBaohaojiaRunLogs,
+  listLocalBaohaojiaRuns,
+  listLocalBaohaojiaTasks,
+} from './features/eleme-baohaojia/local-task-store';
+import { TaobaoBaohaojiaTaskRunner } from './features/eleme-baohaojia/runner';
+import {
+  createLocalSuperBrandRun,
+  createLocalSuperBrandTask,
+  deleteLocalSuperBrandTask,
+  getLocalSuperBrandTaskDetail,
+  listLocalSuperBrandRunLogs,
+  listLocalSuperBrandRuns,
+  listLocalSuperBrandTasks,
+} from './features/taobao-super-brand/local-task-store';
+import { TaobaoSuperBrandTaskRunner } from './features/taobao-super-brand/runner';
 import { getExecutionLogs } from './features/execution-logs/index';
 import { ProcurementTaskRunner } from './features/procurement-task/runner';
 import { ProcurementAnalyzer } from './features/procurement/index';
@@ -66,7 +87,81 @@ let currentAuthUser:
     } = null;
 
 const ELECTRON_BACKEND_BASE_URL =
-  process.env.ELECTRON_BACKEND_BASE_URL || 'http://127.0.0.1:3030';
+  process.env.ELECTRON_BACKEND_BASE_URL || 'http://120.55.244.232';
+
+function getFinanceAnalyzerScriptPath() {
+  return path.join(
+    process.env.HOME || app.getPath('home'),
+    '.openclaw',
+    'workspace',
+    'skills',
+    'oby-finance-analyzer',
+    'oby_finance_report.py',
+  );
+}
+
+function getFinanceOutputBaseDir() {
+  return path.join(app.getPath('downloads'), '财务报表');
+}
+
+function runFinanceAnalyzer(params: { anjiMtOrders?: number; month: string }) {
+  const scriptPath = getFinanceAnalyzerScriptPath();
+  const outputBaseDir = getFinanceOutputBaseDir();
+  const anjiMtOrders =
+    params.anjiMtOrders == null || Number.isNaN(Number(params.anjiMtOrders))
+      ? 0
+      : Math.max(0, Math.round(Number(params.anjiMtOrders)));
+
+  return new Promise<{ stderr: string; stdout: string }>((resolve, reject) => {
+    const child = spawn(
+      'python3',
+      [
+        scriptPath,
+        '--month',
+        params.month,
+        '--output-dir',
+        outputBaseDir,
+        '--anji-mt-orders',
+        `${anjiMtOrders}`,
+      ],
+      {
+        cwd: path.dirname(scriptPath),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stderr, stdout });
+        return;
+      }
+
+      reject(
+        new Error(
+          stderr.trim() ||
+            stdout.trim() ||
+            `财务分析执行失败，退出码 ${code ?? 'unknown'}`,
+        ),
+      );
+    });
+  });
+}
 
 function buildLocalAccessCodes(role: string) {
   if (role === 'super_admin') {
@@ -318,7 +413,7 @@ function registerIpcHandlers() {
     'process-eleme-baohaojia',
     async (_event, { fileBuffer, originalName, initialStock }) => {
       try {
-        const { buffer, summary } = await ElemeBaohaojiaAnalyzer.run({
+        const { auditBuffer, summary, uploadBuffer } = await ElemeBaohaojiaAnalyzer.run({
           fileBuffer: Buffer.from(fileBuffer),
           initialStock: Number(initialStock) || 9999,
         });
@@ -333,10 +428,37 @@ function registerIpcHandlers() {
           return { success: false, canceled: true };
         }
 
-        await fs.writeFile(filePath, buffer);
-        return { success: true, outputPath: filePath, summary };
+        await fs.writeFile(filePath, uploadBuffer);
+        const auditPath = filePath.replace(/\.xlsx$/i, '_审计.xlsx');
+        await fs.writeFile(auditPath, auditBuffer);
+        return { success: true, auditPath, outputPath: filePath, summary };
       } catch (error: any) {
         console.error('处理爆好价活动失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'analyze-eleme-baohaojia-task',
+    async (_event, { fileBuffer, originalName, initialStock }) => {
+      try {
+        const { analysis, auditBuffer, summary, uploadBuffer } = await ElemeBaohaojiaAnalyzer.run({
+          fileBuffer: Buffer.from(fileBuffer),
+          initialStock: Number(initialStock) || 9999,
+        });
+
+        return {
+          analysis,
+          auditFileBase64: auditBuffer.toString('base64'),
+          auditFileName: `爆好价审计_${originalName || Date.now()}.xlsx`,
+          success: true,
+          summary,
+          uploadFileBase64: uploadBuffer.toString('base64'),
+          uploadFileName: `爆好价报名_${originalName || Date.now()}.xlsx`,
+        };
+      } catch (error: any) {
+        console.error('分析爆好价活动任务失败:', error);
         return { success: false, message: error.message };
       }
     },
@@ -412,6 +534,48 @@ function registerIpcHandlers() {
         return { success: true, outputPath: filePath, summary };
       } catch (error: any) {
         console.error('生成采购计划失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'run-finance-analysis',
+    async (_event, { anjiMtOrders, files, month }) => {
+      try {
+        const normalizedMonth = `${month || ''}`.trim();
+        if (!normalizedMonth) {
+          return { success: false, message: '月份不能为空' };
+        }
+
+        const monthDir = path.join(getFinanceOutputBaseDir(), normalizedMonth);
+        await fs.mkdir(monthDir, { recursive: true });
+
+        for (const file of files || []) {
+          const fileName = `${file?.name || ''}`.trim();
+          if (!fileName) continue;
+          await fs.writeFile(
+            path.join(monthDir, fileName),
+            Buffer.from(file.buffer),
+          );
+        }
+
+        const result = await runFinanceAnalyzer({
+          anjiMtOrders:
+            anjiMtOrders == null ? undefined : Number(anjiMtOrders),
+          month: normalizedMonth,
+        });
+        const summaryFileName = `${normalizedMonth}月-门店模板汇总.xlsx`;
+
+        return {
+          reportFileName: summaryFileName,
+          reportRelativePath: `${normalizedMonth}/${summaryFileName}`,
+          stderr: result.stderr,
+          stdout: result.stdout,
+          success: true,
+        };
+      } catch (error: any) {
+        console.error('执行财务分析失败:', error);
         return { success: false, message: error.message };
       }
     },
@@ -570,6 +734,89 @@ function registerIpcHandlers() {
       taskId: task?.taskId,
     });
     return await ProcurementTaskRunner.executeTask(task);
+  });
+
+  ipcMain.handle('list-taobao-baohaojia-local-tasks', async () => {
+    return await listLocalBaohaojiaTasks();
+  });
+
+  ipcMain.handle('get-taobao-baohaojia-local-task-detail', async (_event, taskId) => {
+    return await getLocalBaohaojiaTaskDetail(taskId);
+  });
+
+  ipcMain.handle('create-taobao-baohaojia-local-task', async (_event, payload) => {
+    return await createLocalBaohaojiaTask(payload || {});
+  });
+
+  ipcMain.handle('delete-taobao-baohaojia-local-task', async (_event, taskId) => {
+    return await deleteLocalBaohaojiaTask(taskId);
+  });
+
+  ipcMain.handle('create-taobao-baohaojia-local-run', async (_event, payload) => {
+    return await createLocalBaohaojiaRun(payload);
+  });
+
+  ipcMain.handle('list-taobao-baohaojia-local-runs', async (_event, taskId) => {
+    return await listLocalBaohaojiaRuns(taskId);
+  });
+
+  ipcMain.handle('list-taobao-baohaojia-local-run-logs', async (_event, runId) => {
+    return await listLocalBaohaojiaRunLogs(runId);
+  });
+
+  ipcMain.handle('execute-taobao-baohaojia-task', async (_event, task) => {
+    console.info('[execute-taobao-baohaojia-task]', {
+      runId: task?.runId,
+      taskId: task?.taskId,
+    });
+    return await TaobaoBaohaojiaTaskRunner.executeTask(task);
+  });
+
+  ipcMain.handle('continue-taobao-baohaojia-task-review', async (_event, task) => {
+    console.info('[continue-taobao-baohaojia-task-review]', {
+      runId: task?.runId,
+      taskId: task?.taskId,
+    });
+    return await TaobaoBaohaojiaTaskRunner.executeTask({
+      ...task,
+      action: 'continue_review',
+    });
+  });
+
+  ipcMain.handle('list-taobao-super-brand-local-tasks', async () => {
+    return await listLocalSuperBrandTasks();
+  });
+
+  ipcMain.handle('get-taobao-super-brand-local-task-detail', async (_event, taskId) => {
+    return await getLocalSuperBrandTaskDetail(taskId);
+  });
+
+  ipcMain.handle('create-taobao-super-brand-local-task', async (_event, payload) => {
+    return await createLocalSuperBrandTask(payload || {});
+  });
+
+  ipcMain.handle('delete-taobao-super-brand-local-task', async (_event, taskId) => {
+    return await deleteLocalSuperBrandTask(taskId);
+  });
+
+  ipcMain.handle('create-taobao-super-brand-local-run', async (_event, payload) => {
+    return await createLocalSuperBrandRun(payload);
+  });
+
+  ipcMain.handle('list-taobao-super-brand-local-runs', async (_event, taskId) => {
+    return await listLocalSuperBrandRuns(taskId);
+  });
+
+  ipcMain.handle('list-taobao-super-brand-local-run-logs', async (_event, runId) => {
+    return await listLocalSuperBrandRunLogs(runId);
+  });
+
+  ipcMain.handle('execute-taobao-super-brand-task', async (_event, task) => {
+    console.info('[execute-taobao-super-brand-task]', {
+      runId: task?.runId,
+      taskId: task?.taskId,
+    });
+    return await TaobaoSuperBrandTaskRunner.executeTask(task);
   });
 
   ipcMain.handle('get-execution-logs', async (_event, params) => {

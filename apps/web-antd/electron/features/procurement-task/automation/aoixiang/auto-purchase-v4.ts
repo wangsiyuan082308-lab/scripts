@@ -14,21 +14,31 @@
  *   npx ts-node src/auto-purchase-v4.ts --step order             # 只创建采购单
  *   npx ts-node src/auto-purchase-v4.ts --dry-run                # 预览不执行
  */
-import { launchBrowser, ensureLogin } from '@oby/browser';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig, parseCLI, PurchaseConfig } from './lib/config';
 import { log, setStartTime } from './lib/utils';
 import { StepAddAudit, StepResult, PurchaseReport, REPORTS_DIR, DATA_DIR } from './lib/types-v4';
+import { launchBrowser } from '../lib/browser';
+import { ensureLogin } from './lib/page-helpers';
 import { stepClean } from './steps/step-clean';
 import { stepAdd } from './steps/step-add';
 import { stepOrder } from './steps/step-order';
 import { stepCheck, CheckResult } from './steps/step-check';
 import { stepRetry } from './steps/step-retry';
 import { sendWebhook, formatReport, formatStoreNotification } from './lib/notify';
+import { acquireProcessLock, releaseProcessLock } from './lib/process-lock';
+import { checkFrequency, recordPurchase } from './lib/frequency';
 
 const START_TIME = Date.now();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 setStartTime(START_TIME);
+
+// Signal handlers for graceful cleanup
+process.on('SIGTERM', () => { releaseProcessLock(); process.exit(143); });
+process.on('SIGINT', () => { releaseProcessLock(); process.exit(130); });
+process.on('uncaughtException', (err) => { log(`未捕获异常: ${err}`); releaseProcessLock(); process.exit(1); });
 
 const AOIXIANG_TARGET_URL = 'https://saas-retail.ele.me/#/replenish/detail';
 
@@ -78,10 +88,25 @@ async function main() {
   if (step) log(`单步模式: ${step}`);
   if (dryRun) log(`⚠️ DRY RUN 模式`);
 
+  if (!acquireProcessLock()) {
+    log('另一个采购实例正在运行，退出');
+    return;
+  }
+
   if (dryRun) {
     log('\n配置预览:');
     log(JSON.stringify(config, null, 2));
+    releaseProcessLock();
     return;
+  }
+
+  if (!dryRun && !step) {
+    const freq = checkFrequency(config.supplier, 12);
+    if (!freq.allowed) {
+      log(`采购频率控制: ${config.supplier} 距上次采购仅 ${freq.hoursSince?.toFixed(1)} 小时（最小间隔 12h），跳过`);
+      releaseProcessLock();
+      return;
+    }
   }
 
   // 使用共享浏览器管理器
@@ -131,6 +156,7 @@ async function main() {
     }
   } catch (e: any) {
     log(`❌ 登录超时: ${e.message}`);
+    releaseProcessLock();
     await context.close().catch(() => {});
     if (browser) await browser.close().catch(() => {});
     return;
@@ -170,6 +196,7 @@ async function main() {
         default:
           log(`❌ 未知步骤: ${step}`);
           log('可用步骤: clean, add, order, check, retry');
+          releaseProcessLock();
           await context.close().catch(() => {});
           if (browser) await browser.close().catch(() => {});
           return;
@@ -179,6 +206,7 @@ async function main() {
       }
       steps.push(result);
       log(`\n结果: ${result.success ? '✅' : '❌'} ${result.message}`);
+      releaseProcessLock();
       await context.close().catch(() => {});
       if (browser) await browser.close().catch(() => {});
       return;
@@ -232,8 +260,8 @@ async function main() {
       steps,
       planOrderId,
       totalItems: checkData ? checkData.successCount + checkData.failedCount + checkData.pendingCount : 0,
-      successCount: checkData?.successCount || 0,
-      failedCount: checkData?.failedCount || 0,
+      successCount: checkData?.successCount ?? 0,
+      failedCount: checkData?.failedCount ?? 0,
       failedOrders: checkData?.failedOrders || [],
       noStockSkus: [],
       errorMessage: steps.find(s => !s.success)?.message || '',
@@ -246,6 +274,9 @@ async function main() {
     const reportFile = `${REPORTS_DIR}/report-v4-${ts}.json`;
     fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
     log(`\n📊 报告: ${reportFile}`);
+
+    // 记录采购完成时间
+    recordPurchase(config.supplier);
 
     // 发送通知
     if (config.notification.webhook) {
@@ -285,6 +316,7 @@ async function main() {
     await page.waitForTimeout(30000);
   }
 
+  releaseProcessLock();
   await context.close().catch(() => {});
   if (browser) await browser.close().catch(() => {});
 }

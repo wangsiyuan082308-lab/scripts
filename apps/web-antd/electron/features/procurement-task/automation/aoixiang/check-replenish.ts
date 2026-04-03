@@ -1,29 +1,29 @@
 /**
  * 翱象补货建议查询 v3
- * 
+ *
  * 通过拦截页面API响应获取数据，支持分页
- * 
+ *
  * 用法：npx ts-node src/check-replenish.ts [--supplier 供应商名称]
  */
 
-import { chromium } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'node:url';
+import { log } from './lib/utils';
+import { loadConfig, parseCLI } from './lib/config';
+import { launchBrowser } from '../lib/browser';
+import { closeModals, ensureLogin, goNextPage, switchTo100PerPage } from './lib/page-helpers';
 
-const USER_DATA = path.join(__dirname, '..', '..', 'eleme-activity-assistant', 'user_data');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const today = new Date().toISOString().split('T')[0];
 
 const DEFAULT_SUPPLIERS = ['集采-十月结晶', '集采-卫生巾'];
+const AOIXIANG_TARGET_URL = 'https://saas-retail.ele.me/#/replenish/list';
 
 function matchSupplier(name: string, target: string): boolean {
   const clean = (s: string) => s.replace(/[-_\s供应商]/g, '');
   return clean(name).includes(clean(target)) || clean(target).includes(clean(name));
-}
-
-function log(msg: string) {
-  const ts = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  console.log(`[${ts}] ${msg}`);
 }
 
 async function main() {
@@ -37,14 +37,24 @@ async function main() {
 
   log(`目标供应商: ${targetSuppliers.join(', ')}`);
 
-  const ctx = await chromium.launchPersistentContext(USER_DATA, {
-    channel: 'chrome',
-    headless: false,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+  const { overrides } = parseCLI();
+  const config = loadConfig(overrides);
+  const userDataDir = path.resolve(__dirname, '../', config.browser.userDataDir || './user_data');
+
+  const { browser, context, page } = await launchBrowser({
+    cdpPort: 18792,
+    userDataDir,
+    headless: config.browser.headless,
+    log,
   });
-  const page = ctx.pages()[0] || await ctx.newPage();
 
   try {
+    await ensureLogin(page, AOIXIANG_TARGET_URL, {
+      maxWait: 180000,
+      loginIndicators: ['login', 'passport', '欢迎登录'],
+      log,
+    });
+
     // 拦截所有补货建议API响应
     const allItems: any[] = [];
     let countData: any = {};
@@ -67,27 +77,26 @@ async function main() {
 
     // 导航到补货建议
     log('导航到补货建议页面...');
-    await page.goto('https://saas-retail.ele.me/#/replenish/list', {
+    await page.goto(AOIXIANG_TARGET_URL, {
       waitUntil: 'networkidle',
       timeout: 30000,
     }).catch(() => {});
     await page.waitForTimeout(8000);
+
+    await closeModals(page);
+    await switchTo100PerPage(page);
 
     log(`首页获取 ${allItems.length} 条`);
     log(`统计: 动销售罄${countData.sellTotal || 0} | 售罄${countData.soldTotal || 0} | 建议补货${countData.recommondTotal || 0} | 无需${countData.needlessTotal || 0} | 停止${countData.stopTotal || 0}`);
 
     // 翻页获取更多数据（最多翻50页 = 1000条）
     for (let i = 0; i < 50; i++) {
-      const nextBtn = page.locator('.ant-pagination-next:not(.ant-pagination-disabled)').first();
-      if (await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const prevCount = allItems.length;
-        await nextBtn.click();
-        await page.waitForTimeout(3000);
-        if (allItems.length === prevCount) break; // 没有新数据了
-        log(`第${i + 2}页: 累计 ${allItems.length} 条`);
-      } else {
-        break;
-      }
+      const prevCount = allItems.length;
+      const hasNext = await goNextPage(page);
+      if (!hasNext) break;
+      await page.waitForTimeout(3000);
+      if (allItems.length === prevCount) break;
+      log(`第${i + 2}页: 累计 ${allItems.length} 条`);
     }
 
     log(`总计获取 ${allItems.length} 条补货建议`);
@@ -189,7 +198,8 @@ async function main() {
     console.log('=== END_MESSAGE ===');
 
   } finally {
-    await ctx.close();
+    await context.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
   }
 
   log('完成！');

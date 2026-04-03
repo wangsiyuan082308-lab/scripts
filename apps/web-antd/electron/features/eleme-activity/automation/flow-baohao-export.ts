@@ -1,7 +1,9 @@
 import { chromium } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(__dirname, '..', 'logs');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -20,7 +22,29 @@ async function main() {
 
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.addInitScript(() => {
+    (window as any).__name = (target: any) => target;
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+
+  page.on('response', async (response) => {
+    const url = response.url();
+    if (!/download|export|task|file|导出/i.test(url)) return;
+    try {
+      const request = response.request();
+      const method = request.method();
+      const status = response.status();
+      const headers = response.headers();
+      const contentType = headers['content-type'] || '';
+      let bodyPreview = '';
+      if (/json/i.test(contentType)) {
+        bodyPreview = JSON.stringify(await response.json()).slice(0, 500);
+      } else if (/text/i.test(contentType)) {
+        bodyPreview = (await response.text()).slice(0, 500);
+      }
+      console.log(
+        `[NET][${method}] ${status} ${url}${bodyPreview ? `\n  body: ${bodyPreview}` : ''}`,
+      );
+    } catch {}
   });
 
   try {

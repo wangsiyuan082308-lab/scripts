@@ -1,0 +1,143 @@
+{
+  "reviewMode": "manual",
+  "timestamp": "2026-04-02T12:24:29.539Z",
+  "found": 5,
+  "results": [
+    {
+      "name": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、赛马机制、图文筛首坑等全域加权89天后 报名截止立即报名",
+      "success": false,
+      "activityId": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、赛马机制、图文筛首坑等全域加权89天后 报名截止立即报名",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775131997827_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775131997827_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 39,
+      "message": "已生成上传文件和审计文件，等待人工审核",
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775131997827_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 24,
+      "screenshots": [
+        "baohao_detail_1_1775131871821.png",
+        "baohao_progress_1_1775131876921.png",
+        "baohao_step2_1_1775131894565.png",
+        "baohao_exported_1_1775131997850.png"
+      ],
+      "sourceTab": "未报名活动",
+      "status": "waiting_review",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "waitingReview": true
+    },
+    {
+      "name": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、图文筛首坑等全域加权【商品补贴】：商品含补89天后 报名截止立即报名",
+      "success": false,
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/",
+      "sourceTab": "未报名活动",
+      "message": "导出商品数据为空，已跳过上传和提交（无需执行下一步）",
+      "screenshots": [
+        "baohao_detail_2_1775132014508.png",
+        "baohao_progress_2_1775132019606.png",
+        "baohao_step2_2_1775132037242.png",
+        "baohao_exported_2_1775132140458.png"
+      ],
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132140451_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "processed": null,
+      "storeCount": 1,
+      "storeIds": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "exportedRowCount": 0,
+      "processedRowCount": 0
+    },
+    {
+      "name": "爆好价4-6月-组包品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取",
+      "success": false,
+      "activityId": "爆好价4-6月-组包品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132282599_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132282599_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 50,
+      "message": "已生成上传文件和审计文件，等待人工审核",
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132282599_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 50,
+      "screenshots": [
+        "baohao_detail_3_1775132156672.png",
+        "baohao_progress_3_1775132161763.png",
+        "baohao_step2_3_1775132179400.png",
+        "baohao_exported_3_1775132282629.png"
+      ],
+      "sourceTab": "未报名活动",
+      "status": "waiting_review",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "waitingReview": true
+    },
+    {
+      "name": "爆好价4-6月-畅销非食商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获",
+      "success": false,
+      "activityId": "爆好价4-6月-畅销非食商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132424780_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132424780_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 95,
+      "message": "已生成上传文件和审计文件，等待人工审核",
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132424780_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 93,
+      "screenshots": [
+        "baohao_detail_4_1775132298873.png",
+        "baohao_progress_4_1775132303963.png",
+        "baohao_step2_4_1775132321598.png",
+        "baohao_exported_4_1775132424788.png"
+      ],
+      "sourceTab": "未报名活动",
+      "status": "waiting_review",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "waitingReview": true
+    },
+    {
+      "name": "爆好价4-6月-畅销食品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获",
+      "success": false,
+      "activityId": "爆好价4-6月-畅销食品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132570946_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132570946_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 239,
+      "message": "已生成上传文件和审计文件，等待人工审核",
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775132570946_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 220,
+      "screenshots": [
+        "baohao_detail_5_1775132445037.png",
+        "baohao_progress_5_1775132450128.png",
+        "baohao_step2_5_1775132467749.png",
+        "baohao_exported_5_1775132570973.png"
+      ],
+      "sourceTab": "未报名活动",
+      "status": "waiting_review",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "waitingReview": true
+    }
+  ]
+}

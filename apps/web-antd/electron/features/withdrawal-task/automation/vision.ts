@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Page } from 'playwright';
 
+import { getSharedAiConfig } from '../../../shared/ai-config';
 import { ensureWithdrawalEnvLoaded } from './config.js';
 
 export interface VisionPosition {
@@ -72,16 +73,13 @@ export async function analyzeFinancePage(
  */
 async function callImageModel(imagePath: string, prompt: string): Promise<string> {
   ensureWithdrawalEnvLoaded();
-  
-  const apiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
-  
-  if (!apiKey) {
-    console.error('[视觉模型] 未找到 API Key');
-    throw new Error('未配置 ALIYUN_API_KEY 或 DASHSCOPE_API_KEY');
+
+  const aiConfig = await getSharedAiConfig();
+  if (!aiConfig.apiKey) {
+    console.error('[视觉模型] 未找到本地模型配置');
+    throw new Error('未配置本地模型 API Key');
   }
-  
-  // 使用 OpenAI 兼容的 coding 域名
-  const baseUrl = 'https://coding.dashscope.aliyuncs.com/v1/chat/completions';
+  const baseUrl = aiConfig.baseUrl;
   
   // 读取图片并转 base64
   const imageBuffer = fs.readFileSync(imagePath);
@@ -92,11 +90,11 @@ async function callImageModel(imagePath: string, prompt: string): Promise<string
     const response = await fetch(baseUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${aiConfig.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'qwen3.5-plus',  // 使用支持图像的文本模型
+        model: aiConfig.model,
         messages: [
           {
             role: 'user',

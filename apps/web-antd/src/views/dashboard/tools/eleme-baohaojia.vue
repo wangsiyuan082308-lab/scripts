@@ -89,7 +89,9 @@ const processExcelFile = async (file: File, initialStock: number) => {
         message.success({ content: '处理成功', key: 'processBaohaojia' });
         Modal.success({
           title: '处理完成',
-          content: result.summary || `文件已保存至: ${result.outputPath}`,
+          content:
+            result.summary ||
+            `上传文件已保存至: ${result.outputPath}\n审计文件已保存至: ${result.auditPath}`,
           okText: '知道了',
         });
         await formApi.resetForm();
@@ -114,8 +116,8 @@ const processExcelFile = async (file: File, initialStock: number) => {
         <p>功能说明：</p>
         <ul class="list-inside list-disc">
           <li>上传Excel文件，自动提取"条码"、"活动价上限"、"是否组包"、"组包件数"列。</li>
-          <li>自动查询商品总表的采购价，过滤采购价 > 活动价的商品。</li>
-          <li>生成两个Sheet：报名商品 + 排除商品（含排除原因）。</li>
+          <li>自动查询商品总表的最小单位采购价，过滤最小单位采购价 > 活动价的商品。</li>
+          <li>生成两个文件：平台上传文件严格模板 + 审计文件。</li>
         </ul>
       </div>
       <Form />

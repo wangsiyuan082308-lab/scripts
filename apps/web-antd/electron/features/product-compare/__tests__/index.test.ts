@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 
 const originalCompareHome = process.env.PRODUCT_COMPARE_HOME;
 const originalProductMasterHome = process.env.PRODUCT_MASTER_HOME;
+const originalAiConfigHome = process.env.SCRIPTAI_AI_CONFIG_HOME;
 const originalFetch = global.fetch;
 const tempDirs: string[] = [];
 
@@ -28,10 +29,19 @@ async function workbookToBuffer(rows: Array<Record<string, any>>) {
   return Buffer.from((await workbook.xlsx.writeBuffer()) as ArrayBuffer);
 }
 
+async function setupRuntimeHomes(options?: { withProductMaster?: boolean }) {
+  process.env.PRODUCT_COMPARE_HOME = await createTempDir('product-compare-home-');
+  process.env.SCRIPTAI_AI_CONFIG_HOME = await createTempDir('ai-config-home-');
+  if (options?.withProductMaster) {
+    process.env.PRODUCT_MASTER_HOME = await createTempDir('product-master-home-');
+  }
+}
+
 afterEach(async () => {
   const fs = await import('node:fs');
   process.env.PRODUCT_COMPARE_HOME = originalCompareHome;
   process.env.PRODUCT_MASTER_HOME = originalProductMasterHome;
+  process.env.SCRIPTAI_AI_CONFIG_HOME = originalAiConfigHome;
   global.fetch = originalFetch;
   vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) {
@@ -41,10 +51,7 @@ afterEach(async () => {
 
 describe('product compare runner', () => {
   it('rejects product master mode when product master is missing', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    const productMasterHome = await createTempDir('product-master-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
-    process.env.PRODUCT_MASTER_HOME = productMasterHome;
+    await setupRuntimeHomes({ withProductMaster: true });
 
     const { runProductCompare } = await import('../index');
     const targetBuffer = await workbookToBuffer([
@@ -64,8 +71,7 @@ describe('product compare runner', () => {
   });
 
   it('requires reference file in custom mode', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
+    await setupRuntimeHomes();
 
     const { runProductCompare } = await import('../index');
     const targetBuffer = await workbookToBuffer([
@@ -85,8 +91,7 @@ describe('product compare runner', () => {
   });
 
   it('normalizes UPC and matches exact product in custom mode', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
+    await setupRuntimeHomes();
 
     const { runProductCompare } = await import('../index');
     const targetBuffer = await workbookToBuffer([
@@ -121,10 +126,7 @@ describe('product compare runner', () => {
   });
 
   it('picks the lowest procurement candidate from product master', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    const productMasterHome = await createTempDir('product-master-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
-    process.env.PRODUCT_MASTER_HOME = productMasterHome;
+    await setupRuntimeHomes({ withProductMaster: true });
 
     const { importProductMasterJson } = await import('../../product-master/index');
     const { runProductCompare } = await import('../index');
@@ -185,8 +187,7 @@ describe('product compare runner', () => {
   });
 
   it('classifies unmatched products with monthly sales above threshold as new product candidates', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
+    await setupRuntimeHomes();
 
     const { runProductCompare } = await import('../index');
     const targetBuffer = await workbookToBuffer([
@@ -217,8 +218,7 @@ describe('product compare runner', () => {
   });
 
   it('falls back to unmatched pending when AI response is invalid', async () => {
-    const compareHome = await createTempDir('product-compare-home-');
-    process.env.PRODUCT_COMPARE_HOME = compareHome;
+    await setupRuntimeHomes();
 
     const { runProductCompare, saveProductCompareAiConfig } = await import('../index');
     await saveProductCompareAiConfig({

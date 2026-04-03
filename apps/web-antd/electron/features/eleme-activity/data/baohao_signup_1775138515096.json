@@ -1,0 +1,121 @@
+{
+  "reviewMode": "auto",
+  "signupMode": "unsigned_only",
+  "timestamp": "2026-04-02T14:13:39.868Z",
+  "found": 4,
+  "results": [
+    {
+      "name": "爆好价4-6月流量加权商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30具体玩法：报名活动，顾客能够以活动价购买商品【流量加权】：TOP 搜词一坑、图文筛首坑等全域加权【商品补贴】：商品含补89天后 报名截止",
+      "success": false,
+      "activityId": "66455334002",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTHPP6dPFTP8/RTuQvCPlEENpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=&token=0hfHDsYQxsTN38G9kluBTHPP6dPFTP8/RTuQvCPlEENpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=#/activity-detail-v2?activityId=66455334002&from=",
+      "sourceTab": "未报名活动",
+      "message": "导出商品数据为空，已跳过上传和提交（无需执行下一步）",
+      "screenshots": [
+        "baohao_detail_1_1775138544831.png",
+        "baohao_progress_1_1775138549923.png",
+        "baohao_step2_1_1775138567525.png",
+        "baohao_exported_1_1775138670788.png"
+      ],
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138670782_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportTaskId": "GEI@ele_newretail_investment_invite_upc_by_commodity_group@260402220247@4125",
+      "processed": null,
+      "storeCount": 1,
+      "storeIds": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（1家可选）ID: 1920285782458"
+      ],
+      "exportedRowCount": 0,
+      "processedRowCount": 0
+    },
+    {
+      "name": "爆好价4-6月-组包品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "activityId": "66455486002",
+      "exportTaskId": "GEI@ele_newretail_investment_invite_upc_by_commodity_group@260402220522@3734",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138824983_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTH0LQgLu34F6oBQeHujCh61pbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=&token=0hfHDsYQxsTN38G9kluBTH0LQgLu34F6oBQeHujCh61pbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=#/activity-detail-v2?activityId=66455486002&from=",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138824983_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 50,
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138824983_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 50,
+      "success": true,
+      "message": "报名成功",
+      "screenshots": [
+        "baohao_detail_2_1775138699094.png",
+        "baohao_progress_2_1775138704187.png",
+        "baohao_step2_2_1775138721824.png",
+        "baohao_exported_2_1775138824994.png",
+        "baohao_uploaded_2_1775138831497.png",
+        "baohao_submitted_2_1775138834069.png"
+      ],
+      "sourceTab": "未报名活动",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ]
+    },
+    {
+      "name": "爆好价4-6月-畅销非食商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "activityId": "66455578001",
+      "exportTaskId": "GEI@ele_newretail_investment_invite_upc_by_commodity_group@260402220802@5509",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138985074_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTLDS2IMnMk91YYVC6ESiWeVpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=&token=0hfHDsYQxsTN38G9kluBTLDS2IMnMk91YYVC6ESiWeVpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=#/activity-detail-v2?activityId=66455578001&from=",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138985074_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 95,
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775138985074_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 93,
+      "success": true,
+      "message": "报名成功",
+      "screenshots": [
+        "baohao_detail_3_1775138859236.png",
+        "baohao_progress_3_1775138864321.png",
+        "baohao_step2_3_1775138881931.png",
+        "baohao_exported_3_1775138985080.png",
+        "baohao_uploaded_3_1775138991213.png",
+        "baohao_submitted_3_1775138993824.png"
+      ],
+      "sourceTab": "未报名活动",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ]
+    },
+    {
+      "name": "爆好价4-6月-畅销食品商品特价淘宝闪购补贴 活动时间：04/01 ~ 06/30活动介绍：淘宝闪购全年流量最大活动之一，报名商品即有机会享受平台补贴，全域约亿级流量曝光活动时间：4.1-6.30温馨提示：如您店内没有可报名商品请联系小二获取清单并上架89天后 报名截止",
+      "activityId": "66455560001",
+      "exportTaskId": "GEI@ele_newretail_investment_invite_upc_by_commodity_group@260402221044@7005",
+      "audit": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775139147912_连锁、总管、代运营导出邀约商品数据_审计.xlsx",
+      "detailRoute": "https://ms.ele.me/app/tbsg-merchant/ebai-zs-webapp/index.html?ebOpenType=redirect&ebRegister=iframe&nav=boss&ebGroup=ebai-zs-webapp&merchant_id=8280069&shop_role=5&platform=pc&mod=frame&authToken=0hfHDsYQxsTN38G9kluBTIROtrFi83qfgl/i/GvdoSxpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=&token=0hfHDsYQxsTN38G9kluBTIROtrFi83qfgl/i/GvdoSxpbSptEXaB+yUXtnBdSjPvLSJ8GJkje9Qi\r5gjFSRW7gr1nhMz7JLCyxdEesx0H5tE=#/activity-detail-v2?activityId=66455560001&from=",
+      "exported": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775139147912_连锁、总管、代运营导出邀约商品数据.xlsx",
+      "exportedRowCount": 95,
+      "processed": "/Users/mac/Documents/GitHub/scripts/apps/web-antd/electron/features/eleme-activity/data/1775139147912_连锁、总管、代运营导出邀约商品数据_报名.xlsx",
+      "processedRowCount": 95,
+      "success": true,
+      "message": "报名成功",
+      "screenshots": [
+        "baohao_detail_4_1775139021917.png",
+        "baohao_progress_4_1775139027020.png",
+        "baohao_step2_4_1775139044659.png",
+        "baohao_exported_4_1775139147932.png",
+        "baohao_uploaded_4_1775139154072.png",
+        "baohao_submitted_4_1775139156665.png"
+      ],
+      "sourceTab": "未报名活动",
+      "storeCount": 2,
+      "storeIds": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ],
+      "storeNames": [
+        "OBy24h便利（2家可选）ID: 1920285782458"
+      ]
+    }
+  ]
+}

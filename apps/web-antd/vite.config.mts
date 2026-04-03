@@ -77,14 +77,14 @@ function resolveApiProxyTarget(mode: string) {
     return 'http://localhost:5320/api';
   }
 
-  return 'http://127.0.0.1:3030/api';
+  return 'http://120.55.244.232/api';
 }
 
 export default defineConfig(async (config) => {
   const isVitest = process.env.VITEST === 'true';
   const isBuild = config?.command === 'build';
   const proxyTarget = resolveApiProxyTarget(config?.mode || 'development');
-  const financeProxyTarget = 'http://localhost:5320/api';
+  const financeProxyTarget = proxyTarget || 'http://120.55.244.232/api';
 
   return {
     application: {

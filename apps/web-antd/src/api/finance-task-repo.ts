@@ -1,5 +1,7 @@
 import type { UploadFile } from 'ant-design-vue';
 
+import { requestClient } from './request';
+
 export type FinanceTaskStatus = 'draft' | 'ready' | 'regenerating';
 export type FinanceTaskSource = 'manual' | 'regenerate';
 export type FinanceTaskFileKind =
@@ -9,6 +11,7 @@ export type FinanceTaskFileKind =
   | 'qianniuhua';
 
 export interface FinanceTaskRecord {
+  anjiMtOrders?: number;
   createdAt: string;
   id: string;
   month: string;
@@ -23,7 +26,7 @@ export interface FinanceTaskRecord {
 }
 
 export interface FinanceTaskFileRecord {
-  blob: Blob;
+  fileBase64: string;
   id: string;
   kind: FinanceTaskFileKind;
   lastModified: number;
@@ -34,99 +37,36 @@ export interface FinanceTaskFileRecord {
   updatedAt: string;
 }
 
-type StoreName = 'finance_task_files' | 'finance_tasks';
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
 
-const DB_NAME = 'finance-workbench-db';
-const DB_VERSION = 1;
-const STORE_KEYS: Record<StoreName, string> = {
-  finance_task_files: 'id',
-  finance_tasks: 'id',
-};
-const STORE_NAMES: StoreName[] = ['finance_tasks', 'finance_task_files'];
-
-let dbPromise: null | Promise<IDBDatabase> = null;
-
-function ensureIndexedDb() {
-  if (typeof indexedDB === 'undefined') {
-    throw new Error('当前环境不支持 IndexedDB');
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
+
+  return btoa(binary);
 }
 
-function createTaskId() {
-  return `finance_task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-}
+function base64ToBlob(base64: string, type: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
 
-function openDatabase(): Promise<IDBDatabase> {
-  ensureIndexedDb();
-  if (dbPromise) return dbPromise;
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
 
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      for (const storeName of STORE_NAMES) {
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: STORE_KEYS[storeName] });
-        }
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('IndexedDB 打开失败'));
-  });
-
-  return dbPromise;
-}
-
-function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('IndexedDB 请求失败'));
-  });
-}
-
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () => reject(transaction.error || new Error('IndexedDB 事务中止'));
-    transaction.onerror = () => reject(transaction.error || new Error('IndexedDB 事务失败'));
-  });
-}
-
-async function getAll<T>(storeName: StoreName): Promise<T[]> {
-  const db = await openDatabase();
-  const transaction = db.transaction(storeName, 'readonly');
-  const store = transaction.objectStore(storeName);
-  const list = await requestToPromise(store.getAll() as IDBRequest<T[]>);
-  await transactionDone(transaction);
-  return list;
-}
-
-async function putOne<T>(storeName: StoreName, item: T): Promise<void> {
-  const db = await openDatabase();
-  const transaction = db.transaction(storeName, 'readwrite');
-  transaction.objectStore(storeName).put(item as any);
-  await transactionDone(transaction);
-}
-
-async function deleteOne(storeName: StoreName, key: IDBValidKey): Promise<void> {
-  const db = await openDatabase();
-  const transaction = db.transaction(storeName, 'readwrite');
-  transaction.objectStore(storeName).delete(key);
-  await transactionDone(transaction);
+  return new Blob([bytes], { type });
 }
 
 export async function listFinanceTasks() {
-  const list = await getAll<FinanceTaskRecord>('finance_tasks');
-  return list.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return requestClient.get<FinanceTaskRecord[]>('/finance/tasks');
 }
 
 export async function saveFinanceTask(task: Partial<FinanceTaskRecord>) {
-  const now = new Date().toISOString();
-  const normalized: FinanceTaskRecord = {
-    createdAt: task.createdAt || now,
-    id: task.id || createTaskId(),
+  const payload = {
+    anjiMtOrders: task.anjiMtOrders,
     month: `${task.month || ''}`.trim(),
     notes: `${task.notes || ''}`.trim() || undefined,
     reportFileName: `${task.reportFileName || ''}`.trim() || undefined,
@@ -135,22 +75,26 @@ export async function saveFinanceTask(task: Partial<FinanceTaskRecord>) {
     status: task.status || 'draft',
     storeName: `${task.storeName || ''}`.trim(),
     taskName: `${task.taskName || ''}`.trim() || '财务任务',
-    updatedAt: now,
   };
 
-  await putOne('finance_tasks', normalized);
-  return normalized;
+  if (`${task.id || ''}`.trim()) {
+    return requestClient.put<FinanceTaskRecord>(`/finance/tasks/${task.id}`, payload);
+  }
+
+  return requestClient.post<FinanceTaskRecord>('/finance/tasks', payload);
 }
 
 export async function removeFinanceTask(taskId: string) {
-  await deleteOne('finance_tasks', taskId);
-  const files = await listFinanceTaskFiles(taskId);
-  await Promise.all(files.map((file) => deleteOne('finance_task_files', file.id)));
+  await requestClient.delete<boolean>(`/finance/tasks/${taskId}`);
+}
+
+export async function removeFinanceTasks(taskIds: string[]) {
+  const uniqueTaskIds = Array.from(new Set(taskIds.filter(Boolean)));
+  await Promise.all(uniqueTaskIds.map((taskId) => removeFinanceTask(taskId)));
 }
 
 export async function listFinanceTaskFiles(taskId: string) {
-  const list = await getAll<FinanceTaskFileRecord>('finance_task_files');
-  return list.filter((item) => item.taskId === taskId);
+  return requestClient.get<FinanceTaskFileRecord[]>(`/finance/tasks/${taskId}/files`);
 }
 
 export async function replaceFinanceTaskFile(
@@ -158,28 +102,23 @@ export async function replaceFinanceTaskFile(
   kind: FinanceTaskFileKind,
   file?: File | null,
 ) {
-  const fileId = `${taskId}:${kind}`;
   if (!file) {
-    await deleteOne('finance_task_files', fileId);
+    await requestClient.delete<boolean>(`/finance/tasks/${taskId}/files/${kind}`);
     return;
   }
 
-  const record: FinanceTaskFileRecord = {
-    blob: file,
-    id: fileId,
-    kind,
+  await requestClient.put<boolean>(`/finance/tasks/${taskId}/files/${kind}`, {
+    fileBase64: arrayBufferToBase64(await file.arrayBuffer()),
     lastModified: file.lastModified,
     name: file.name,
     size: file.size,
-    taskId,
     type: file.type,
-    updatedAt: new Date().toISOString(),
-  };
-  await putOne('finance_task_files', record);
+  });
 }
 
 export function buildUploadFile(record: FinanceTaskFileRecord): UploadFile {
-  const file = new File([record.blob], record.name, {
+  const blob = base64ToBlob(record.fileBase64, record.type);
+  const file = new File([blob], record.name, {
     lastModified: record.lastModified,
     type: record.type,
   });

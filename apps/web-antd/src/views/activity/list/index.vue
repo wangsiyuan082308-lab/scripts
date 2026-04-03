@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -64,6 +65,7 @@ const statusFilter = ref('all');
 const searchText = ref('');
 const drawerVisible = ref(false);
 const currentActivity = ref<Activity | null>(null);
+const router = useRouter();
 
 const chartRef = ref();
 const { renderEcharts } = useEcharts(chartRef);
@@ -82,14 +84,13 @@ const statusConfig: Record<string, { color: string; label: string }> = {
 };
 
 const platformConfig: Record<string, { color: string; label: string }> = {
-  eleme: { label: '饿了么', color: 'blue' },
+  eleme: { label: '淘宝闪购', color: 'blue' },
   meituan: { label: '美团', color: 'orange' },
-  unknown: { label: '未知', color: 'default' },
+  unknown: { label: '待识别', color: 'default' },
 };
 
 const columns = [
   { title: '推荐', dataIndex: 'level', key: 'level', width: 110 },
-  { title: '平台', dataIndex: 'platform', key: 'platform', width: 80 },
   { title: '活动名称', dataIndex: 'name', key: 'name', ellipsis: true },
   { title: '活动时间', key: 'time', width: 160 },
   {
@@ -116,6 +117,43 @@ const filteredActivities = computed(() => {
     list = list.filter((a) => a.name?.toLowerCase().includes(kw));
   }
   return list;
+});
+
+const operationSections = computed(() => {
+  const buildStats = (list: Activity[]) => ({
+    available: list.filter((item) => item.status === 'available').length,
+    p0: list.filter((item) => item.level === 'p0').length,
+    signedUp: list.filter((item) => item.status === 'signed_up').length,
+    total: list.length,
+  });
+
+  const taobaoList = filteredActivities.value.filter(
+    (item) => item.platform !== 'meituan',
+  );
+  const meituanList = filteredActivities.value.filter(
+    (item) => item.platform === 'meituan',
+  );
+
+  return [
+    {
+      actionLabel: '进入爆好价报名',
+      actionPath: '/activity/taobao/baohaojia',
+      description: '聚合淘宝闪购侧活动、报名优先级和门店适配范围。',
+      items: taobaoList,
+      key: 'taobao',
+      stats: buildStats(taobaoList),
+      title: '淘宝运营',
+    },
+    {
+      actionLabel: '',
+      actionPath: '',
+      description: '聚合美团侧活动、报名状态和执行重点。',
+      items: meituanList,
+      key: 'meituan',
+      stats: buildStats(meituanList),
+      title: '美团运营',
+    },
+  ];
 });
 
 function showDetail(record: Activity) {
@@ -185,14 +223,14 @@ function handleExport() {
     { title: '商家出资', dataIndex: 'merchantCost', width: 12 },
     { title: '状态', dataIndex: 'status', width: 10 },
   ];
-  exportToExcel(exportColumns, filteredActivities.value, '活动列表');
+  exportToExcel(exportColumns, filteredActivities.value, '运营中心列表');
 }
 
 onMounted(fetchActivities);
 </script>
 
 <template>
-  <Page title="活动中心">
+  <Page title="运营中心">
     <div class="p-4">
       <!-- 统计卡片 + 饼图 -->
       <Row :gutter="[16, 16]" class="mb-4">
@@ -200,17 +238,17 @@ onMounted(fetchActivities);
           <Row :gutter="[16, 16]">
             <Col :xs="12" :sm="6">
               <Card class="stat-card" size="small">
-                <Statistic title="活动总数" :value="summary.total" />
+                <Statistic title="运营事项" :value="summary.total" />
               </Card>
             </Col>
             <Col :xs="12" :sm="6">
               <Card class="stat-card" size="small">
-                <Statistic title="可报名" :value="summary.available" :value-style="{ color: '#1890ff' }" />
+                <Statistic title="淘宝运营" :value="operationSections[0]?.stats.total || 0" :value-style="{ color: '#1677ff' }" />
               </Card>
             </Col>
             <Col :xs="12" :sm="6">
               <Card class="stat-card" size="small">
-                <Statistic title="已报名" :value="summary.signedUp" :value-style="{ color: '#52c41a' }" />
+                <Statistic title="美团运营" :value="operationSections[1]?.stats.total || 0" :value-style="{ color: '#fa8c16' }" />
               </Card>
             </Col>
             <Col :xs="12" :sm="6">
@@ -221,31 +259,15 @@ onMounted(fetchActivities);
           </Row>
         </Col>
         <Col :xs="24" :md="8">
-          <Card size="small" title="等级分布">
+          <Card size="small" title="运营优先级分布">
             <EchartsUI ref="chartRef" style="height: 160px" />
           </Card>
         </Col>
       </Row>
 
-      <!-- 活动列表 -->
-      <Card>
+      <Card class="mb-4">
         <template #title>
-          <div class="flex flex-wrap items-center gap-3">
-            <span>活动列表</span>
-            <Input.Search
-              v-model:value="searchText"
-              placeholder="搜索活动名称"
-              style="width: 220px"
-              size="small"
-              allow-clear
-            />
-            <Select v-model:value="statusFilter" style="width: 120px" size="small">
-              <Select.Option value="all">全部状态</Select.Option>
-              <Select.Option value="available">可报名</Select.Option>
-              <Select.Option value="signed_up">已报名</Select.Option>
-              <Select.Option value="expired">已过期</Select.Option>
-            </Select>
-          </div>
+          <span>筛选条件</span>
         </template>
         <template #extra>
           <div class="flex items-center gap-2">
@@ -254,89 +276,141 @@ onMounted(fetchActivities);
           </div>
         </template>
 
-        <Spin :spinning="loading">
-          <Table
-            :columns="columns"
-            :data-source="filteredActivities"
-            :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
-            :scroll="{ x: 1200, y: 700 }"
-            row-key="id"
-            size="middle"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'level'">
-                <Tag :color="levelConfig[record.level]?.tagColor">
-                  {{ levelConfig[record.level]?.label }}
-                </Tag>
-              </template>
-
-              <template v-else-if="column.key === 'platform'">
-                <Tag :color="platformConfig[record.platform]?.color">
-                  {{ platformConfig[record.platform]?.label }}
-                </Tag>
-              </template>
-
-              <template v-else-if="column.key === 'name'">
-                <Tooltip :title="record.name">
-                  <a class="cursor-pointer" @click="showDetail(record as Activity)">{{ record.name }}</a>
-                </Tooltip>
-              </template>
-
-              <template v-else-if="column.key === 'time'">
-                <span>{{ formatTime(record as Activity) }}</span>
-              </template>
-
-              <template v-else-if="column.key === 'deadline'">
-                <span
-                  v-if="record.signupDeadline"
-                  :class="record.daysToDeadline <= 3 ? 'text-red-500' : record.daysToDeadline <= 7 ? 'text-yellow-500' : ''"
-                >
-                  {{ record.signupDeadline }}
-                </span>
-                <span v-else class="text-gray-400 dark:text-gray-500">长期</span>
-              </template>
-
-              <template v-else-if="column.key === 'subsidy'">
-                <span v-if="record.platformSubsidy > 0" class="font-bold text-red-500">
-                  ¥{{ record.platformSubsidy }}
-                </span>
-                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
-              </template>
-
-              <template v-else-if="column.key === 'cost'">
-                <span v-if="record.merchantCost > 0">¥{{ record.merchantCost }}</span>
-                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
-              </template>
-
-              <template v-else-if="column.key === 'stores'">
-                <template v-if="record.suitableStores?.length > 3">
-                  <Tooltip :title="record.suitableStores.join('、')">
-                    <span>{{ record.suitableStores.slice(0, 3).join('、') }}…共{{ record.suitableStores.length }}店</span>
-                  </Tooltip>
-                </template>
-                <span v-else-if="record.suitableStores?.length">{{ record.suitableStores.join('、') }}</span>
-                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
-              </template>
-
-              <template v-else-if="column.key === 'status'">
-                <Tag :color="statusConfig[record.status]?.color">
-                  {{ statusConfig[record.status]?.label }}
-                </Tag>
-              </template>
-
-              <template v-else-if="column.key === 'action'">
-                <Button type="link" size="small" @click="showDetail(record as Activity)">
-                  详情
-                </Button>
-              </template>
-            </template>
-
-            <template #emptyText>
-              <Empty description="暂无活动数据" />
-            </template>
-          </Table>
-        </Spin>
+        <div class="flex flex-wrap items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">活动名称</span>
+            <Input.Search
+              v-model:value="searchText"
+              placeholder="请输入活动名称"
+              style="width: 220px"
+              size="small"
+              allow-clear
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">报名状态</span>
+            <Select v-model:value="statusFilter" style="width: 140px" size="small">
+              <Select.Option value="all">全部状态</Select.Option>
+              <Select.Option value="available">可报名</Select.Option>
+              <Select.Option value="signed_up">已报名</Select.Option>
+              <Select.Option value="expired">已过期</Select.Option>
+            </Select>
+          </div>
+        </div>
       </Card>
+
+      <div class="space-y-4">
+        <Card v-for="section in operationSections" :key="section.key">
+          <template #title>
+            <div>
+              <div class="text-base font-medium">
+                {{ section.title }}
+              </div>
+              <div class="mt-1 text-sm text-gray-500">
+                {{ section.description }}
+              </div>
+            </div>
+          </template>
+          <template #extra>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <Button
+                v-if="section.actionPath"
+                size="small"
+                type="primary"
+                @click="router.push(section.actionPath)"
+              >
+                {{ section.actionLabel }}
+              </Button>
+              <Tag color="blue">总数 {{ section.stats.total }}</Tag>
+              <Tag color="green">已报名 {{ section.stats.signedUp }}</Tag>
+              <Tag color="orange">可报名 {{ section.stats.available }}</Tag>
+              <Tag color="red">今日必报 {{ section.stats.p0 }}</Tag>
+            </div>
+          </template>
+
+          <Spin :spinning="loading">
+            <Table
+              :columns="columns"
+              :data-source="section.items"
+              :pagination="{ pageSize: 10, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
+              :scroll="{ x: 1120 }"
+              row-key="id"
+              size="middle"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'level'">
+                  <Tag :color="levelConfig[record.level]?.tagColor">
+                    {{ levelConfig[record.level]?.label }}
+                  </Tag>
+                </template>
+
+                <template v-else-if="column.key === 'name'">
+                  <div class="flex items-center gap-2">
+                    <Tooltip :title="record.name">
+                      <a class="cursor-pointer" @click="showDetail(record as Activity)">{{ record.name }}</a>
+                    </Tooltip>
+                    <Tag :color="platformConfig[record.platform]?.color">
+                      {{ platformConfig[record.platform]?.label }}
+                    </Tag>
+                  </div>
+                </template>
+
+                <template v-else-if="column.key === 'time'">
+                  <span>{{ formatTime(record as Activity) }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'deadline'">
+                  <span
+                    v-if="record.signupDeadline"
+                    :class="record.daysToDeadline <= 3 ? 'text-red-500' : record.daysToDeadline <= 7 ? 'text-yellow-500' : ''"
+                  >
+                    {{ record.signupDeadline }}
+                  </span>
+                  <span v-else class="text-gray-400 dark:text-gray-500">长期</span>
+                </template>
+
+                <template v-else-if="column.key === 'subsidy'">
+                  <span v-if="record.platformSubsidy > 0" class="font-bold text-red-500">
+                    ¥{{ record.platformSubsidy }}
+                  </span>
+                  <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+                </template>
+
+                <template v-else-if="column.key === 'cost'">
+                  <span v-if="record.merchantCost > 0">¥{{ record.merchantCost }}</span>
+                  <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+                </template>
+
+                <template v-else-if="column.key === 'stores'">
+                  <template v-if="record.suitableStores?.length > 3">
+                    <Tooltip :title="record.suitableStores.join('、')">
+                      <span>{{ record.suitableStores.slice(0, 3).join('、') }}…共{{ record.suitableStores.length }}店</span>
+                    </Tooltip>
+                  </template>
+                  <span v-else-if="record.suitableStores?.length">{{ record.suitableStores.join('、') }}</span>
+                  <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+                </template>
+
+                <template v-else-if="column.key === 'status'">
+                  <Tag :color="statusConfig[record.status]?.color">
+                    {{ statusConfig[record.status]?.label }}
+                  </Tag>
+                </template>
+
+                <template v-else-if="column.key === 'action'">
+                  <Button type="link" size="small" @click="showDetail(record as Activity)">
+                    详情
+                  </Button>
+                </template>
+              </template>
+
+              <template #emptyText>
+                <Empty :description="`${section.title}暂无数据`" />
+              </template>
+            </Table>
+          </Spin>
+        </Card>
+      </div>
 
       <!-- 活动详情 Drawer -->
       <Drawer

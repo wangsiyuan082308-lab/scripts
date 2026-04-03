@@ -71,9 +71,37 @@ export default {
     },
   },
   computed: {
+    listenerAttrs() {
+      const listeners = {};
+      Object.entries(this.$attrs || {}).forEach(([key, value]) => {
+        const isFunctionListener =
+          typeof value === 'function' ||
+          (Array.isArray(value) && value.every((item) => typeof item === 'function'));
+
+        if (!isFunctionListener) return;
+
+        const normalizedKey =
+          key.startsWith('on') && key.length > 2
+            ? `${key.charAt(2).toLowerCase()}${key.slice(3)}`
+            : key;
+        listeners[normalizedKey] = value;
+      });
+      return listeners;
+    },
+    propAttrs() {
+      const attrs = {};
+      Object.entries(this.$attrs || {}).forEach(([key, value]) => {
+        const isFunctionListener =
+          typeof value === 'function' ||
+          (Array.isArray(value) && value.every((item) => typeof item === 'function'));
+        if (isFunctionListener) return;
+        attrs[key] = value;
+      });
+      return attrs;
+    },
     // 日期选择器属性 - 根据是否有valueKey决定绑定方式
     datePickerAttrs() {
-      const attrs = { ...this.$attrs };
+      const attrs = { ...this.propAttrs };
 
       if (this.$attrs.valueKey) {
         // 有valueKey时，使用v-model绑定
@@ -189,8 +217,8 @@ export default {
     <Button
       v-else-if="renderType === 'button'"
       :style="styles"
-      v-bind.prop="$attrs"
-      v-on="$attrs"
+      v-bind.prop="propAttrs"
+      v-on="listenerAttrs"
     >
       {{ label }}
     </Button>
@@ -220,8 +248,8 @@ export default {
     <!-- @input="(value)=>onInput(value.trim())" -->
 
     <Input
-      v-bind.prop="$attrs"
-      v-on="$attrs"
+      v-bind.prop="propAttrs"
+      v-on="listenerAttrs"
       v-else-if="renderType === 'input'"
       :placeholder="currentPlaceholder"
       :style="styles"
@@ -233,7 +261,7 @@ export default {
       v-else-if="renderType === 'password'"
       :placeholder="currentPlaceholder"
       :style="styles"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :clearable="currentClearable"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
@@ -244,7 +272,7 @@ export default {
       v-else-if="renderType === 'textarea'"
       :placeholder="currentPlaceholder"
       :style="styles"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :clearable="currentClearable"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
@@ -255,8 +283,8 @@ export default {
       :placeholder="currentPlaceholder"
       :style="styles"
       :clearable="currentClearable"
-      v-bind="$attrs"
-      v-on="$attrs"
+      v-bind="propAttrs"
+      v-on="listenerAttrs"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
     />
@@ -264,7 +292,7 @@ export default {
     <RadioGroup
       v-else-if="renderType === 'radioGroup'"
       :size="$attrs.size || 'medium'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
     >
@@ -287,7 +315,7 @@ export default {
     <CheckboxGroup
       v-else-if="renderType === 'checkboxGroup'"
       :size="$attrs.size || 'medium'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
     >
@@ -302,7 +330,7 @@ export default {
     </CheckboxGroup>
     <Checkbox
       v-else-if="renderType === 'checkbox'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :checked="baseForm.model[$attrs.valueKey]"
       @update:checked="(val) => baseForm.updateModel($attrs.valueKey, val)"
     >
@@ -312,7 +340,7 @@ export default {
     <Cascader
       v-else-if="renderType === 'cascader'"
       :placeholder="currentPlaceholder"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :style="styles"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
@@ -320,25 +348,25 @@ export default {
     <!-- switch -->
     <Switch
       v-else-if="renderType === 'switch'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :checked="baseForm.model[$attrs.valueKey]"
       @update:checked="(val) => baseForm.updateModel($attrs.valueKey, val)"
     />
     <!-- 时分秒 -->
     <TimePicker
       v-else-if="renderType === 'timePicker'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
     />
     <!-- image -->
-    <Image v-else-if="renderType === 'image'" v-bind.prop="$attrs" />
+    <Image v-else-if="renderType === 'image'" v-bind.prop="propAttrs" />
     <!-- select group -->
     <BaseSelectGroup
       v-else-if="renderType === 'selectGroup'"
       :placeholder="currentPlaceholder"
-      v-bind="$attrs"
-      v-on="$attrs"
+      v-bind="propAttrs"
+      v-on="listenerAttrs"
       :style="styles"
       :value="baseForm.model[$attrs.valueKey]"
       @update:value="(val) => baseForm.updateModel($attrs.valueKey, val)"
@@ -347,8 +375,8 @@ export default {
     <!-- Upload 上传组件 -->
     <BaseUpload
       v-else-if="renderType === 'upload'"
-      v-bind="$attrs"
-      v-on="$attrs"
+      v-bind="propAttrs"
+      v-on="listenerAttrs"
       :style="styles"
       :file-list="baseForm.model[$attrs.valueKey] || []"
       :required="$attrs.required !== undefined ? $attrs.required : false"
@@ -361,15 +389,15 @@ export default {
     <BaseDatePickerRange
       v-else-if="renderType === 'datePickerRange'"
       :style="styles"
-      v-bind="$attrs"
-      v-on="$attrs"
+      v-bind="propAttrs"
+      v-on="listenerAttrs"
       :model-value="baseForm.model[$attrs.valueKey]"
       @update:modelValue="(val) => baseForm.updateModel($attrs.valueKey, val)"
     />
     <!-- 时间搜索 单个 -->
     <DatePicker
       v-else-if="renderType === 'datePicker'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       type="date"
       :style="styles"
       :value="baseForm.model[$attrs.valueKey]"
@@ -378,7 +406,7 @@ export default {
     <!-- 周选择器 -->
     <DatePicker
       v-else-if="renderType === 'weekPicker'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       type="week"
       :style="styles"
       :value="baseForm.model[$attrs.valueKey]"
@@ -387,7 +415,7 @@ export default {
     <!-- 月维度选择 -->
     <DatePicker
       v-else-if="renderType === 'monthPicker'"
-      v-bind.prop="$attrs"
+      v-bind.prop="propAttrs"
       picker="month"
       :style="styles"
       :placeholder="currentPlaceholder"

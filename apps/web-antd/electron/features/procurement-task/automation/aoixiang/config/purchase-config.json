@@ -1,0 +1,50 @@
+{
+  "// 翱象自动采购配置 v4": "修改此文件控制采购行为，无需改代码",
+
+  "supplier": "1688平台",
+
+  "stores": [
+    { "name": "长兴店", "code": "OBYCX001", "maxItems": 200 },
+    { "name": "安吉店", "code": "OBYJA002", "maxItems": 200 },
+    { "name": "江北店", "code": "OBYJB003", "maxItems": 200 }
+  ],
+
+  "tabs": [
+    { "index": 1, "name": "动销售罄待补货", "enabled": true },
+    { "index": 2, "name": "售罄待补货", "enabled": true },
+    { "index": 3, "name": "建议补货", "enabled": true }
+  ],
+
+  "perPage": 100,
+  "cleanCartBefore": true,
+
+  "failedOrderHandling": {
+    "quantityMismatch": "adjust",
+    "mixedBatch": "skip",
+    "outOfStock": "skip",
+    "alreadyOrdered": "skip",
+    "maxRetries": 3
+  },
+
+  "notification": {
+    "webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/67eb0f65-edbd-416e-ada7-5f254e1813b4",
+    "storeWebhook": "https://open.feishu.cn/open-apis/bot/v2/hook/b1d2eb63-2faf-4c79-8807-0402164f8ecb",
+    "onSuccess": true,
+    "onFailure": true
+  },
+
+  "browser": {
+    "headless": false,
+    "userDataDir": "./user_data"
+  },
+
+  "// 说明": {
+    "stores": "要采购的门店列表，name用于页面匹配，maxItems=0不限制",
+    "tabs.enabled": "是否从该tab加入补货单",
+    "cleanCartBefore": "开始前是否清空补货清单（防止残留）",
+    "failedOrderHandling.quantityMismatch": "adjust=作废后调整数量重试, skip=跳过",
+    "failedOrderHandling.mixedBatch": "split=拆单(未实现), skip=作废跳过",
+    "notification.webhook": "调试群webhook（日常通知、报错）",
+    "notification.storeWebhook": "门店群webhook（采购结果通知，只发确定的信息）"
+  }
+}

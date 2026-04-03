@@ -1,258 +1,553 @@
-/**
- * 爆好价Excel转换器 v2 - 采购价过滤版
- * 
- * 功能：
- * 1. 从饿了么导出的商品数据Excel
- * 2. 根据条码查询商品总表的采购价
- * 3. 过滤：采购价 > 活动价 的商品不报名
- * 4. 生成符合报名要求的Excel（含排除商品清单）
- * 
- * 用法：npx ts-node transform-baohao.ts <输入Excel> [初始库存=9999]
- */
-import * as ExcelJS from 'exceljs';
+import fs from 'node:fs/promises';
+import ExcelJS from 'exceljs';
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 
 import { isCliEntry } from '../../../utils/is-main-module';
 import {
   ensureProductMasterIndex,
   findProductMasterRecord,
+  getProductMasterProcurementPricing,
 } from '../../product-master/index';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
+const UPLOAD_SHEET_NAME = '爆好价报名';
+const UPLOAD_COLUMNS = [
+  { header: 'UPC条形码', key: 'upc', width: 20 },
+  { header: '活动价', key: 'price', width: 12 },
+  { header: '活动初始库存', key: 'stock', width: 12 },
+  { header: '是否组包', key: 'isPackage', width: 10 },
+  { header: '组包件数', key: 'packageCount', width: 10 },
+] as const;
 
-export async function transformBaohaojia(inputPath: string, initialStock = 9999): Promise<string> {
-  console.log(`\n=== 爆好价转换器 v2 ===`);
-  console.log(`读取文件: ${inputPath}`);
-  console.log(`初始库存: ${initialStock}`);
-  
-  // 加载商品总表
+
+type HeaderKey = 'barcode' | 'isPackage' | 'packageCount' | 'price' | 'productName';
+
+export type BaohaojiaBaseRow = {
+  activityPrice: null | number;
+  cartonProcurementCost?: null | number;
+  cartonSize?: string;
+  isPackage: string;
+  packageCount: string;
+  procurementCost: null | number;
+  productName: string;
+  stock: number;
+  upc: string;
+};
+
+export type BaohaojiaUploadRow = Pick<
+  BaohaojiaBaseRow,
+  'isPackage' | 'packageCount' | 'stock' | 'upc'
+> & {
+  price: '' | number;
+};
+
+export type BaohaojiaQualifiedRow = BaohaojiaBaseRow & {
+  id: string;
+  price: null | number;
+  reasons?: string[];
+};
+
+export type BaohaojiaReviewRow = BaohaojiaBaseRow & {
+  id: string;
+  price: '' | number;
+  reasons: string[];
+};
+
+export type BaohaojiaExcludedRow = Omit<BaohaojiaBaseRow, 'stock'> & {
+  id: string;
+  profitMargin: string;
+  reason: string;
+};
+
+export type BaohaojiaAnalysisMetrics = {
+  excludedCount: number;
+  invalidPriceCount: number;
+  notFoundCount: number;
+  qualifiedCount: number;
+  reviewCount: number;
+  totalCount: number;
+  zeroCostCount: number;
+};
+
+export type BaohaojiaAnalysisResult = {
+  excludedRows: BaohaojiaExcludedRow[];
+  metrics: BaohaojiaAnalysisMetrics;
+  qualifiedRows: BaohaojiaQualifiedRow[];
+  reviewRows: BaohaojiaReviewRow[];
+  summary: string;
+  uploadRows: BaohaojiaUploadRow[];
+};
+
+export type BaohaojiaTransformArtifacts = {
+  analysis: BaohaojiaAnalysisResult;
+  auditBuffer: Buffer;
+  uploadBuffer: Buffer;
+};
+
+export type BaohaojiaTransformPaths = BaohaojiaAnalysisResult & {
+  auditPath: string;
+  uploadPath: string;
+};
+
+function createRowId(prefix: string, upc: string, index: number) {
+  return `${prefix}_${upc || 'unknown'}_${index}`;
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim();
+}
+
+function parseNumber(value: unknown) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const parsed = Number.parseFloat(normalizeText(value).replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function workbookBufferToNodeBuffer(buffer: ArrayBuffer | Buffer) {
+  return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+}
+
+function pickUploadRows(analysis: BaohaojiaAnalysisResult): BaohaojiaUploadRow[] {
+  return [...analysis.qualifiedRows, ...analysis.reviewRows].map((row) => ({
+    isPackage: row.isPackage,
+    packageCount: row.packageCount,
+    price: row.price ?? '',
+    stock: row.stock,
+    upc: row.upc,
+  }));
+}
+
+function buildSummary(metrics: BaohaojiaAnalysisMetrics) {
+  return `处理完成！
+总商品数: ${metrics.totalCount}
+✅ 可报名: ${metrics.qualifiedCount}
+🟡 待确认: ${metrics.reviewCount}
+❌ 已过滤: ${metrics.excludedCount}
+🔍 商品未命中: ${metrics.notFoundCount}
+⚠️ 活动价异常: ${metrics.invalidPriceCount}
+⚠️ 采购价为0: ${metrics.zeroCostCount}`;
+}
+
+function buildUploadWorkbook(rows: BaohaojiaUploadRow[]) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet(UPLOAD_SHEET_NAME);
+  worksheet.columns = [...UPLOAD_COLUMNS];
+  rows.forEach((row) => worksheet.addRow(row));
+  return workbook;
+}
+
+function buildAuditWorkbook(analysis: BaohaojiaAnalysisResult) {
+  const workbook = new ExcelJS.Workbook();
+  const reviewNoteMap = new Map(
+    analysis.reviewRows.map((row) => [row.upc, row.reasons.join('；')]),
+  );
+
+  const summarySheet = workbook.addWorksheet('处理摘要');
+  summarySheet.columns = [
+    { header: '指标', key: 'label', width: 22 },
+    { header: '数值', key: 'value', width: 16 },
+    { header: '说明', key: 'note', width: 44 },
+  ];
+  [
+    {
+      label: '总商品数',
+      note: '平台导出模板中识别到的有效商品行数。',
+      value: analysis.metrics.totalCount,
+    },
+    {
+      label: '可报名',
+      note: '可直接进入上传文件的商品数。',
+      value: analysis.metrics.qualifiedCount,
+    },
+    {
+      label: '待确认',
+      note: '仍保留在上传文件，但需要运营关注解释信息的商品数。',
+      value: analysis.metrics.reviewCount,
+    },
+    {
+      label: '已过滤',
+      note: '采购价高于活动价，已从上传文件剔除。',
+      value: analysis.metrics.excludedCount,
+    },
+    {
+      label: '商品未命中',
+      note: '商品总表未命中，按当前 scripts 口径保留可报名。',
+      value: analysis.metrics.notFoundCount,
+    },
+    {
+      label: '活动价异常',
+      note: '活动价无效，保留到上传文件但价格为空。',
+      value: analysis.metrics.invalidPriceCount,
+    },
+    {
+      label: '采购价为0',
+      note: '保留到上传文件，同时标记到审计结果中。',
+      value: analysis.metrics.zeroCostCount,
+    },
+  ].forEach((row) => summarySheet.addRow(row));
+  summarySheet.addRow({
+    label: '摘要',
+    note: analysis.summary,
+    value: '',
+  });
+
+  const uploadSheet = workbook.addWorksheet('上传文件预览');
+  uploadSheet.columns = [
+    ...UPLOAD_COLUMNS,
+    { header: '说明', key: 'note', width: 36 },
+  ];
+  analysis.uploadRows.forEach((row) => {
+    uploadSheet.addRow({
+      ...row,
+      note: reviewNoteMap.get(row.upc) || '',
+    });
+  });
+
+  const qualifiedSheet = workbook.addWorksheet('可报名商品');
+  qualifiedSheet.columns = [
+    { header: 'UPC', key: 'upc', width: 20 },
+    { header: '商品名称', key: 'productName', width: 40 },
+    { header: '活动价', key: 'activityPrice', width: 12 },
+    { header: '报名价', key: 'price', width: 12 },
+    { header: '活动初始库存', key: 'stock', width: 12 },
+    { header: '最小单位采购价', key: 'procurementCost', width: 14 },
+    { header: '箱规采购价', key: 'cartonProcurementCost', width: 14 },
+    { header: '箱规', key: 'cartonSize', width: 18 },
+    { header: '是否组包', key: 'isPackage', width: 10 },
+    { header: '组包件数', key: 'packageCount', width: 10 },
+    { header: '标记', key: 'reasons', width: 36 },
+  ];
+  analysis.qualifiedRows.forEach((row) =>
+    qualifiedSheet.addRow({
+      ...row,
+      reasons: row.reasons?.join('；') || '',
+    }),
+  );
+
+  const reviewSheet = workbook.addWorksheet('待确认商品');
+  reviewSheet.columns = [
+    { header: 'UPC', key: 'upc', width: 20 },
+    { header: '商品名称', key: 'productName', width: 40 },
+    { header: '活动价', key: 'activityPrice', width: 12 },
+    { header: '报名价', key: 'price', width: 12 },
+    { header: '活动初始库存', key: 'stock', width: 12 },
+    { header: '最小单位采购价', key: 'procurementCost', width: 14 },
+    { header: '箱规采购价', key: 'cartonProcurementCost', width: 14 },
+    { header: '箱规', key: 'cartonSize', width: 18 },
+    { header: '是否组包', key: 'isPackage', width: 10 },
+    { header: '组包件数', key: 'packageCount', width: 10 },
+    { header: '原因', key: 'reasons', width: 36 },
+  ];
+  analysis.reviewRows.forEach((row) =>
+    reviewSheet.addRow({
+      ...row,
+      reasons: row.reasons.join('；'),
+    }),
+  );
+
+  const excludedSheet = workbook.addWorksheet('已过滤商品');
+  excludedSheet.columns = [
+    { header: 'UPC', key: 'upc', width: 20 },
+    { header: '商品名称', key: 'productName', width: 40 },
+    { header: '活动价', key: 'activityPrice', width: 12 },
+    { header: '最小单位采购价', key: 'procurementCost', width: 14 },
+    { header: '箱规采购价', key: 'cartonProcurementCost', width: 14 },
+    { header: '箱规', key: 'cartonSize', width: 18 },
+    { header: '是否组包', key: 'isPackage', width: 10 },
+    { header: '组包件数', key: 'packageCount', width: 10 },
+    { header: '毛利率', key: 'profitMargin', width: 10 },
+    { header: '过滤原因', key: 'reason', width: 36 },
+  ];
+  analysis.excludedRows.forEach((row) => excludedSheet.addRow(row));
+
+  return workbook;
+}
+
+async function parseWorkbook(buffer: Buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    throw new Error('Excel中没有工作表');
+  }
+  return worksheet;
+}
+
+function resolveHeaderMap(worksheet: ExcelJS.Worksheet) {
+  let headerRowNum = 1;
+  worksheet.eachRow((row, rowNumber) => {
+    const rowTexts = row.values
+      .slice(1)
+      .map((value) => normalizeText(value))
+      .filter(Boolean);
+    const hasBarcodeHeader = rowTexts.some((value) => /UPC条?形?码|条码|条形码/i.test(value));
+    const hasPriceHeader = rowTexts.some((value) =>
+      /活动价上限|活动价不高于|活动价|价格/i.test(value),
+    );
+    if (hasBarcodeHeader && hasPriceHeader) {
+      headerRowNum = rowNumber;
+    }
+  });
+
+  const headerRow = worksheet.getRow(headerRowNum);
+  const headers: Partial<Record<HeaderKey, number>> = {};
+  headerRow.eachCell((cell, colNumber) => {
+    const value = normalizeText(cell.value);
+    if (/UPC|条码|条形码/i.test(value)) headers.barcode = colNumber;
+    if (/活动价上限|活动价不高于|活动价|价格/i.test(value)) headers.price = colNumber;
+    if (/是否组包/i.test(value)) headers.isPackage = colNumber;
+    if (/组包件数/i.test(value)) headers.packageCount = colNumber;
+    if (/商品名称/i.test(value)) headers.productName = colNumber;
+  });
+
+  if (!headers.barcode) throw new Error('未找到条码列');
+  if (!headers.price) throw new Error('未找到活动价列');
+
+  return {
+    headerRowNum,
+    headers,
+  };
+}
+
+export async function analyzeBaohaojiaBuffer(
+  fileBuffer: Buffer,
+  initialStock = 9999,
+): Promise<BaohaojiaAnalysisResult> {
   const productMaster = await ensureProductMasterIndex({
     allowLegacySource: true,
   });
   if (productMaster.records.length === 0) {
     throw new Error('请先上传商品总表 JSON');
   }
-  
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.readFile(inputPath);
-  const ws = wb.worksheets[0];
-  if (!ws) throw new Error('Excel中没有工作表');
 
-  // 找表头行，识别列
-  let headerRowNum = 1;
-  ws.eachRow((row, rowNumber) => {
-    const cell1 = String(row.getCell(1).value || '').trim();
-    if (/UPC|条码|条形码/i.test(cell1)) {
-      headerRowNum = rowNumber;
-    }
-  });
-  
-  const headerRow = ws.getRow(headerRowNum);
-  const headers: Record<string, number> = {};
-  headerRow.eachCell((cell, colNumber) => {
-    const val = String(cell.value || '').trim();
-    if (/UPC|条码|条形码/i.test(val)) headers['barcode'] = colNumber;
-    if (/活动价上限|活动价不高于|活动价|价格/i.test(val)) headers['price'] = colNumber;
-    if (/是否组包/i.test(val)) headers['isPackage'] = colNumber;
-    if (/组包件数/i.test(val)) headers['packageCount'] = colNumber;
-    if (/商品名称/i.test(val)) headers['productName'] = colNumber;
-  });
+  const worksheet = await parseWorkbook(fileBuffer);
+  const { headerRowNum, headers } = resolveHeaderMap(worksheet);
 
-  console.log(`识别到的列: ${JSON.stringify(headers)}`);
-  if (!headers['barcode']) throw new Error('未找到条码列');
-  if (!headers['price']) throw new Error('未找到活动价列');
+  const excludedRows: BaohaojiaExcludedRow[] = [];
+  const qualifiedRows: BaohaojiaQualifiedRow[] = [];
+  const reviewRows: BaohaojiaReviewRow[] = [];
 
-  // 读取并过滤数据
-  const includedRows: any[] = [];
-  const excludedRows: any[] = [];
-  const noPriceRows: any[] = [];
-  const notFoundRows: any[] = [];
-  
-  ws.eachRow((row, rowNumber) => {
-    if (rowNumber <= headerRowNum) return; // 跳过表头
-    
-    const barcode = String(row.getCell(headers['barcode']).value || '').trim();
-    if (!barcode) return;
+  let invalidPriceCount = 0;
+  let notFoundCount = 0;
 
-    const priceValue = row.getCell(headers['price']).value;
-    const activityPrice = typeof priceValue === 'number' ? priceValue : parseFloat(String(priceValue).replace(/[^\d.]/g, ''));
-    
-    const isPackage = headers['isPackage'] 
-      ? String(row.getCell(headers['isPackage']).value || '否').trim() 
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= headerRowNum) return;
+
+    const upc = normalizeText(row.getCell(headers.barcode!).value);
+    if (!upc) return;
+
+    const activityPrice = parseNumber(row.getCell(headers.price!).value);
+    const isPackage = headers.isPackage
+      ? normalizeText(row.getCell(headers.isPackage).value || '否') || '否'
       : '否';
-    
-    const packageCount = headers['packageCount'] 
-      ? row.getCell(headers['packageCount']).value 
+    const packageCount = headers.packageCount
+      ? normalizeText(row.getCell(headers.packageCount).value)
+      : '';
+    const productName = headers.productName
+      ? normalizeText(row.getCell(headers.productName).value)
       : '';
 
-    const productName = headers['productName'] 
-      ? String(row.getCell(headers['productName']).value || '').trim() 
-      : '';
+    const masterProduct = findProductMasterRecord(productMaster, { barcode: upc });
 
-    // 查询商品总表
-    const masterProduct = findProductMasterRecord(productMaster, {
-      barcode,
-    });
-    
     if (!masterProduct) {
-      // 商品总表中未找到
-      notFoundRows.push({
-        upc: barcode,
-        productName,
+      notFoundCount += 1;
+      qualifiedRows.push({
         activityPrice,
-        procurementCost: null,
-        reason: '商品总表中未找到',
-      });
-      // 未找到的也加入输出（无法判断，保守策略：保留）
-      includedRows.push({ 
-        upc: barcode, 
-        price: activityPrice || '', 
-        stock: initialStock, 
-        isPackage, 
+        id: createRowId('qualified', upc, rowNumber),
+        isPackage,
         packageCount,
+        price: activityPrice ?? '',
         procurementCost: null,
         productName,
+        reasons: ['商品总表未命中，已按当前 scripts 口径保留可报名'],
+        stock: initialStock,
+        upc,
       });
       return;
     }
 
-    const procurementCost = masterProduct.procurementCost ?? null;
-    
-    if (isNaN(activityPrice) || activityPrice <= 0) {
-      // 活动价无效
-      noPriceRows.push({
-        upc: barcode,
-        productName: productName || masterProduct.productName,
+    const pricing = getProductMasterProcurementPricing(masterProduct);
+    const procurementCost =
+      pricing.baseUnitProcurementCost ?? masterProduct.procurementCost ?? null;
+    const normalizedName = productName || masterProduct.productName || '';
+
+    if (activityPrice == null || activityPrice <= 0) {
+      invalidPriceCount += 1;
+      reviewRows.push({
         activityPrice,
-        procurementCost,
-        reason: '活动价无效',
-      });
-      includedRows.push({
-        upc: barcode,
+        cartonProcurementCost: pricing.cartonProcurementCost,
+        cartonSize: pricing.cartonSize,
+        id: createRowId('review', upc, rowNumber),
+        isPackage,
+        packageCount,
         price: '',
+        procurementCost,
+        productName: normalizedName,
+        reasons: ['活动价无效'],
         stock: initialStock,
+        upc,
+      });
+      return;
+    }
+
+    if (procurementCost != null && procurementCost > activityPrice) {
+      excludedRows.push({
+        activityPrice,
+        cartonProcurementCost: pricing.cartonProcurementCost,
+        cartonSize: pricing.cartonSize,
+        id: createRowId('excluded', upc, rowNumber),
         isPackage,
         packageCount,
         procurementCost,
-        productName: productName || masterProduct.productName,
-      });
-      return;
-    }
-
-    // 采购价 > 活动价 → 排除
-    if (procurementCost != null && procurementCost > activityPrice) {
-      excludedRows.push({
-        upc: barcode,
-        productName: productName || masterProduct.productName,
-        activityPrice,
-        procurementCost,
-        profitMargin: ((activityPrice - procurementCost) / activityPrice * 100).toFixed(1) + '%',
+        productName: normalizedName,
+        profitMargin: `${(((activityPrice - procurementCost) / activityPrice) * 100).toFixed(1)}%`,
         reason: `采购价(${procurementCost}) > 活动价(${activityPrice})`,
+        upc,
       });
       return;
     }
 
-    // 通过过滤，加入输出
-    includedRows.push({
-      upc: barcode,
-      price: activityPrice,
-      stock: initialStock,
+    const reviewReasons: string[] = [];
+    if (procurementCost === 0) {
+      reviewReasons.push('采购价为0，需人工复核');
+    }
+
+    if (reviewReasons.length > 0) {
+      reviewRows.push({
+        activityPrice,
+        cartonProcurementCost: pricing.cartonProcurementCost,
+        cartonSize: pricing.cartonSize,
+        id: createRowId('review', upc, rowNumber),
+        isPackage,
+        packageCount,
+        price: activityPrice,
+        procurementCost,
+        productName: normalizedName,
+        reasons: reviewReasons,
+        stock: initialStock,
+        upc,
+      });
+      return;
+    }
+
+    qualifiedRows.push({
+      activityPrice,
+      cartonProcurementCost: pricing.cartonProcurementCost,
+      cartonSize: pricing.cartonSize,
+      id: createRowId('qualified', upc, rowNumber),
       isPackage,
       packageCount,
+      price: activityPrice,
       procurementCost,
-      productName: productName || masterProduct.productName,
+      productName: normalizedName,
+      stock: initialStock,
+      upc,
     });
   });
 
-  const total = includedRows.length + excludedRows.length;
-  
-  console.log(`\n=== 过滤结果 ===`);
-  console.log(`总商品数: ${total}`);
-  console.log(`✅ 保留: ${includedRows.length} (采购价 ≤ 活动价)`);
-  console.log(`❌ 排除: ${excludedRows.length} (采购价 > 活动价)`);
-  console.log(`🔍 未找到: ${notFoundRows.length} (商品总表中无记录)`);
-  console.log(`⚠️ 无活动价: ${noPriceRows.length}`);
+  const metrics: BaohaojiaAnalysisMetrics = {
+    excludedCount: excludedRows.length,
+    invalidPriceCount,
+    notFoundCount,
+    qualifiedCount: qualifiedRows.length,
+    reviewCount: reviewRows.length,
+    totalCount: qualifiedRows.length + reviewRows.length + excludedRows.length,
+    zeroCostCount: reviewRows.filter((row) => row.reasons.includes('采购价为0，需人工复核')).length,
+  };
 
-  // 生成输出Excel
-  const wbOut = new ExcelJS.Workbook();
-  
-  // Sheet 1: 报名商品
-  const wsOut = wbOut.addWorksheet('爆好价报名');
-  wsOut.columns = [
-    { header: 'UPC条形码', key: 'upc', width: 20 },
-    { header: '活动价', key: 'price', width: 12 },
-    { header: '活动初始库存', key: 'stock', width: 12 },
-    { header: '是否组包', key: 'isPackage', width: 10 },
-    { header: '组包件数', key: 'packageCount', width: 10 },
-    { header: '采购价', key: 'procurementCost', width: 10 },
-    { header: '商品名称', key: 'productName', width: 40 },
-  ];
-  includedRows.forEach(r => wsOut.addRow(r));
-
-  // Sheet 2: 排除商品（供参考）
-  if (excludedRows.length > 0) {
-    const wsExcluded = wbOut.addWorksheet('排除商品');
-    wsExcluded.columns = [
-      { header: '条码', key: 'upc', width: 20 },
-      { header: '商品名称', key: 'productName', width: 40 },
-      { header: '活动价', key: 'activityPrice', width: 12 },
-      { header: '采购价', key: 'procurementCost', width: 12 },
-      { header: '毛利率', key: 'profitMargin', width: 10 },
-      { header: '排除原因', key: 'reason', width: 30 },
-    ];
-    excludedRows.forEach(r => wsExcluded.addRow(r));
-  }
-
-  // Sheet 3: 采购价为0警告
-  const zeroCostRows = includedRows.filter(r => r.procurementCost === 0);
-  if (zeroCostRows.length > 0) {
-    const wsZeroCost = wbOut.addWorksheet('⚠️采购价为0');
-    wsZeroCost.columns = [
-      { header: '条码', key: 'upc', width: 20 },
-      { header: '商品名称', key: 'productName', width: 40 },
-      { header: '活动价', key: 'price', width: 12 },
-      { header: '采购价', key: 'procurementCost', width: 12 },
-      { header: '风险', key: 'risk', width: 30 },
-    ];
-    zeroCostRows.forEach(row => {
-      wsZeroCost.addRow({
-        ...row,
-        risk: '采购价未设置，无法判断利润',
-      });
-    });
-  }
-
-  // 保存文件
-  const outputName = path.basename(inputPath, path.extname(inputPath)) + '_报名.xlsx';
-  const outputPath = path.join(DATA_DIR, outputName);
-  await wbOut.xlsx.writeFile(outputPath);
-  
-  console.log(`\n✅ 输出文件: ${outputPath}`);
-  
-  return outputPath;
+  const analysis: BaohaojiaAnalysisResult = {
+    excludedRows,
+    metrics,
+    qualifiedRows,
+    reviewRows,
+    summary: buildSummary(metrics),
+    uploadRows: [],
+  };
+  analysis.uploadRows = pickUploadRows(analysis);
+  return analysis;
 }
 
-// CLI入口
+export async function transformBaohaojiaBuffer(
+  fileBuffer: Buffer,
+  initialStock = 9999,
+): Promise<BaohaojiaTransformArtifacts> {
+  const analysis = await analyzeBaohaojiaBuffer(fileBuffer, initialStock);
+  const uploadWorkbook = buildUploadWorkbook(analysis.uploadRows);
+  const auditWorkbook = buildAuditWorkbook(analysis);
+
+  return {
+    analysis,
+    auditBuffer: workbookBufferToNodeBuffer(await auditWorkbook.xlsx.writeBuffer()),
+    uploadBuffer: workbookBufferToNodeBuffer(await uploadWorkbook.xlsx.writeBuffer()),
+  };
+}
+
+export async function transformBaohaojiaWithArtifacts(
+  inputPath: string,
+  initialStock = 9999,
+): Promise<BaohaojiaTransformPaths> {
+  console.log('\n=== 爆好价转换器 ===');
+  console.log(`读取文件: ${inputPath}`);
+  console.log(`初始库存: ${initialStock}`);
+
+  const sourceBuffer = await fs.readFile(inputPath);
+  const { analysis, auditBuffer, uploadBuffer } = await transformBaohaojiaBuffer(
+    sourceBuffer,
+    initialStock,
+  );
+
+  const baseName = path.basename(inputPath, path.extname(inputPath));
+  const uploadPath = path.join(DATA_DIR, `${baseName}_报名.xlsx`);
+  const auditPath = path.join(DATA_DIR, `${baseName}_审计.xlsx`);
+
+  await Promise.all([
+    fs.writeFile(uploadPath, uploadBuffer),
+    fs.writeFile(auditPath, auditBuffer),
+  ]);
+
+  console.log('\n=== 过滤结果 ===');
+  console.log(analysis.summary);
+  console.log(`\n✅ 上传文件: ${uploadPath}`);
+  console.log(`🧾 审计文件: ${auditPath}`);
+
+  return {
+    ...analysis,
+    auditPath,
+    uploadPath,
+  };
+}
+
+export async function transformBaohaojia(inputPath: string, initialStock = 9999): Promise<string> {
+  const result = await transformBaohaojiaWithArtifacts(inputPath, initialStock);
+  return result.uploadPath;
+}
+
 if (isCliEntry('transform-baohao.ts', 'transform-baohao.js', 'transform-baohao.mjs', 'transform-baohao.cjs')) {
   const inputFile = process.argv[2];
-  const stock = parseInt(process.argv[3] || '9999');
-  
+  const stock = Number.parseInt(process.argv[3] || '9999', 10);
+
   if (!inputFile) {
     console.error('用法: ts-node transform-baohao.ts <输入Excel> [初始库存=9999]');
     console.error('\n功能：');
-    console.error('  1. 根据条码查询商品总表采购价');
+    console.error('  1. 根据条码查询商品总表最小单位采购价');
     console.error('  2. 过滤采购价 > 活动价的商品');
-    console.error('  3. 生成报名Excel（含排除商品清单）');
+    console.error('  3. 输出平台上传文件（严格模板）');
+    console.error('  4. 输出审计文件（保留排除/说明信息）');
     process.exit(1);
   }
-  
-  transformBaohaojia(inputFile, stock)
-    .then(outputPath => {
+
+  transformBaohaojiaWithArtifacts(inputFile, stock)
+    .then((result) => {
       console.log('\n=== 完成 ===');
-      console.log(`报名文件: ${outputPath}`);
+      console.log(`上传文件: ${result.uploadPath}`);
+      console.log(`审计文件: ${result.auditPath}`);
     })
-    .catch(err => {
-      console.error('失败:', err.message);
+    .catch((error) => {
+      console.error('失败:', error.message);
       process.exit(1);
     });
 }

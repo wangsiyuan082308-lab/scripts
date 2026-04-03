@@ -13,7 +13,7 @@ import type {
   FinanceTaskRecord,
 } from '#/api/finance-task-repo';
 
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, h, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -21,6 +21,7 @@ import dayjs from 'dayjs';
 import {
   Button,
   Card,
+  DatePicker,
   Descriptions,
   Drawer,
   Empty,
@@ -37,7 +38,6 @@ import {
 
 import {
   getFinanceReportDetail,
-  getFinanceReports,
   getFinanceStores,
 } from '#/api/finance';
 import {
@@ -45,6 +45,7 @@ import {
   listFinanceTaskFiles,
   listFinanceTasks,
   removeFinanceTask,
+  removeFinanceTasks,
   replaceFinanceTaskFile,
   saveFinanceTask,
 } from '#/api/finance-task-repo';
@@ -55,31 +56,13 @@ type DetailTabKey = 'compare' | 'raw' | 'sheet' | 'preview';
 type ProfitStatus = 'break_even' | 'loss' | 'profit' | 'unknown';
 type StoreStatus = 'configured' | 'unknown' | 'unconfigured';
 
-type FinanceReportSummary = {
-  marketingRate: number | null;
-  netProfit: number | null;
-  netProfitRate: number | null;
-  orderCount: number | null;
-  profitStatus: ProfitStatus;
-};
-
 type FinanceWorkbenchRow = {
-  attachmentSummary: string;
-  fileName: string;
   id: string;
   month: string;
-  netProfit: number | null;
-  netProfitRate: number | null;
-  orderCount: number | null;
-  profitStatus: ProfitStatus;
-  profitStatusLabel: string;
+  resultStatusLabel: string;
   reportRelativePath?: string;
-  rowType: 'report' | 'task';
   statusLabel: string;
-  storeName: string;
-  storeStatus: StoreStatus;
-  storeStatusLabel: string;
-  taskId?: string;
+  taskId: string;
   taskName: string;
   updatedAt: string;
 };
@@ -90,17 +73,21 @@ const modalLoading = ref(false);
 const taskModalOpen = ref(false);
 const detailDrawerOpen = ref(false);
 
-const reports = ref<FinanceReportItem[]>([]);
 const tasks = ref<FinanceTaskRecord[]>([]);
 const stores = ref<FinanceStoreConfig[]>([]);
 const reportDetail = ref<FinanceReportDetail | null>(null);
-const reportSummaryMap = ref<Record<string, FinanceReportSummary>>({});
 const reportDetailMap = ref<Record<string, FinanceReportDetail>>({});
+const loadedMonth = ref<string | null>(null);
+const financeDataReady = ref(false);
 
 const currentTaskId = ref('');
 const activeDetailTab = ref<DetailTabKey>('compare');
+const selectedRowKeys = ref<string[]>([]);
+const currentDetailTask = ref<FinanceTaskRecord | null>(null);
+const combinedUploadFiles = ref<UploadFile[]>([]);
 
 const taskForm = reactive({
+  anjiMtOrders: undefined as number | undefined,
   month: '',
   notes: '',
   reportFileName: '',
@@ -122,8 +109,6 @@ const searchFormModel = ref({
   month: '',
   page: 1,
   pageSize: 20,
-  profitStatus: '' as '' | ProfitStatus,
-  rowStatus: '',
 });
 
 const metricColumns = [
@@ -160,6 +145,13 @@ const attachmentConfigs: Array<{
   { key: 'meituan_promo', label: '美团推广费 Excel', tip: '用于匹配美团推广费。' },
 ];
 
+const requiredAttachmentKinds: FinanceTaskFileKind[] = [
+  'qianniuhua',
+  'aoxiang',
+  'eleme_promo',
+  'meituan_promo',
+];
+
 function normalizeStoreNameKey(value?: string) {
   return `${value || ''}`.replace(/\s+/g, '').toLowerCase();
 }
@@ -178,15 +170,22 @@ function toProfitStatus(netProfit: null | number): ProfitStatus {
   return netProfit > 0 ? 'profit' : 'loss';
 }
 
-function formatTaskStatus(status: FinanceTaskRecord['status']) {
-  switch (status) {
+function formatTaskStatus(task?: Pick<FinanceTaskRecord, 'reportRelativePath' | 'status'> | null) {
+  switch (task?.status) {
     case 'ready':
-      return '已保存';
+      return task.reportRelativePath ? '已完成' : '待分析';
     case 'regenerating':
       return '待重生成';
     default:
       return '草稿';
   }
+}
+
+function formatResultStatus(task?: Pick<FinanceTaskRecord, 'reportRelativePath' | 'status'> | null) {
+  if (!task) return '暂无结果';
+  if (task.reportRelativePath) return '已生成结果';
+  if (task.status === 'regenerating') return '待重新生成';
+  return '暂无结果';
 }
 
 function formatProfitStatus(status: ProfitStatus) {
@@ -213,7 +212,7 @@ function formatStoreStatus(status: StoreStatus) {
   }
 }
 
-function buildReportSummary(detail: FinanceReportDetail): FinanceReportSummary {
+function buildReportSummary(detail: FinanceReportDetail) {
   const netProfit = getMetricValue(detail, '净利润');
   return {
     marketingRate: getMetricValue(detail, '营销活动费用费率'),
@@ -258,11 +257,11 @@ function resolveStoreStatus(storeName?: string): StoreStatus {
 
 function statusTagColor(statusLabel: string) {
   switch (statusLabel) {
-    case '已有报表':
+    case '已完成':
       return 'success';
     case '待重生成':
       return 'warning';
-    case '已保存':
+    case '待分析':
       return 'blue';
     default:
       return 'default';
@@ -294,19 +293,11 @@ function storeTagColor(status: StoreStatus) {
 }
 
 function workbenchRowClassName(record: FinanceWorkbenchRow) {
-  if (
-    record.statusLabel === '待重生成' ||
-    record.profitStatus === 'loss' ||
-    record.storeStatus === 'unconfigured'
-  ) {
+  if (record.statusLabel === '待重生成') {
     return 'finance-row-risk';
   }
 
-  if (
-    record.statusLabel === '草稿' ||
-    record.profitStatus === 'unknown' ||
-    record.storeStatus === 'unknown'
-  ) {
+  if (record.statusLabel === '草稿' || record.statusLabel === '待分析') {
     return 'finance-row-pending';
   }
 
@@ -376,13 +367,140 @@ function previewColumnsFor(rows: Array<Record<string, any>>) {
     }));
 }
 
+function normalizeAttachmentFileName(fileName?: string) {
+  return `${fileName || ''}`.trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function classifyAttachmentByFileName(fileName?: string): FinanceTaskFileKind | null {
+  const normalized = normalizeAttachmentFileName(fileName);
+  if (!normalized) return null;
+
+  if (normalized.includes('饿了么') && normalized.includes('推广')) {
+    return 'eleme_promo';
+  }
+
+  if (normalized.includes('美团') && normalized.includes('推广')) {
+    return 'meituan_promo';
+  }
+
+  if (
+    normalized.includes('翱翔') ||
+    normalized.includes('翱象') ||
+    normalized.startsWith('翱')
+  ) {
+    return 'aoxiang';
+  }
+
+  const qianniuhuaIncludes = [
+    '经营分析pc端',
+    '牵牛花',
+    '经营分析.xlsx',
+    '经营分析导出门店盈亏',
+    '经营分析',
+    '导出财务分析订单数据',
+  ];
+  const qianniuhuaExcludes = [
+    '推广',
+    '翱象',
+    '翱翔品质仓',
+    '门店总表',
+    '毛利异常',
+    '关键指标',
+  ];
+
+  if (
+    qianniuhuaIncludes.some((keyword) => normalized.includes(keyword)) &&
+    !qianniuhuaExcludes.some((keyword) => normalized.includes(keyword))
+  ) {
+    return 'qianniuhua';
+  }
+
+  return null;
+}
+
+async function cloneUploadFileToMemory(file: UploadFile) {
+  const originFile = file.originFileObj as File | undefined;
+  if (!originFile) {
+    return file;
+  }
+
+  const buffer = await originFile.arrayBuffer();
+  const clonedFile = new File([buffer], file.name || originFile.name, {
+    lastModified: file.lastModified || originFile.lastModified,
+    type: file.type || originFile.type,
+  });
+
+  return {
+    ...file,
+    lastModified: clonedFile.lastModified,
+    originFileObj: clonedFile as any,
+    size: clonedFile.size,
+    type: clonedFile.type,
+  } satisfies UploadFile;
+}
+
+function syncUploadStateFromFiles(fileList: UploadFile[]) {
+  const nextState: Record<FinanceTaskFileKind, UploadFile[]> = {
+    aoxiang: [],
+    eleme_promo: [],
+    meituan_promo: [],
+    qianniuhua: [],
+  };
+  const duplicateLabels = new Set<string>();
+  const unrecognizedFiles: string[] = [];
+
+  for (const file of fileList) {
+    const kind = classifyAttachmentByFileName(file.name);
+    if (!kind) {
+      unrecognizedFiles.push(file.name);
+      continue;
+    }
+
+    if (nextState[kind].length > 0) {
+      duplicateLabels.add(
+        attachmentConfigs.find((config) => config.key === kind)?.label || file.name,
+      );
+    }
+    nextState[kind] = [file];
+  }
+
+  for (const config of attachmentConfigs) {
+    uploadState[config.key] = nextState[config.key];
+  }
+  combinedUploadFiles.value = attachmentConfigs.flatMap((config) => nextState[config.key]);
+
+  if (duplicateLabels.size > 0) {
+    message.warning(`检测到重复类型文件，已保留最后一个：${Array.from(duplicateLabels).join('、')}`);
+  }
+  if (unrecognizedFiles.length > 0) {
+    message.warning(`以下文件名暂时无法识别，未纳入任务附件：${unrecognizedFiles.join('、')}`);
+  }
+}
+
+async function updateUploadStateFromFiles(fileList: UploadFile[]) {
+  try {
+    const normalizedFiles = await Promise.all(
+      fileList.map((file) => cloneUploadFileToMemory(file)),
+    );
+    syncUploadStateFromFiles(normalizedFiles);
+  } catch (error: any) {
+    message.error(error?.message || '读取上传文件失败，请重新选择文件');
+  }
+}
+
+function getMissingAttachmentLabels() {
+  return requiredAttachmentKinds
+    .filter((kind) => uploadState[kind].length === 0)
+    .map((kind) => attachmentConfigs.find((config) => config.key === kind)?.label || kind);
+}
+
 function buildActionButtons(row: FinanceWorkbenchRow) {
   const buttons = [
     h(
       Button,
       {
         size: 'small',
-        onClick: () => openDetail(row.reportRelativePath),
+        onClick: () => openTaskDetail(resolveTaskByRow(row)),
       },
       () => '查看详情',
     ),
@@ -391,38 +509,32 @@ function buildActionButtons(row: FinanceWorkbenchRow) {
       {
         size: 'small',
         type: 'primary',
-        onClick: () =>
-          openNewTask(
-            reports.value.find((item) => item.relativePath === row.reportRelativePath),
-            resolveTaskByRow(row),
-          ),
+        onClick: () => openNewTask(undefined, resolveTaskByRow(row)),
       },
-      () => (row.rowType === 'report' ? '重新生成' : '编辑任务'),
+      () => '编辑任务',
     ),
   ];
 
-  if (row.taskId) {
-    buttons.push(
-      h(
-        Popconfirm,
-        {
-          title: '确认删除这个财务任务吗？',
-          onConfirm: () => handleDeleteTask(row.taskId),
-        },
-        {
-          default: () =>
-            h(
-              Button,
-              {
-                danger: true,
-                size: 'small',
-              },
-              () => '删除任务',
-            ),
-        },
-      ),
-    );
-  }
+  buttons.push(
+    h(
+      Popconfirm,
+      {
+        title: '确认删除这个财务任务吗？',
+        onConfirm: () => handleDeleteTask(row.taskId),
+      },
+      {
+        default: () =>
+          h(
+            Button,
+            {
+              danger: true,
+              size: 'small',
+            },
+            () => '删除任务',
+          ),
+      },
+    ),
+  );
 
   return h(
     Space,
@@ -435,76 +547,21 @@ function buildActionButtons(row: FinanceWorkbenchRow) {
 }
 
 const workbenchRows = computed<FinanceWorkbenchRow[]>(() => {
-  const taskMap = new Map<string, FinanceTaskRecord>();
-  for (const task of tasks.value) {
-    if (task.reportRelativePath) {
-      taskMap.set(task.reportRelativePath, task);
-    }
-  }
-
-  const reportRows = reports.value.map((report) => {
-    const task = taskMap.get(report.relativePath);
-    const summary = reportSummaryMap.value[report.relativePath];
-    const storeStatus = resolveStoreStatus(report.storeName);
-
-    return {
-      attachmentSummary: task ? '已保留上传文件' : '未上传',
-      fileName: report.fileName,
-      id: task?.id || `report:${report.relativePath}`,
-      month: report.month,
-      netProfit: summary?.netProfit ?? null,
-      netProfitRate: summary?.netProfitRate ?? null,
-      orderCount: summary?.orderCount ?? null,
-      profitStatus: summary?.profitStatus ?? 'unknown',
-      profitStatusLabel: formatProfitStatus(summary?.profitStatus ?? 'unknown'),
-      reportRelativePath: report.relativePath,
-      rowType: 'report' as const,
-      statusLabel: task ? formatTaskStatus(task.status) : '已有报表',
-      storeName: report.storeName,
-      storeStatus,
-      storeStatusLabel: formatStoreStatus(storeStatus),
-      taskId: task?.id,
-      taskName: task?.taskName || report.fileName,
-      updatedAt: task?.updatedAt || report.createdAt,
-    };
-  });
-
-  const manualTaskRows = tasks.value
-    .filter((task) => !task.reportRelativePath)
+  return tasks.value
     .map((task) => {
-      const storeStatus = resolveStoreStatus(task.storeName);
       return {
-        attachmentSummary: '已保留上传文件',
-        fileName: task.reportFileName || '--',
         id: task.id,
         month: task.month,
-        netProfit: null,
-        netProfitRate: null,
-        orderCount: null,
-        profitStatus: 'unknown' as const,
-        profitStatusLabel: formatProfitStatus('unknown'),
-        rowType: 'task' as const,
-        statusLabel: formatTaskStatus(task.status),
-        storeName: task.storeName || '--',
-        storeStatus,
-        storeStatusLabel: formatStoreStatus(storeStatus),
+        resultStatusLabel: formatResultStatus(task),
+        reportRelativePath: task.reportRelativePath,
+        statusLabel: formatTaskStatus(task),
         taskId: task.id,
         taskName: task.taskName,
         updatedAt: task.updatedAt,
       };
-    });
-
-  return [...manualTaskRows, ...reportRows].sort((left, right) =>
-    right.updatedAt.localeCompare(left.updatedAt),
-  );
+    })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 });
-
-const profitStatusOptions = [
-  { label: '盈利', value: 'profit' },
-  { label: '亏损', value: 'loss' },
-  { label: '持平', value: 'break_even' },
-  { label: '待分析', value: 'unknown' },
-];
 
 const searchFormItems = computed(() => [
   {
@@ -514,16 +571,6 @@ const searchFormItems = computed(() => [
       valueKey: 'month',
       allowClear: true,
       placeholder: '选择月份',
-    },
-  },
-  {
-    label: '盈利状态',
-    child: {
-      renderType: 'select',
-      valueKey: 'profitStatus',
-      allowClear: true,
-      options: profitStatusOptions,
-      placeholder: '全部盈利',
     },
   },
   {
@@ -546,11 +593,10 @@ const tableColumns = computed(() => [
   {
     dataIndex: 'taskName',
     key: 'taskName',
-    title: '任务 / 报表',
+    title: '任务名称',
     width: 260,
   },
   { dataIndex: 'month', key: 'month', title: '月份', width: 110 },
-  { dataIndex: 'storeName', key: 'storeName', title: '门店', width: 130 },
   {
     dataIndex: 'statusLabel',
     key: 'statusLabel',
@@ -566,38 +612,9 @@ const tableColumns = computed(() => [
       ),
   },
   {
-    dataIndex: 'profitStatusLabel',
-    key: 'profitStatusLabel',
-    title: '盈利状态',
-    width: 120,
-    render: (_h: any, { row, text }: { row: FinanceWorkbenchRow; text: string }) =>
-      h(
-        Tag,
-        {
-          color: profitTagColor(row.profitStatus),
-        },
-        () => text,
-      ),
-  },
-  {
-    dataIndex: 'netProfit',
-    key: 'netProfit',
-    title: '净利润',
-    width: 140,
-    render: (_h: any, { row }: { row: FinanceWorkbenchRow }) =>
-      h(
-        'span',
-        {
-          class:
-            row.netProfit == null ? '' : row.netProfit >= 0 ? 'is-positive' : 'is-negative',
-        },
-        formatMoney(row.netProfit),
-      ),
-  },
-  {
-    dataIndex: 'attachmentSummary',
-    key: 'attachmentSummary',
-    title: '上传文件',
+    dataIndex: 'resultStatusLabel',
+    key: 'resultStatusLabel',
+    title: '结果状态',
     width: 150,
   },
   {
@@ -616,6 +633,18 @@ const tableColumns = computed(() => [
   },
 ]);
 
+const selectedTaskIds = computed(() => {
+  const selectedIds = new Set(selectedRowKeys.value);
+  return workbenchRows.value.filter((row) => selectedIds.has(row.id)).map((row) => row.taskId);
+});
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: Array<number | string>) => {
+    selectedRowKeys.value = keys.map((key) => `${key}`);
+  },
+}));
+
 const headerOptions = computed(() => [
   {
     label: '新建任务',
@@ -623,31 +652,40 @@ const headerOptions = computed(() => [
     type: 'primary',
     click: () => openNewTask(),
   },
+  {
+    danger: true,
+    disabled: selectedTaskIds.value.length === 0,
+    label:
+      selectedTaskIds.value.length > 0
+        ? `批量删除 (${selectedTaskIds.value.length})`
+        : '批量删除',
+    renderType: 'button',
+    type: 'default',
+    click: () => confirmBatchDelete(),
+  },
 ]);
 
 const drawerTitle = computed(() => {
-  if (!reportDetail.value) return '财务报表详情';
-  return `${reportDetail.value.report.storeName} ${reportDetail.value.report.month}`;
+  if (currentDetailTask.value?.taskName) return currentDetailTask.value.taskName;
+  if (reportDetail.value) return `${reportDetail.value.report.storeName} ${reportDetail.value.report.month}`;
+  return '财务任务详情';
 });
 
 const currentDetailSummary = computed(() => {
   if (!reportDetail.value) return null;
-  return (
-    reportSummaryMap.value[reportDetail.value.report.relativePath] ||
-    buildReportSummary(reportDetail.value)
-  );
+  return buildReportSummary(reportDetail.value);
+});
+
+const currentDetailStoreName = computed(() => {
+  return reportDetail.value?.report.storeName || currentDetailTask.value?.storeName || '';
 });
 
 const currentStoreConfig = computed(() => {
-  return reportDetail.value
-    ? resolveStoreConfig(reportDetail.value.report.storeName)
-    : null;
+  return resolveStoreConfig(currentDetailStoreName.value);
 });
 
 const currentStoreStatus = computed<StoreStatus>(() => {
-  return reportDetail.value
-    ? resolveStoreStatus(reportDetail.value.report.storeName)
-    : 'unknown';
+  return resolveStoreStatus(currentDetailStoreName.value);
 });
 
 const currentPreviewColumns = computed(() =>
@@ -656,10 +694,9 @@ const currentPreviewColumns = computed(() =>
     : [],
 );
 
-const generatedTaskName = computed(() => buildFinanceTaskName(taskForm.month));
-
 function resetTaskForm() {
   currentTaskId.value = '';
+  taskForm.anjiMtOrders = undefined;
   taskForm.month = '';
   taskForm.notes = '';
   taskForm.reportFileName = '';
@@ -672,6 +709,7 @@ function resetTaskForm() {
   uploadState.aoxiang = [];
   uploadState.eleme_promo = [];
   uploadState.meituan_promo = [];
+  combinedUploadFiles.value = [];
 }
 
 async function loadTaskAttachments(taskId: string) {
@@ -680,10 +718,12 @@ async function loadTaskAttachments(taskId: string) {
     const file = files.find((item) => item.kind === config.key);
     uploadState[config.key] = file ? [buildUploadFile(file)] : [];
   }
+  combinedUploadFiles.value = attachmentConfigs.flatMap((config) => uploadState[config.key]);
 }
 
 async function persistCurrentTask() {
   const task = await saveFinanceTask({
+    anjiMtOrders: taskForm.anjiMtOrders,
     id: currentTaskId.value || undefined,
     month: taskForm.month,
     notes: taskForm.notes,
@@ -692,7 +732,7 @@ async function persistCurrentTask() {
     source: taskForm.source,
     status: taskForm.status,
     storeName: taskForm.storeName,
-    taskName: taskForm.taskName,
+    taskName: buildFinanceTaskName(taskForm.month),
   });
   currentTaskId.value = task.id;
 
@@ -708,47 +748,26 @@ async function persistCurrentTask() {
   return task;
 }
 
-async function hydrateReportSummaries(list: FinanceReportItem[]) {
-  const missing = list.filter((item) => !reportSummaryMap.value[item.relativePath]);
-  if (missing.length === 0) return;
+async function fetchAll(selectedMonth = '', force = false) {
+  if (
+    !force &&
+    financeDataReady.value &&
+    loadedMonth.value === selectedMonth
+  ) {
+    return;
+  }
 
-  const settled = await Promise.allSettled(
-    missing.map((item) => getFinanceReportDetail(item.relativePath)),
-  );
-
-  const nextSummaryMap = { ...reportSummaryMap.value };
-  const nextDetailMap = { ...reportDetailMap.value };
-
-  settled.forEach((result, index) => {
-    if (result.status !== 'fulfilled') return;
-    const detail = result.value;
-    const relativePath = missing[index]?.relativePath;
-    if (!relativePath) return;
-    nextDetailMap[relativePath] = detail;
-    nextSummaryMap[relativePath] = buildReportSummary(detail);
-  });
-
-  reportDetailMap.value = nextDetailMap;
-  reportSummaryMap.value = nextSummaryMap;
-}
-
-async function fetchAll(selectedMonth = '') {
   loading.value = true;
   try {
-    const [reportRes, taskRes, storeRes] = await Promise.all([
-      getFinanceReports({
-        month: selectedMonth || undefined,
-        type: 'store',
-      }),
+    const [taskRes, storeRes] = await Promise.all([
       listFinanceTasks(),
       getFinanceStores(),
     ]);
 
-    reports.value = reportRes.list || [];
     tasks.value = taskRes;
     stores.value = storeRes.list || [];
-
-    await hydrateReportSummaries(reportRes.list || []);
+    loadedMonth.value = selectedMonth;
+    financeDataReady.value = true;
   } catch (error: any) {
     message.error(error?.message || '加载财务工作台失败');
   } finally {
@@ -760,24 +779,17 @@ async function serveMethods(params: any) {
   const month = `${params?.data?.month || ''}`.trim();
   const page = Math.max(1, Number(params?.data?.page || 1));
   const pageSize = Math.max(1, Number(params?.data?.pageSize || 20));
-  const profitStatus = `${params?.data?.profitStatus || ''}`.trim();
-  const rowStatus = `${params?.data?.rowStatus || ''}`.trim();
 
   await fetchAll(month);
 
-  const filteredRows = workbenchRows.value.filter((item) => {
-    const matchesMonth = !month || item.month === month;
-    const matchesRowStatus = !rowStatus || item.statusLabel === rowStatus;
-    const matchesProfitStatus = !profitStatus || item.profitStatus === profitStatus;
-
-    return (
-      matchesMonth &&
-      matchesRowStatus &&
-      matchesProfitStatus
-    );
-  });
+  const buildFilteredRows = () =>
+    workbenchRows.value.filter((item) => {
+      const matchesMonth = !month || item.month === month;
+      return matchesMonth;
+    });
 
   const start = (page - 1) * pageSize;
+  const filteredRows = buildFilteredRows();
 
   return {
     list: filteredRows.slice(start, start + pageSize),
@@ -787,13 +799,14 @@ async function serveMethods(params: any) {
 }
 
 async function openDetail(relativePath?: string) {
-  if (!relativePath) {
-    message.warning('当前没有可查看的报表');
-    return;
-  }
-
+  currentDetailTask.value = null;
   detailDrawerOpen.value = true;
   activeDetailTab.value = 'compare';
+
+  if (!relativePath) {
+    reportDetail.value = null;
+    return;
+  }
 
   const cached = reportDetailMap.value[relativePath];
   if (cached) {
@@ -809,10 +822,6 @@ async function openDetail(relativePath?: string) {
       ...reportDetailMap.value,
       [relativePath]: detail,
     };
-    reportSummaryMap.value = {
-      ...reportSummaryMap.value,
-      [relativePath]: buildReportSummary(detail),
-    };
   } catch (error: any) {
     reportDetail.value = null;
     message.error(error?.message || '读取财务报表详情失败');
@@ -821,11 +830,28 @@ async function openDetail(relativePath?: string) {
   }
 }
 
+async function openTaskDetail(task?: FinanceTaskRecord) {
+  if (!task) return;
+
+  currentDetailTask.value = task;
+  detailDrawerOpen.value = true;
+  activeDetailTab.value = 'compare';
+
+  if (!task.reportRelativePath) {
+    reportDetail.value = null;
+    return;
+  }
+
+  await openDetail(task.reportRelativePath);
+  currentDetailTask.value = task;
+}
+
 async function openNewTask(report?: FinanceReportItem, existingTask?: FinanceTaskRecord) {
   resetTaskForm();
 
   if (existingTask) {
     currentTaskId.value = existingTask.id;
+    taskForm.anjiMtOrders = existingTask.anjiMtOrders;
     taskForm.month = existingTask.month;
     taskForm.notes = existingTask.notes || '';
     taskForm.reportFileName = existingTask.reportFileName || '';
@@ -836,6 +862,7 @@ async function openNewTask(report?: FinanceReportItem, existingTask?: FinanceTas
     taskForm.taskName = buildFinanceTaskName(existingTask.month);
     await loadTaskAttachments(existingTask.id);
   } else if (report) {
+    taskForm.anjiMtOrders = undefined;
     taskForm.month = report.month;
     taskForm.reportFileName = report.fileName;
     taskForm.reportRelativePath = report.relativePath;
@@ -857,14 +884,52 @@ async function handleTaskModalOk() {
     return;
   }
 
-  taskForm.taskName = buildFinanceTaskName(taskForm.month);
+  const missingAttachmentLabels = getMissingAttachmentLabels();
+  if (missingAttachmentLabels.length > 0) {
+    message.warning(`缺少必要 Excel：${missingAttachmentLabels.join('、')}`);
+    return;
+  }
 
   modalLoading.value = true;
   try {
+    if (window.ipcRenderer) {
+      const files = await Promise.all(
+        combinedUploadFiles.value.map(async (file) => {
+          const originFile = file.originFileObj as File | undefined;
+          if (!originFile) {
+            throw new Error(`文件 ${file.name} 读取失败`);
+          }
+          return {
+            buffer: await originFile.arrayBuffer(),
+            name: file.name,
+          };
+        }),
+      );
+
+      const analysisResult = await window.ipcRenderer.invoke(
+        'run-finance-analysis',
+        {
+          anjiMtOrders: taskForm.anjiMtOrders,
+          files,
+          month: taskForm.month,
+        },
+      );
+
+      if (!analysisResult?.success) {
+        throw new Error(analysisResult?.message || '财务分析执行失败');
+      }
+
+      taskForm.reportFileName = `${analysisResult.reportFileName || ''}`.trim();
+      taskForm.reportRelativePath = `${analysisResult.reportRelativePath || ''}`.trim();
+      taskForm.status = 'ready';
+    } else {
+      taskForm.status = 'ready';
+    }
+
     await persistCurrentTask();
-    await fetchAll();
+    await fetchAll(searchFormModel.value.month, true);
     taskModalOpen.value = false;
-    message.success('财务任务已保存，当前上传的计算 Excel 已保留');
+    message.success('财务任务已创建并完成分析');
   } catch (error: any) {
     message.error(error?.message || '保存财务任务失败');
   } finally {
@@ -872,29 +937,51 @@ async function handleTaskModalOk() {
   }
 }
 
-async function handleUploadChange(kind: FinanceTaskFileKind, fileList: UploadFile[]) {
-  uploadState[kind] = fileList;
-  const task = await persistCurrentTask();
-  const latestFiles = await listFinanceTaskFiles(task.id);
-  const matched = latestFiles.find((item) => item.kind === kind);
-  uploadState[kind] = matched ? [buildUploadFile(matched)] : [];
-  await fetchAll();
+function clearSelectedRowsByTaskIds(taskIds: string[]) {
+  const taskIdSet = new Set(taskIds);
+  selectedRowKeys.value = selectedRowKeys.value.filter((key) => {
+    const row = workbenchRows.value.find((item) => item.id === key);
+    return row?.taskId ? !taskIdSet.has(row.taskId) : true;
+  });
 }
 
 async function handleDeleteTask(taskId?: string) {
   if (!taskId) return;
   await removeFinanceTask(taskId);
-  await fetchAll();
+  clearSelectedRowsByTaskIds([taskId]);
+  await fetchAll(searchFormModel.value.month, true);
   message.success('任务已删除');
+}
+
+function confirmBatchDelete() {
+  if (selectedTaskIds.value.length === 0) return;
+
+  Modal.confirm({
+    title: `确认删除选中的 ${selectedTaskIds.value.length} 个财务任务吗？`,
+    content: '删除后会一并移除这些任务下保存的上传附件，报表结果本身不会被删除。',
+    okButtonProps: { danger: true },
+    okText: '删除',
+    cancelText: '取消',
+    onOk: async () => {
+      await handleBatchDeleteTasks();
+    },
+  });
+}
+
+async function handleBatchDeleteTasks() {
+  if (selectedTaskIds.value.length === 0) return;
+
+  const taskIds = [...selectedTaskIds.value];
+  await removeFinanceTasks(taskIds);
+  clearSelectedRowsByTaskIds(taskIds);
+  await fetchAll(searchFormModel.value.month, true);
+  message.success(`已删除 ${taskIds.length} 个任务`);
 }
 
 function resolveTaskByRow(row: FinanceWorkbenchRow) {
   return tasks.value.find((item) => item.id === row.taskId);
 }
 
-onMounted(() => {
-  void fetchAll();
-});
 </script>
 
 <template>
@@ -905,6 +992,7 @@ onMounted(() => {
         row-key="id"
         :search-form-items="searchFormItems"
         :columns="tableColumns"
+        :row-selection="rowSelection"
         :serve-methods="serveMethods"
         :header-options="headerOptions"
         :row-class-name="workbenchRowClassName"
@@ -917,13 +1005,51 @@ onMounted(() => {
         destroy-on-close
         :title="drawerTitle"
       >
-        <div v-if="reportDetail" class="detail-layout">
+        <div v-if="currentDetailTask || reportDetail" class="detail-layout">
+          <Card :bordered="false" class="detail-section">
+            <Descriptions :column="2" size="small">
+              <Descriptions.Item label="任务名称">
+                {{ currentDetailTask?.taskName || '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="任务状态">
+                {{ currentDetailTask ? formatTaskStatus(currentDetailTask) : '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="月份">
+                {{ currentDetailTask?.month || reportDetail?.report.month || '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="门店">
+                {{ currentDetailTask?.storeName || reportDetail?.report.storeName || '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="任务来源">
+                {{
+                  currentDetailTask
+                    ? currentDetailTask.source === 'regenerate'
+                      ? '结果重生成'
+                      : '手工任务'
+                    : '--'
+                }}
+              </Descriptions.Item>
+              <Descriptions.Item label="最近更新时间">
+                {{ formatDatetime(currentDetailTask?.updatedAt || reportDetail?.report.createdAt) }}
+              </Descriptions.Item>
+              <Descriptions.Item label="生成结果">
+                {{ reportDetail?.report.fileName || '暂无生成结果' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="安吉店美团订单量">
+                {{ currentDetailTask?.anjiMtOrders ?? '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="备注">
+                {{ currentDetailTask?.notes || '--' }}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+
           <div class="detail-topbar">
             <Space wrap>
               <Tag :color="storeTagColor(currentStoreStatus)">
                 门店状态：{{ formatStoreStatus(currentStoreStatus) }}
               </Tag>
-              <Tag :color="profitTagColor(currentDetailSummary?.profitStatus || 'unknown')">
+              <Tag v-if="reportDetail" :color="profitTagColor(currentDetailSummary?.profitStatus || 'unknown')">
                 {{
                   `是否盈利：${formatProfitStatus(
                     currentDetailSummary?.profitStatus || 'unknown',
@@ -936,13 +1062,22 @@ onMounted(() => {
             </Space>
             <Space>
               <Button
-                v-if="reportDetail.previousReport"
+                v-if="reportDetail?.previousReport"
                 size="small"
                 @click="openDetail(reportDetail.previousReport.relativePath)"
               >
                 查看上月报表
               </Button>
               <Button
+                v-if="currentDetailTask"
+                size="small"
+                type="primary"
+                @click="openNewTask(undefined, currentDetailTask)"
+              >
+                编辑任务
+              </Button>
+              <Button
+                v-else-if="reportDetail"
                 size="small"
                 type="primary"
                 @click="
@@ -960,6 +1095,7 @@ onMounted(() => {
             </Space>
           </div>
 
+          <template v-if="reportDetail">
           <div class="headline-grid">
             <div class="headline-card">
               <div class="headline-label">净利润</div>
@@ -1117,9 +1253,12 @@ onMounted(() => {
               <Empty v-else description="暂无可预览表格" />
             </Tabs.TabPane>
           </Tabs>
+          </template>
+
+          <Empty v-else description="该任务暂无生成结果" />
         </div>
 
-        <Empty v-else description="暂无财务报表详情" />
+        <Empty v-else description="暂无财务任务详情" />
       </Drawer>
 
       <Modal
@@ -1132,21 +1271,48 @@ onMounted(() => {
         @ok="handleTaskModalOk"
       >
         <Form layout="vertical">
-          <Form.Item label="任务名称">
-            <Input
-              :value="generatedTaskName"
-              disabled
-              placeholder="系统自动生成"
+          <Form.Item label="月份" required>
+            <DatePicker
+              picker="month"
+              placeholder="选择月份"
+              style="width: 100%"
+              :value="taskForm.month ? dayjs(taskForm.month, 'YYYY-MM') : undefined"
+              @update:value="(val) => (taskForm.month = val ? dayjs(val).format('YYYY-MM') : '')"
             />
           </Form.Item>
-          <div class="form-grid">
-            <Form.Item label="月份" required>
-              <Input v-model:value="taskForm.month" placeholder="YYYY-MM" />
-            </Form.Item>
-            <Form.Item label="门店">
-              <Input v-model:value="taskForm.storeName" placeholder="例如：济阳店" />
-            </Form.Item>
-          </div>
+          <Form.Item label="安吉店美团订单量">
+            <Input
+              :value="taskForm.anjiMtOrders"
+              placeholder="可选，不填默认按 0 处理"
+              type="number"
+              @update:value="
+                (val) =>
+                  (taskForm.anjiMtOrders =
+                    val === '' || val == null ? undefined : Math.max(0, Number(val)))
+              "
+            />
+          </Form.Item>
+          <Form.Item label="Excel 文件" required>
+            <div class="upload-title">支持批量上传，系统会按文件名自动识别类型。</div>
+            <div class="upload-tip">
+              需要包含：牵牛花 Excel、翱象 Excel、饿了么推广费 Excel、美团推广费 Excel。
+            </div>
+            <BaseUpload
+              :file-list="combinedUploadFiles"
+              accept=".xlsx,.xls"
+              :auto-upload="false"
+              :max-count="8"
+              :multiple="true"
+              :show-upload-button="true"
+              button-text="选择 Excel"
+              list-type="text"
+              @update:file-list="updateUploadStateFromFiles"
+            />
+            <div class="upload-tip">
+              文件名识别规则：
+              牵牛花/经营分析归类到主数据，含“翱象/翱翔”归类到翱象，含“饿了么+推广”或“美团+推广”归类到推广费。
+            </div>
+          </Form.Item>
           <Form.Item label="备注">
             <Input.TextArea
               v-model:value="taskForm.notes"
@@ -1154,27 +1320,6 @@ onMounted(() => {
               placeholder="记录这次重生成的说明、输入来源或注意事项"
             />
           </Form.Item>
-
-          <div class="upload-grid">
-            <div
-              v-for="config in attachmentConfigs"
-              :key="config.key"
-              class="upload-item"
-            >
-              <div class="upload-title">{{ config.label }}</div>
-              <div class="upload-tip">{{ config.tip }}</div>
-              <BaseUpload
-                v-model:file-list="uploadState[config.key]"
-                accept=".xlsx,.xls"
-                :auto-upload="false"
-                :max-count="1"
-                :show-upload-button="true"
-                button-text="选择文件"
-                list-type="text"
-                @change="handleUploadChange(config.key, uploadState[config.key])"
-              />
-            </div>
-          </div>
         </Form>
       </Modal>
     </div>

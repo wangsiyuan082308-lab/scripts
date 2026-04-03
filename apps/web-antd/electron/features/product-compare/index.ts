@@ -3,6 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  extractSharedAiConfig,
+  getSharedAiConfig,
+  saveSharedAiConfig,
+} from '../../shared/ai-config';
+import {
   ensureProductMasterIndex,
   type ProductMasterIndex,
   type ProductMasterRecord,
@@ -269,24 +274,38 @@ async function readJsonFile<T>(filePath: string): Promise<null | T> {
   }
 }
 
-function normalizeAiConfig(
+function normalizeAiFeatureConfig(
   input?: Partial<ProductCompareAiConfig> | null,
-): ProductCompareAiConfig {
+): Pick<
+  ProductCompareAiConfig,
+  'matchPromptTemplate' | 'newProductMonthlySalesThreshold'
+> {
   const merged = {
     ...DEFAULT_AI_CONFIG,
     ...(input || {}),
   };
 
   return {
-    apiKey: normalizeText(merged.apiKey),
-    baseUrl: normalizeText(merged.baseUrl) || DEFAULT_AI_CONFIG.baseUrl,
     matchPromptTemplate:
       normalizeText(merged.matchPromptTemplate) ||
       DEFAULT_AI_CONFIG.matchPromptTemplate,
-    model: normalizeText(merged.model) || DEFAULT_AI_CONFIG.model,
     newProductMonthlySalesThreshold:
       toNumber(merged.newProductMonthlySalesThreshold) ??
       DEFAULT_AI_CONFIG.newProductMonthlySalesThreshold,
+  };
+}
+
+function mergeAiConfig(
+  sharedConfig: Pick<ProductCompareAiConfig, 'apiKey' | 'baseUrl' | 'model'>,
+  featureConfig: Pick<
+    ProductCompareAiConfig,
+    'matchPromptTemplate' | 'newProductMonthlySalesThreshold'
+  >,
+): ProductCompareAiConfig {
+  return {
+    ...DEFAULT_AI_CONFIG,
+    ...sharedConfig,
+    ...featureConfig,
   };
 }
 
@@ -294,16 +313,19 @@ export async function getProductCompareAiConfig() {
   const paths = getRuntimePaths();
   await ensureDirectory(paths.dataDir);
   const rawConfig = await readJsonFile<Partial<ProductCompareAiConfig>>(paths.configPath);
-  return normalizeAiConfig(rawConfig);
+  const sharedConfig = await getSharedAiConfig();
+  const featureConfig = normalizeAiFeatureConfig(rawConfig);
+  return mergeAiConfig(sharedConfig, featureConfig);
 }
 
 export async function saveProductCompareAiConfig(
   config: Partial<ProductCompareAiConfig>,
 ) {
   const paths = getRuntimePaths();
-  const normalized = normalizeAiConfig(config);
-  await writeJsonAtomic(paths.configPath, normalized);
-  return normalized;
+  const sharedConfig = await saveSharedAiConfig(extractSharedAiConfig(config));
+  const featureConfig = normalizeAiFeatureConfig(config);
+  await writeJsonAtomic(paths.configPath, featureConfig);
+  return mergeAiConfig(sharedConfig, featureConfig);
 }
 
 function assertSchemaCapability(
@@ -768,12 +790,7 @@ function renderPromptTemplate(
 }
 
 function getConfiguredApiKey(config: ProductCompareAiConfig) {
-  return (
-    normalizeText(config.apiKey) ||
-    normalizeText(process.env.ALIYUN_API_KEY) ||
-    normalizeText(process.env.DASHSCOPE_API_KEY) ||
-    normalizeText(process.env.OPENAI_API_KEY)
-  );
+  return normalizeText(config.apiKey);
 }
 
 function extractMessageContent(payload: any) {

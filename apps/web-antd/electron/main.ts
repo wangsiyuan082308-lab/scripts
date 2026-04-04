@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 import pkg from '../package.json';
-
+import { authFeature } from './features/auth/index';
 import { ElemeActivityGenerator } from './features/eleme-activity/index';
 import { ElemeBaohaojiaAnalyzer } from './features/eleme-baohaojia/index';
 import {
@@ -22,6 +22,12 @@ import {
   listLocalBaohaojiaTasks,
 } from './features/eleme-baohaojia/local-task-store';
 import { TaobaoBaohaojiaTaskRunner } from './features/eleme-baohaojia/runner';
+import { getExecutionLogs } from './features/execution-logs/index';
+import { ProcurementTaskRunner } from './features/procurement-task/runner';
+import { ProcurementAnalyzer } from './features/procurement/index';
+import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
+import { StoreMasterFeature } from './features/store-master/index';
+import { SupplierMasterFeature } from './features/supplier-master/index';
 import {
   createLocalSuperBrandRun,
   createLocalSuperBrandTask,
@@ -32,33 +38,13 @@ import {
   listLocalSuperBrandTasks,
 } from './features/taobao-super-brand/local-task-store';
 import { TaobaoSuperBrandTaskRunner } from './features/taobao-super-brand/runner';
-import { getExecutionLogs } from './features/execution-logs/index';
-import { ProcurementTaskRunner } from './features/procurement-task/runner';
-import { ProcurementAnalyzer } from './features/procurement/index';
-import { ProcurementPlanGenerator } from './features/procurement/plan-generator';
-import {
-  getProductCompareAiConfig,
-  runProductCompare,
-  saveProductCompareAiConfig,
-} from './features/product-compare/index';
-import {
-  clearProductMaster,
-  getProductMasterFilterOptions,
-  getProductMasterStatus,
-  importProductMasterJson,
-  listProductMasterRecords,
-  refreshProductMasterIndex,
-} from './features/product-master/index';
-import { authFeature } from './features/auth/index';
-import { StoreMasterFeature } from './features/store-master/index';
-import { SupplierMasterFeature } from './features/supplier-master/index';
 import { addLogListener } from './features/withdrawal-task/automation/logger.js';
 import { WithdrawalTaskRunner } from './features/withdrawal-task/runner.js';
 import {
+  merchantStorage,
   storeStorage,
   supplierStorage,
   taskStorage,
-  merchantStorage,
 } from './shared/storage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,16 +61,14 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST;
 
 let win: BrowserWindow | null;
-let currentAuthUser:
-  | null
-  | {
-      accessToken: string;
-      id: string;
-      merchantId?: string;
-      name?: string;
-      role: 'merchant_admin' | 'super_admin' | 'user';
-      username: string;
-    } = null;
+let currentAuthUser: null | {
+  accessToken: string;
+  id: string;
+  merchantId?: string;
+  name?: string;
+  role: 'merchant_admin' | 'super_admin' | 'user';
+  username: string;
+} = null;
 
 const ELECTRON_BACKEND_BASE_URL =
   process.env.ELECTRON_BACKEND_BASE_URL || 'http://120.55.244.232';
@@ -237,7 +221,9 @@ autoUpdater.on('update-available', (info) => {
 });
 
 autoUpdater.on('download-progress', (progress) => {
-  console.log(`[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}%`);
+  console.log(
+    `[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}%`,
+  );
   win?.webContents.send('update-download-progress', {
     percent: progress.percent,
     bytesPerSecond: progress.bytesPerSecond,
@@ -302,31 +288,29 @@ function registerIpcHandlers() {
 
   ipcMain.handle('local-auth-login', async (_event, { password, username }) => {
     try {
-      const response = await fetch(`${ELECTRON_BACKEND_BASE_URL}/api/auth/login`, {
-        body: JSON.stringify({
-          password: `${password || ''}`,
-          username: `${username || ''}`,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${ELECTRON_BACKEND_BASE_URL}/api/auth/login`,
+        {
+          body: JSON.stringify({
+            password: `${password || ''}`,
+            username: `${username || ''}`,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
         },
-        method: 'POST',
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            code?: number;
-            data?: Record<string, any>;
-            error?: string;
-            message?: string;
-          }
-        | null;
+      );
+      const payload = (await response.json().catch(() => null)) as null | {
+        code?: number;
+        data?: Record<string, any>;
+        error?: string;
+        message?: string;
+      };
 
       if (!response.ok || payload?.code !== 0 || !payload?.data?.accessToken) {
         return {
-          message:
-            payload?.error ||
-            payload?.message ||
-            '用户名或密码错误。',
+          message: payload?.error || payload?.message || '用户名或密码错误。',
           success: false,
         };
       }
@@ -410,13 +394,33 @@ function registerIpcHandlers() {
    * 处理饿了么爆好价活动助手
    */
   ipcMain.handle(
-    'process-eleme-baohaojia',
-    async (_event, { fileBuffer, originalName, initialStock }) => {
+    'extract-eleme-baohaojia-codes',
+    async (_event, { fileBuffer }) => {
       try {
-        const { auditBuffer, summary, uploadBuffer } = await ElemeBaohaojiaAnalyzer.run({
-          fileBuffer: Buffer.from(fileBuffer),
-          initialStock: Number(initialStock) || 9999,
-        });
+        const data = await ElemeBaohaojiaAnalyzer.extractCodes(
+          Buffer.from(fileBuffer),
+        );
+        return { success: true, data };
+      } catch (error: any) {
+        console.error('提取爆好价条码失败:', error);
+        return { success: false, message: error.message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'process-eleme-baohaojia',
+    async (
+      _event,
+      { fileBuffer, originalName, initialStock, productMasterRecords },
+    ) => {
+      try {
+        const { auditBuffer, summary, uploadBuffer } =
+          await ElemeBaohaojiaAnalyzer.run({
+            fileBuffer: Buffer.from(fileBuffer),
+            initialStock: Number(initialStock) || 9999,
+            productMasterRecords,
+          });
 
         const { filePath, canceled } = await dialog.showSaveDialog({
           title: '保存爆好价活动报名表',
@@ -441,12 +445,17 @@ function registerIpcHandlers() {
 
   ipcMain.handle(
     'analyze-eleme-baohaojia-task',
-    async (_event, { fileBuffer, originalName, initialStock }) => {
+    async (
+      _event,
+      { fileBuffer, originalName, initialStock, productMasterRecords },
+    ) => {
       try {
-        const { analysis, auditBuffer, summary, uploadBuffer } = await ElemeBaohaojiaAnalyzer.run({
-          fileBuffer: Buffer.from(fileBuffer),
-          initialStock: Number(initialStock) || 9999,
-        });
+        const { analysis, auditBuffer, summary, uploadBuffer } =
+          await ElemeBaohaojiaAnalyzer.run({
+            fileBuffer: Buffer.from(fileBuffer),
+            initialStock: Number(initialStock) || 9999,
+            productMasterRecords,
+          });
 
         return {
           analysis,
@@ -561,8 +570,7 @@ function registerIpcHandlers() {
         }
 
         const result = await runFinanceAnalyzer({
-          anjiMtOrders:
-            anjiMtOrders == null ? undefined : Number(anjiMtOrders),
+          anjiMtOrders: anjiMtOrders == null ? undefined : Number(anjiMtOrders),
           month: normalizedMonth,
         });
         const summaryFileName = `${normalizedMonth}月-门店模板汇总.xlsx`;
@@ -617,116 +625,6 @@ function registerIpcHandlers() {
   /**
    * 获取商品总表状态
    */
-  ipcMain.handle('get-product-master-status', async () => {
-    try {
-      const data = await getProductMasterStatus();
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('获取商品总表状态失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  /**
-   * 手动导入商品总表 JSON
-   */
-  ipcMain.handle(
-    'import-product-master',
-    async (_event, { fileBuffer, originalName }) => {
-      try {
-        const data = await importProductMasterJson(
-          Buffer.from(fileBuffer),
-          originalName || 'manual-upload.json',
-        );
-        return { success: true, data };
-      } catch (error: any) {
-        console.error('导入商品总表失败:', error);
-        return { success: false, message: error.message };
-      }
-    },
-  );
-
-  ipcMain.handle('list-product-master-records', async (_event, params) => {
-    try {
-      const data = await listProductMasterRecords(params || {});
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('获取商品总表列表失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  ipcMain.handle('get-product-master-filter-options', async () => {
-    try {
-      const data = await getProductMasterFilterOptions();
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('获取商品总表筛选项失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  ipcMain.handle('refresh-product-master', async () => {
-    try {
-      const data = await refreshProductMasterIndex();
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('刷新商品总表失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  ipcMain.handle('clear-product-master', async () => {
-    try {
-      const data = await clearProductMaster();
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('清空商品总表失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-  /**
-   * 执行采购任务
-   */
-  ipcMain.handle(
-    'run-product-compare',
-    async (_event, { referenceBuffer, sourceMode, targetBuffer }) => {
-      try {
-        const data = await runProductCompare({
-          referenceBuffer: referenceBuffer
-            ? Buffer.from(referenceBuffer)
-            : undefined,
-          sourceMode,
-          targetBuffer: Buffer.from(targetBuffer),
-        });
-        return { success: true, data };
-      } catch (error: any) {
-        console.error('商品比对失败:', error);
-        return { success: false, message: error.message };
-      }
-    },
-  );
-
-  ipcMain.handle('get-product-compare-ai-config', async () => {
-    try {
-      const data = await getProductCompareAiConfig();
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('获取商品比对 AI 配置失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  ipcMain.handle('save-product-compare-ai-config', async (_event, config) => {
-    try {
-      const data = await saveProductCompareAiConfig(config || {});
-      return { success: true, data };
-    } catch (error: any) {
-      console.error('保存商品比对 AI 配置失败:', error);
-      return { success: false, message: error.message };
-    }
-  });
-
   ipcMain.handle('execute-procurement-task', async (_event, task) => {
     console.info('[execute-procurement-task]', {
       platform: task?.platform,
@@ -740,29 +638,44 @@ function registerIpcHandlers() {
     return await listLocalBaohaojiaTasks();
   });
 
-  ipcMain.handle('get-taobao-baohaojia-local-task-detail', async (_event, taskId) => {
-    return await getLocalBaohaojiaTaskDetail(taskId);
-  });
+  ipcMain.handle(
+    'get-taobao-baohaojia-local-task-detail',
+    async (_event, taskId) => {
+      return await getLocalBaohaojiaTaskDetail(taskId);
+    },
+  );
 
-  ipcMain.handle('create-taobao-baohaojia-local-task', async (_event, payload) => {
-    return await createLocalBaohaojiaTask(payload || {});
-  });
+  ipcMain.handle(
+    'create-taobao-baohaojia-local-task',
+    async (_event, payload) => {
+      return await createLocalBaohaojiaTask(payload || {});
+    },
+  );
 
-  ipcMain.handle('delete-taobao-baohaojia-local-task', async (_event, taskId) => {
-    return await deleteLocalBaohaojiaTask(taskId);
-  });
+  ipcMain.handle(
+    'delete-taobao-baohaojia-local-task',
+    async (_event, taskId) => {
+      return await deleteLocalBaohaojiaTask(taskId);
+    },
+  );
 
-  ipcMain.handle('create-taobao-baohaojia-local-run', async (_event, payload) => {
-    return await createLocalBaohaojiaRun(payload);
-  });
+  ipcMain.handle(
+    'create-taobao-baohaojia-local-run',
+    async (_event, payload) => {
+      return await createLocalBaohaojiaRun(payload);
+    },
+  );
 
   ipcMain.handle('list-taobao-baohaojia-local-runs', async (_event, taskId) => {
     return await listLocalBaohaojiaRuns(taskId);
   });
 
-  ipcMain.handle('list-taobao-baohaojia-local-run-logs', async (_event, runId) => {
-    return await listLocalBaohaojiaRunLogs(runId);
-  });
+  ipcMain.handle(
+    'list-taobao-baohaojia-local-run-logs',
+    async (_event, runId) => {
+      return await listLocalBaohaojiaRunLogs(runId);
+    },
+  );
 
   ipcMain.handle('execute-taobao-baohaojia-task', async (_event, task) => {
     console.info('[execute-taobao-baohaojia-task]', {
@@ -772,44 +685,65 @@ function registerIpcHandlers() {
     return await TaobaoBaohaojiaTaskRunner.executeTask(task);
   });
 
-  ipcMain.handle('continue-taobao-baohaojia-task-review', async (_event, task) => {
-    console.info('[continue-taobao-baohaojia-task-review]', {
-      runId: task?.runId,
-      taskId: task?.taskId,
-    });
-    return await TaobaoBaohaojiaTaskRunner.executeTask({
-      ...task,
-      action: 'continue_review',
-    });
-  });
+  ipcMain.handle(
+    'continue-taobao-baohaojia-task-review',
+    async (_event, task) => {
+      console.info('[continue-taobao-baohaojia-task-review]', {
+        runId: task?.runId,
+        taskId: task?.taskId,
+      });
+      return await TaobaoBaohaojiaTaskRunner.executeTask({
+        ...task,
+        action: 'continue_review',
+      });
+    },
+  );
 
   ipcMain.handle('list-taobao-super-brand-local-tasks', async () => {
     return await listLocalSuperBrandTasks();
   });
 
-  ipcMain.handle('get-taobao-super-brand-local-task-detail', async (_event, taskId) => {
-    return await getLocalSuperBrandTaskDetail(taskId);
-  });
+  ipcMain.handle(
+    'get-taobao-super-brand-local-task-detail',
+    async (_event, taskId) => {
+      return await getLocalSuperBrandTaskDetail(taskId);
+    },
+  );
 
-  ipcMain.handle('create-taobao-super-brand-local-task', async (_event, payload) => {
-    return await createLocalSuperBrandTask(payload || {});
-  });
+  ipcMain.handle(
+    'create-taobao-super-brand-local-task',
+    async (_event, payload) => {
+      return await createLocalSuperBrandTask(payload || {});
+    },
+  );
 
-  ipcMain.handle('delete-taobao-super-brand-local-task', async (_event, taskId) => {
-    return await deleteLocalSuperBrandTask(taskId);
-  });
+  ipcMain.handle(
+    'delete-taobao-super-brand-local-task',
+    async (_event, taskId) => {
+      return await deleteLocalSuperBrandTask(taskId);
+    },
+  );
 
-  ipcMain.handle('create-taobao-super-brand-local-run', async (_event, payload) => {
-    return await createLocalSuperBrandRun(payload);
-  });
+  ipcMain.handle(
+    'create-taobao-super-brand-local-run',
+    async (_event, payload) => {
+      return await createLocalSuperBrandRun(payload);
+    },
+  );
 
-  ipcMain.handle('list-taobao-super-brand-local-runs', async (_event, taskId) => {
-    return await listLocalSuperBrandRuns(taskId);
-  });
+  ipcMain.handle(
+    'list-taobao-super-brand-local-runs',
+    async (_event, taskId) => {
+      return await listLocalSuperBrandRuns(taskId);
+    },
+  );
 
-  ipcMain.handle('list-taobao-super-brand-local-run-logs', async (_event, runId) => {
-    return await listLocalSuperBrandRunLogs(runId);
-  });
+  ipcMain.handle(
+    'list-taobao-super-brand-local-run-logs',
+    async (_event, runId) => {
+      return await listLocalSuperBrandRunLogs(runId);
+    },
+  );
 
   ipcMain.handle('execute-taobao-super-brand-task', async (_event, task) => {
     console.info('[execute-taobao-super-brand-task]', {
@@ -829,7 +763,10 @@ function registerIpcHandlers() {
    */
   ipcMain.handle('execute-withdrawal-task', async (event, task) => {
     const runId =
-      task?.clientRequestId || task?.id || task?.taskId || `withdrawal_${Date.now()}`;
+      task?.clientRequestId ||
+      task?.id ||
+      task?.taskId ||
+      `withdrawal_${Date.now()}`;
     const sendLog = (entry: Record<string, any>) => {
       event.sender.send('withdrawal-log', {
         entry,
@@ -1007,8 +944,9 @@ function setupMenu() {
     {
       label: '文件',
       submenu: [
-        ...(!isMac
-          ? [
+        ...(isMac
+          ? []
+          : [
               {
                 label: '检查更新...',
                 click: () => {
@@ -1017,9 +955,11 @@ function setupMenu() {
                 },
               },
               { type: 'separator' as const },
-            ]
-          : []),
-        { label: isMac ? '关闭窗口' : '退出', role: (isMac ? 'close' : 'quit') as const },
+            ]),
+        {
+          label: isMac ? '关闭窗口' : '退出',
+          role: (isMac ? 'close' : 'quit') as const,
+        },
       ],
     },
     {

@@ -1,22 +1,8 @@
 // @vitest-environment node
 import { Buffer } from 'node:buffer';
-import process from 'node:process';
 
 import * as ExcelJS from 'exceljs';
-import { afterEach, describe, expect, it } from 'vitest';
-
-const originalHome = process.env.PRODUCT_MASTER_HOME;
-const originalSource = process.env.PRODUCT_MASTER_SOURCE_PATH;
-const tempDirs: string[] = [];
-
-async function createTempDir(prefix: string) {
-  const fs = await import('node:fs');
-  const os = await import('node:os');
-  const path = await import('node:path');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-}
+import { describe, expect, it } from 'vitest';
 
 async function createWorkbookBuffer(
   headers: string[],
@@ -31,40 +17,12 @@ async function createWorkbookBuffer(
 
 async function loadBaohaojiaModules() {
   const core = await import('../core');
-  const productMaster = await import('../../product-master/index');
-  return { core, productMaster };
+  return { core };
 }
-
-afterEach(async () => {
-  const fs = await import('node:fs');
-  process.env.PRODUCT_MASTER_HOME = originalHome;
-  process.env.PRODUCT_MASTER_SOURCE_PATH = originalSource;
-  for (const dir of tempDirs.splice(0)) {
-    fs.rmSync(dir, { force: true, recursive: true });
-  }
-});
 
 describe('baohaojia transform core', () => {
   it('falls back to product master carton info when package fields are missing', async () => {
-    const runtimeDir = await createTempDir('baohaojia-runtime-');
-    process.env.PRODUCT_MASTER_HOME = runtimeDir;
-
-    const { core, productMaster } = await loadBaohaojiaModules();
-    await productMaster.importProductMasterJson(
-      Buffer.from(
-        JSON.stringify([
-          {
-            aoxiangConversionFactor: 24,
-            cartonSize: '24瓶/箱',
-            procurementCost: 3.2,
-            productName: '测试可乐',
-            upc: 'UPC-24',
-          },
-        ]),
-        'utf8',
-      ),
-      'manual.json',
-    );
+    const { core } = await loadBaohaojiaModules();
 
     const inputBuffer = await createWorkbookBuffer(
       ['UPC', '活动价', '商品名称'],
@@ -74,6 +32,15 @@ describe('baohaojia transform core', () => {
     const result = await core.transformBaohaojiaBuffer({
       fileBuffer: inputBuffer,
       initialStock: 9999,
+      productMasterRecords: [
+        {
+          aoxiangConversionFactor: 24,
+          cartonSize: '24瓶/箱',
+          procurementCost: 3.2,
+          productName: '测试可乐',
+          upc: 'UPC-24',
+        },
+      ],
     });
 
     const workbook = new ExcelJS.Workbook();
@@ -86,25 +53,7 @@ describe('baohaojia transform core', () => {
   });
 
   it('keeps explicit package flag when the source row already says no package', async () => {
-    const runtimeDir = await createTempDir('baohaojia-runtime-');
-    process.env.PRODUCT_MASTER_HOME = runtimeDir;
-
-    const { core, productMaster } = await loadBaohaojiaModules();
-    await productMaster.importProductMasterJson(
-      Buffer.from(
-        JSON.stringify([
-          {
-            aoxiangConversionFactor: 12,
-            cartonSize: '12瓶/箱',
-            procurementCost: 2.5,
-            productName: '测试雪碧',
-            upc: 'UPC-NO-PACK',
-          },
-        ]),
-        'utf8',
-      ),
-      'manual.json',
-    );
+    const { core } = await loadBaohaojiaModules();
 
     const inputBuffer = await createWorkbookBuffer(
       ['UPC', '活动价', '是否组包'],
@@ -113,6 +62,15 @@ describe('baohaojia transform core', () => {
 
     const result = await core.transformBaohaojiaBuffer({
       fileBuffer: inputBuffer,
+      productMasterRecords: [
+        {
+          aoxiangConversionFactor: 12,
+          cartonSize: '12瓶/箱',
+          procurementCost: 2.5,
+          productName: '测试雪碧',
+          upc: 'UPC-NO-PACK',
+        },
+      ],
     });
 
     const workbook = new ExcelJS.Workbook();
@@ -124,23 +82,7 @@ describe('baohaojia transform core', () => {
   });
 
   it('moves rows into the excluded sheet when procurement cost is higher than activity price', async () => {
-    const runtimeDir = await createTempDir('baohaojia-runtime-');
-    process.env.PRODUCT_MASTER_HOME = runtimeDir;
-
-    const { core, productMaster } = await loadBaohaojiaModules();
-    await productMaster.importProductMasterJson(
-      Buffer.from(
-        JSON.stringify([
-          {
-            procurementCost: 8,
-            productName: '高采购价商品',
-            upc: 'UPC-EXCLUDED',
-          },
-        ]),
-        'utf8',
-      ),
-      'manual.json',
-    );
+    const { core } = await loadBaohaojiaModules();
 
     const inputBuffer = await createWorkbookBuffer(
       ['UPC', '活动价'],
@@ -149,6 +91,13 @@ describe('baohaojia transform core', () => {
 
     const result = await core.transformBaohaojiaBuffer({
       fileBuffer: inputBuffer,
+      productMasterRecords: [
+        {
+          procurementCost: 8,
+          productName: '高采购价商品',
+          upc: 'UPC-EXCLUDED',
+        },
+      ],
     });
 
     const workbook = new ExcelJS.Workbook();

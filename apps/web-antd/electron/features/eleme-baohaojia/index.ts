@@ -1,21 +1,34 @@
+import type {
+  BaohaojiaAnalysisMetrics,
+  BaohaojiaAnalysisResult,
+  BaohaojiaExcludedRow,
+  BaohaojiaQualifiedRow,
+  BaohaojiaReviewRow,
+  BaohaojiaUploadRow,
+  ProductMasterLookupRecord,
+} from './core';
+
+import { Buffer } from 'node:buffer';
+
 import {
   analyzeBaohaojiaBuffer,
-  transformBaohaojiaBuffer,
-  type BaohaojiaAnalysisResult,
-} from '../eleme-activity/automation/transform-baohao';
+  extractBaohaojiaCodes,
+  transformBaohaojiaArtifacts,
+} from './core';
 
 interface BaohaojiaOptions {
   fileBuffer: Buffer;
   initialStock?: number;
+  productMasterRecords?: ProductMasterLookupRecord[];
 }
 
-export {
-  type BaohaojiaAnalysisMetrics,
-  type BaohaojiaExcludedRow,
-  type BaohaojiaQualifiedRow,
-  type BaohaojiaReviewRow,
-  type BaohaojiaUploadRow
-} from '../eleme-activity/automation/transform-baohao';
+export type {
+  BaohaojiaAnalysisMetrics,
+  BaohaojiaExcludedRow,
+  BaohaojiaQualifiedRow,
+  BaohaojiaReviewRow,
+  BaohaojiaUploadRow,
+};
 
 export type ElemeBaohaojiaRunResult = {
   analysis: BaohaojiaAnalysisResult;
@@ -24,22 +37,34 @@ export type ElemeBaohaojiaRunResult = {
   uploadBuffer: Buffer;
 };
 
-export class ElemeBaohaojiaAnalyzer {
-  static async analyze({
-    fileBuffer,
-    initialStock = 9999,
-  }: BaohaojiaOptions): Promise<BaohaojiaAnalysisResult> {
-    return analyzeBaohaojiaBuffer(fileBuffer, initialStock);
-  }
+export const ElemeBaohaojiaAnalyzer = {
+  async extractCodes(fileBuffer: Buffer): Promise<string[]> {
+    return extractBaohaojiaCodes(fileBuffer);
+  },
 
-  static async run({
+  async analyze({
     fileBuffer,
     initialStock = 9999,
-  }: BaohaojiaOptions): Promise<ElemeBaohaojiaRunResult> {
-    const { analysis, auditBuffer, uploadBuffer } = await transformBaohaojiaBuffer(
+    productMasterRecords,
+  }: BaohaojiaOptions): Promise<BaohaojiaAnalysisResult> {
+    return analyzeBaohaojiaBuffer(
       fileBuffer,
       initialStock,
+      productMasterRecords,
     );
+  },
+
+  async run({
+    fileBuffer,
+    initialStock = 9999,
+    productMasterRecords,
+  }: BaohaojiaOptions): Promise<ElemeBaohaojiaRunResult> {
+    const { analysis, auditBuffer, uploadBuffer } =
+      await transformBaohaojiaArtifacts(
+        fileBuffer,
+        initialStock,
+        productMasterRecords,
+      );
 
     return {
       analysis,
@@ -47,5 +72,5 @@ export class ElemeBaohaojiaAnalyzer {
       summary: analysis.summary,
       uploadBuffer,
     };
-  }
-}
+  },
+};

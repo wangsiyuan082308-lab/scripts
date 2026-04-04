@@ -1,6 +1,12 @@
 <script lang="tsx" setup>
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type {
+  FilterOption,
+  ProductMasterListItem,
+  ProductMasterStatus,
+} from '#/api/product-master';
+
 import { computed, h, onMounted, reactive, ref, toRaw } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -11,6 +17,7 @@ import {
   Descriptions,
   Empty,
   Input,
+  message,
   Modal,
   Select,
   Space,
@@ -18,45 +25,16 @@ import {
   Tag,
   Tooltip,
   Upload,
-  message,
 } from 'ant-design-vue';
 
+import {
+  getProductMasterFilterOptions,
+  getProductMasterStatus,
+  importProductMaster,
+  listProductMasterRecords,
+  refreshProductMaster,
+} from '#/api/product-master';
 import { getStoreList } from '#/api/store';
-import { readFileAsBuffer } from '#/utils/file';
-
-interface ProductMasterListItem {
-  baseUnitProcurementCost?: number | null;
-  cartonProcurementCost?: number | null;
-  cartonSize?: string;
-  currentRetailPrice?: number | null;
-  hasStorePriceVariance?: boolean;
-  primaryStoreNames: string[];
-  primarySupplierNames: string[];
-  procurementCost?: number | null;
-  productName: string;
-  priceVarianceReason?: string;
-  sku: string;
-  specification: string;
-  storeCount: number;
-  supplierCount: number;
-  upc: string;
-}
-
-interface FilterOption {
-  label: string;
-  value: string;
-}
-
-interface ProductMasterStatus {
-  exists: boolean;
-  fileMtimeMs: number;
-  indexBuiltAt?: string;
-  rawPath: string;
-  rawSize: number;
-  rawSourcePath?: string;
-  recordCount: number;
-  schemaVersion: number;
-}
 
 const loading = ref(false);
 const statusLoading = ref(false);
@@ -64,7 +42,12 @@ const statusModalOpen = ref(false);
 const rows = ref<ProductMasterListItem[]>([]);
 const storeOptions = ref<FilterOption[]>([]);
 const supplierOptions = ref<FilterOption[]>([]);
-const status = ref<ProductMasterStatus | null>(null);
+const status = ref<null | ProductMasterStatus>(null);
+const pagination = reactive({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+});
 
 const filters = reactive({
   hasStorePriceVariance: undefined as string | undefined,
@@ -74,11 +57,15 @@ const filters = reactive({
   upc: '',
 });
 
-const statusTagColor = computed(() => (status.value?.exists ? 'success' : 'default'));
+const statusTagColor = computed(() =>
+  status.value?.exists ? 'success' : 'default',
+);
 const statusText = computed(() => (status.value?.exists ? '已上传' : '未上传'));
 
-function compareNumber(left?: number | null, right?: number | null) {
-  return (left ?? Number.NEGATIVE_INFINITY) - (right ?? Number.NEGATIVE_INFINITY);
+function compareNumber(left?: null | number, right?: null | number) {
+  return (
+    (left ?? Number.NEGATIVE_INFINITY) - (right ?? Number.NEGATIVE_INFINITY)
+  );
 }
 
 const columns: TableColumnsType = [
@@ -101,14 +88,11 @@ const columns: TableColumnsType = [
           default: () => [
             h(
               Tooltip,
-              { title: `多门店采购价不一致：${row.priceVarianceReason}` },
               {
-                default: () =>
-                  h(
-                    Tag,
-                    { color: 'warning' },
-                    () => '差异',
-                  ),
+                title: `多门店采购价不一致：${row.priceVarianceReason}`,
+              },
+              {
+                default: () => h(Tag, { color: 'warning' }, () => '差异'),
               },
             ),
             h('span', text || '-'),
@@ -128,7 +112,7 @@ const columns: TableColumnsType = [
     dataIndex: 'cartonProcurementCost',
     title: '箱规采购价',
     width: 100,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) => text ?? '-',
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
       compareNumber(left.cartonProcurementCost, right.cartonProcurementCost),
   },
@@ -136,15 +120,18 @@ const columns: TableColumnsType = [
     dataIndex: 'baseUnitProcurementCost',
     title: '最小单位采购价',
     width: 120,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) => text ?? '-',
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
-      compareNumber(left.baseUnitProcurementCost, right.baseUnitProcurementCost),
+      compareNumber(
+        left.baseUnitProcurementCost,
+        right.baseUnitProcurementCost,
+      ),
   },
   {
     dataIndex: 'currentRetailPrice',
     title: '零售价',
     width: 100,
-    customRender: ({ text }) => (text == null ? '-' : text),
+    customRender: ({ text }) => text ?? '-',
     sorter: (left: ProductMasterListItem, right: ProductMasterListItem) =>
       compareNumber(left.currentRetailPrice, right.currentRetailPrice),
   },
@@ -161,7 +148,7 @@ const columns: TableColumnsType = [
     width: 260,
     customRender: ({ text }) => {
       const value = Array.isArray(text) ? text : [];
-      return value.length ? value.join('、') : '无';
+      return value.length > 0 ? value.join('、') : '无';
     },
   },
   { dataIndex: 'supplierCount', title: '供应商数', width: 100 },
@@ -171,7 +158,7 @@ const columns: TableColumnsType = [
     width: 220,
     customRender: ({ text }) => {
       const value = Array.isArray(text) ? text : [];
-      return value.length ? value.join('、') : '无';
+      return value.length > 0 ? value.join('、') : '无';
     },
   },
 ];
@@ -192,11 +179,7 @@ function formatSize(value?: number) {
 async function loadStatus() {
   statusLoading.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('get-product-master-status');
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表状态失败');
-    }
-    status.value = result.data;
+    status.value = await getProductMasterStatus();
   } catch (error: any) {
     message.error(error.message || '获取商品总表状态失败');
   } finally {
@@ -206,18 +189,15 @@ async function loadStatus() {
 
 async function loadFilterOptions() {
   try {
-    const stores = await getStoreList({ page: 1, pageSize: 500 });
-    const result = await window.ipcRenderer.invoke(
-      'get-product-master-filter-options',
-    );
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表筛选项失败');
-    }
+    const [stores, filterOptions] = await Promise.all([
+      getStoreList({ page: 1, pageSize: 500 }),
+      getProductMasterFilterOptions(),
+    ]);
     storeOptions.value = (stores || []).map((item: any) => ({
       label: item.storeName,
       value: item.storeName,
     }));
-    supplierOptions.value = result.data?.supplierOptions || [];
+    supplierOptions.value = filterOptions.supplierOptions || [];
   } catch (error: any) {
     message.error(error.message || '获取商品总表筛选项失败');
   }
@@ -226,40 +206,35 @@ async function loadFilterOptions() {
 async function loadRows() {
   loading.value = true;
   try {
-    const payload = {
+    const result = await listProductMasterRecords({
       hasStorePriceVariance: filters.hasStorePriceVariance,
+      page: pagination.current,
+      pageSize: pagination.pageSize,
       productName: filters.productName,
       storeNames: [...toRaw(filters.storeNames)],
       supplierNames: [...toRaw(filters.supplierNames)],
       upc: filters.upc,
-    };
-
-    const result = await window.ipcRenderer.invoke('list-product-master-records', {
-      ...payload,
     });
-
-    if (!result.success) {
-      throw new Error(result.message || '获取商品总表失败');
-    }
-
-    rows.value = result.data || [];
+    rows.value = result.items;
+    pagination.current = result.page;
+    pagination.pageSize = result.pageSize;
+    pagination.total = result.total;
   } catch (error: any) {
     rows.value = [];
+    pagination.total = 0;
     message.error(error.message || '获取商品总表失败');
   } finally {
     loading.value = false;
   }
 }
 
-async function refreshProductMaster() {
+async function handleRefreshProductMaster() {
   statusLoading.value = true;
   try {
-    const result = await window.ipcRenderer.invoke('refresh-product-master');
-    if (!result.success) {
-      throw new Error(result.message || '刷新商品总表失败');
-    }
+    const result = await refreshProductMaster();
+    pagination.current = 1;
     await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
-    message.success(`刷新完成，共 ${result.data.recordCount} 条商品记录`);
+    message.success(`刷新完成，共 ${result.recordCount} 条商品记录`);
   } catch (error: any) {
     message.error(error.message || '刷新商品总表失败');
   } finally {
@@ -270,18 +245,10 @@ async function refreshProductMaster() {
 async function handleUpload(file: File) {
   try {
     loading.value = true;
-    const fileBuffer = await readFileAsBuffer(file);
-    const result = await window.ipcRenderer.invoke('import-product-master', {
-      fileBuffer,
-      originalName: file.name,
-    });
-
-    if (!result.success) {
-      throw new Error(result.message || '导入商品总表失败');
-    }
-
-    message.success(`导入成功，共 ${result.data.recordCount} 条商品记录`);
+    const result = await importProductMaster(file);
+    pagination.current = 1;
     await Promise.all([loadStatus(), loadFilterOptions(), loadRows()]);
+    message.success(`导入成功，共 ${result.recordCount} 条商品记录`);
   } catch (error: any) {
     message.error(error.message || '导入商品总表失败');
   } finally {
@@ -291,12 +258,24 @@ async function handleUpload(file: File) {
   return false;
 }
 
+function handleSearch() {
+  pagination.current = 1;
+  void loadRows();
+}
+
+function handleTableChange(page: number, pageSize: number) {
+  pagination.current = page;
+  pagination.pageSize = pageSize;
+  void loadRows();
+}
+
 function resetFilters() {
   filters.hasStorePriceVariance = undefined;
   filters.productName = '';
   filters.upc = '';
   filters.storeNames = [];
   filters.supplierNames = [];
+  pagination.current = 1;
   void loadRows();
 }
 
@@ -313,10 +292,18 @@ onMounted(() => {
           <span class="text-sm text-gray-500">
             最后更新: {{ formatDate(status?.fileMtimeMs) }}
           </span>
-          <Button size="small" :loading="statusLoading" @click="statusModalOpen = true">
+          <Button
+            size="small"
+            :loading="statusLoading"
+            @click="statusModalOpen = true"
+          >
             查看状态详情
           </Button>
-          <Button size="small" :loading="statusLoading" @click="refreshProductMaster">
+          <Button
+            size="small"
+            :loading="statusLoading"
+            @click="handleRefreshProductMaster"
+          >
             刷新总表
           </Button>
         </div>
@@ -366,7 +353,9 @@ onMounted(() => {
             placeholder="补货差异"
             style="width: 140px"
           />
-          <Button type="primary" :loading="loading" @click="loadRows">搜索</Button>
+          <Button type="primary" :loading="loading" @click="handleSearch">
+            搜索
+          </Button>
           <Button :disabled="loading" @click="resetFilters">重置</Button>
           <Upload
             :before-upload="handleUpload"
@@ -384,13 +373,20 @@ onMounted(() => {
           :columns="columns"
           :data-source="rows"
           :loading="loading"
-          :row-class-name="(record: ProductMasterListItem) => record.hasStorePriceVariance ? 'product-master-row-variance' : ''"
+          :row-class-name="
+            (record: ProductMasterListItem) =>
+              record.hasStorePriceVariance ? 'product-master-row-variance' : ''
+          "
           size="small"
           bordered
           :pagination="{
-            pageSize: 20,
+            current: pagination.current,
+            pageSize: pagination.pageSize,
             showSizeChanger: true,
             showQuickJumper: true,
+            total: pagination.total,
+            onChange: handleTableChange,
+            onShowSizeChange: handleTableChange,
             showTotal: (total: number) => `共${total}条数据`,
           }"
           :scroll="{ x: 2000 }"

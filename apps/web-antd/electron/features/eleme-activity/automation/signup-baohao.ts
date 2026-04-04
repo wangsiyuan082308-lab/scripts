@@ -13,13 +13,8 @@ import { transformBaohaojiaWithArtifacts } from './transform-baohao';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const __filename = fileURLToPath(import.meta.url);
-const LOG_DIR = path.join(__dirname, '..', 'logs');
-const DATA_DIR = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
 const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-const LOG_FILE = path.join(LOG_DIR, `baohao_${today}.log`);
+let runtimeLogForwarder: RuntimeOptions['onLog'];
 const ACTIVITY_URL_BASE = 'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next';
 const KNOWN_BAOHAO_KEYWORDS = [
   '宁波-热销品-3-6月',
@@ -28,12 +23,21 @@ const KNOWN_BAOHAO_KEYWORDS = [
   '【组包】宁波-高搜流量品-3-6月',
 ];
 
-type RuntimeOptions = {
+export interface BaohaojiaAutomationLogEntry {
+  data?: any;
+  level: 'error' | 'info' | 'warn';
+  msg: string;
+  ts: string;
+}
+
+export type RuntimeOptions = {
   continueAction?: 'continue_review' | 'rerun_recorded';
   initialStock: number;
   continueManifestPath?: string;
+  onLog?: (entry: BaohaojiaAutomationLogEntry) => void;
   reportPath?: string;
   reviewMode: 'auto' | 'manual';
+  runtimeBaseDir?: string;
   signupMode: 'all' | 'repeat_only' | 'unsigned_only';
 };
 
@@ -128,11 +132,59 @@ type ContinueManifest = {
   }>;
 };
 
+let runtimePaths:
+  | {
+      dataDir: string;
+      logDir: string;
+      userDataDir: string;
+    }
+  | undefined;
+
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+function resolveRuntimeBaseDir(runtimeBaseDir?: string) {
+  return `${runtimeBaseDir || process.env.DESKTOP_AUTOMATION_BASE_DIR || path.join(__dirname, '..')}`.trim();
+}
+
+function setRuntimePaths(runtimeBaseDir?: string) {
+  const baseDir = resolveRuntimeBaseDir(runtimeBaseDir);
+  runtimePaths = {
+    dataDir: path.join(baseDir, 'data'),
+    logDir: path.join(baseDir, 'logs'),
+    userDataDir: path.join(baseDir, 'user_data'),
+  };
+
+  ensureDir(runtimePaths.dataDir);
+  ensureDir(runtimePaths.logDir);
+  ensureDir(runtimePaths.userDataDir);
+}
+
+function getRuntimePaths() {
+  if (!runtimePaths) {
+    setRuntimePaths();
+  }
+  return runtimePaths!;
+}
+
+function getLogFile() {
+  return path.join(getRuntimePaths().logDir, `baohao_${today}.log`);
+}
+
 function log(level: string, msg: string, data?: any) {
   const ts = new Date().toISOString();
   const text = `[${ts}] [${level.toUpperCase()}] ${msg}${data ? ' ' + JSON.stringify(data) : ''}`;
   console.log(text);
-  fs.appendFileSync(LOG_FILE, JSON.stringify({ ts, level, msg, ...(data ? { data } : {}) }) + '\n');
+  fs.appendFileSync(
+    getLogFile(),
+    JSON.stringify({ ts, level, msg, ...(data ? { data } : {}) }) + '\n',
+  );
+  if (level === 'info' || level === 'warn' || level === 'error') {
+    runtimeLogForwarder?.({ data, level, msg, ts });
+  }
 }
 
 function isTarget(name: string, fullText: string): boolean {
@@ -206,7 +258,9 @@ async function getActivityContext(page: Page, frame: Frame) {
 
 async function saveShot(page: Page, name: string): Promise<string> {
   const file = `${name}_${Date.now()}.png`;
-  await page.screenshot({ path: path.join(LOG_DIR, file), fullPage: false }).catch(() => {});
+  await page
+    .screenshot({ path: path.join(getRuntimePaths().logDir, file), fullPage: false })
+    .catch(() => {});
   return file;
 }
 
@@ -594,7 +648,7 @@ async function clickDownloadInCenter(page: Page, frame: Frame): Promise<Download
   }
 
   await page.screenshot({
-    path: path.join(LOG_DIR, `baohao_download_center_timeout_${Date.now()}.png`),
+    path: path.join(getRuntimePaths().logDir, `baohao_download_center_timeout_${Date.now()}.png`),
   }).catch(() => {});
   throw new Error('下载中心中未找到可点击的下载按钮（已轮询等待）');
 }
@@ -697,7 +751,7 @@ async function exportTemplate(
   }
 
   const suggested = download.suggestedFilename() || `baohao_export_${Date.now()}.xlsx`;
-  const savePath = path.join(DATA_DIR, `${Date.now()}_${suggested}`);
+  const savePath = path.join(getRuntimePaths().dataDir, `${Date.now()}_${suggested}`);
   await download.saveAs(savePath);
   log('info', '  → 导出文件已保存', { file: savePath });
   return {
@@ -1789,12 +1843,14 @@ async function runContinueMode(
   return { found, results };
 }
 
-async function main() {
+async function main(runtimeOptions: RuntimeOptions = parseRuntimeOptions()) {
+  const previousLogForwarder = runtimeLogForwarder;
+  setRuntimePaths(runtimeOptions.runtimeBaseDir);
+  runtimeLogForwarder = runtimeOptions.onLog;
   log('info', '=== 爆好价活动最终闭环报名启动 ===');
-  const runtimeOptions = parseRuntimeOptions();
   log('info', '运行参数', runtimeOptions);
 
-  const userDataDir = path.join(__dirname, '..', 'user_data');
+  const userDataDir = getRuntimePaths().userDataDir;
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chrome',
     headless: false,
@@ -1837,7 +1893,7 @@ async function main() {
     console.log('══════════════════════════════════════════\n');
 
     const finalReportPath =
-      runtimeOptions.reportPath || path.join(DATA_DIR, `baohao_signup_${today}.json`);
+      runtimeOptions.reportPath || path.join(getRuntimePaths().dataDir, `baohao_signup_${today}.json`);
     fs.writeFileSync(
       finalReportPath,
       JSON.stringify(
@@ -1861,8 +1917,13 @@ async function main() {
     throw err;
   } finally {
     await context.close();
+    runtimeLogForwarder = previousLogForwarder;
     log('info', '=== 爆好价活动最终闭环报名完成 ===');
   }
+}
+
+export async function runBaohaojiaSignup(runtimeOptions: RuntimeOptions) {
+  return main(runtimeOptions);
 }
 
 const isDirectRun =

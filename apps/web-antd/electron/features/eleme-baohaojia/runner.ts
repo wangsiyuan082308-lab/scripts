@@ -1,10 +1,12 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
 import { app } from 'electron';
 
+import {
+  runBaohaojiaSignup,
+  type BaohaojiaAutomationLogEntry,
+  type RuntimeOptions as BaohaojiaRuntimeOptions,
+} from '../eleme-activity/automation/signup-baohao';
 import {
   appendLocalBaohaojiaRunLog,
   isLocalBaohaojiaRunId,
@@ -31,14 +33,14 @@ export interface TaobaoBaohaojiaTask {
     activityId: string;
     activityName: string;
     detailRoute?: string;
-    sourceTab?: '已报名活动' | '未报名活动';
+    sourceTab?: string;
   }>;
   requiresManualReview?: boolean;
   signupMode?: 'all' | 'repeat_only' | 'unsigned_only';
   reviewActivityResults?: Array<{
     activityId: string;
     activityName: string;
-    sourceTab?: '已报名活动' | '未报名活动';
+    sourceTab?: string;
     uploadFile?: {
       fileBase64?: string;
       fileName: string;
@@ -75,7 +77,7 @@ interface BaohaojiaActivityResultPayload {
   exportedFile?: BaohaojiaRunResultFilePayload;
   exportTaskId?: string;
   message: string;
-  sourceTab?: '已报名活动' | '未报名活动';
+  sourceTab?: string;
   status: ActivityResultStatus;
   storeCount?: number;
   storeIds?: string[];
@@ -98,7 +100,7 @@ interface BaohaojiaScriptResult {
   message: string;
   name: string;
   processed?: string;
-  sourceTab?: '已报名活动' | '未报名活动';
+  sourceTab?: string;
   status?: ActivityResultStatus;
   storeCount?: number;
   storeIds?: string[];
@@ -116,7 +118,6 @@ interface BaohaojiaSummaryReport {
 
 const DEFAULT_BACKEND_BASE_URL = 'http://120.55.244.232';
 const RUNNING_TASKS = new Map<string, Promise<void>>();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function normalizeText(value: unknown) {
   return `${value || ''}`.trim();
@@ -135,71 +136,54 @@ function buildApiUrl(baseUrl: string, pathname: string) {
   return `${stripTrailingSlash(baseUrl)}/api${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
 }
 
-function pathExists(target: string) {
-  return fs.existsSync(target);
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
-function firstExistingPath(candidates: string[]) {
-  return candidates.find((candidate) => pathExists(candidate));
-}
-
-function getAppBaseCandidates() {
-  const currentCwd = process.cwd();
-  const appPath = normalizeText(app?.getAppPath?.());
-  return Array.from(
-    new Set(
-      [
-        currentCwd,
-        path.resolve(currentCwd, 'apps', 'web-antd'),
-        appPath,
-        appPath ? path.resolve(appPath, 'apps', 'web-antd') : '',
-        path.resolve(__dirname, '..'),
-        path.resolve(__dirname, '..', '..', '..'),
-      ].filter(Boolean),
-    ),
-  );
-}
-
-function getProjectRoot() {
-  const basePath = firstExistingPath(
-    getAppBaseCandidates().filter((candidate) =>
-      pathExists(path.join(candidate, 'package.json')),
-    ),
-  );
-  return basePath || process.cwd();
-}
-
-function getScriptPath() {
-  const relativePath = path.join(
-    'electron',
-    'features',
-    'eleme-activity',
-    'automation',
-    'signup-baohao.ts',
-  );
-  return (
-    firstExistingPath(getAppBaseCandidates().map((candidate) => path.join(candidate, relativePath))) ||
-    path.join(getProjectRoot(), relativePath)
-  );
+function getRuntimeBaseDir() {
+  const baseDir = path.join(app.getPath('userData'), 'automation', 'eleme-activity');
+  ensureDir(baseDir);
+  return baseDir;
 }
 
 function getReportDir() {
-  const relativePath = path.join('electron', 'features', 'eleme-activity', 'data');
-  return (
-    firstExistingPath(getAppBaseCandidates().map((candidate) => path.join(candidate, relativePath))) ||
-    path.join(getProjectRoot(), relativePath)
-  );
+  const reportDir = path.join(getRuntimeBaseDir(), 'data');
+  ensureDir(reportDir);
+  return reportDir;
+}
+
+function safeJsonStringify(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildLogMessage(entry: { data?: unknown; msg: string }) {
+  const message = normalizeText(entry.msg);
+  if (!entry.data) {
+    return message;
+  }
+  return `${message} ${safeJsonStringify(entry.data)}`.trim();
 }
 
 function inferStageFromLine(line: string) {
-  if (/全部活动|扫描|第 \d+\/\d+ 页|发现|爆好价/.test(line)) return 'scan_activities';
-  if (/详情页|立即报名|追加报名|继续报名|操作进度/.test(line)) return 'open_activity';
-  if (/门店|下一步/.test(line)) return 'select_stores';
-  if (/导出商品数据|下载中心|导出文件/.test(line)) return 'export_activity_file';
-  if (/转换完成|上传文件|审计文件|转换器/.test(line)) return 'transform_excel';
-  if (/上传处理后的Excel|uploaded/.test(line)) return 'upload_excel';
-  if (/提交报名|报名成功|报名失败/.test(line)) return 'submit_signup';
-  if (/汇总|结果|完成/.test(line)) return 'generate_report';
+  const normalized = line.toLowerCase();
+  if (normalized.includes('scan') || normalized.includes('page')) return 'scan_activities';
+  if (normalized.includes('detail') || normalized.includes('signup')) return 'open_activity';
+  if (normalized.includes('store')) return 'select_stores';
+  if (normalized.includes('export') || normalized.includes('download')) return 'export_activity_file';
+  if (normalized.includes('excel') || normalized.includes('transform')) return 'transform_excel';
+  if (normalized.includes('upload') || normalized.includes('uploaded')) return 'upload_excel';
+  if (normalized.includes('submit') || normalized.includes('success') || normalized.includes('failed')) {
+    return 'submit_signup';
+  }
+  if (normalized.includes('report') || normalized.includes('summary') || normalized.includes('complete')) {
+    return 'generate_report';
+  }
   return 'desktop_executor';
 }
 
@@ -261,19 +245,19 @@ function mapSummaryToPayload(summary: BaohaojiaSummaryReport): BaohaojiaRunResul
     waitingReviewCount > 0
       ? 'waiting_review'
       : failedCount === 0
-      ? 'succeeded'
-      : successCount === 0 && partialCount === 0
-        ? 'failed'
-        : 'partial_success';
+        ? 'succeeded'
+        : successCount === 0 && partialCount === 0
+          ? 'failed'
+          : 'partial_success';
 
   return {
     activityResults,
     outputSummary: {
-      failedCount,
-      foundCount: summary.found,
       actualStoreCount: actualStoreNames.length,
       actualStoreIds,
       actualStoreNames,
+      failedCount,
+      foundCount: summary.found,
       partialCount,
       reviewMode: summary.reviewMode || 'auto',
       signupMode: summary.signupMode || 'all',
@@ -285,18 +269,12 @@ function mapSummaryToPayload(summary: BaohaojiaSummaryReport): BaohaojiaRunResul
   };
 }
 
-function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
 function writeReviewManifest(task: TaobaoBaohaojiaTask, reportDir: string) {
   const activities = (task.reviewActivityResults || []).filter(
     (item) => item.uploadFile?.localPath || item.uploadFile?.fileBase64,
   );
   if (activities.length === 0) {
-    throw new Error('没有可继续提交的待审核活动。');
+    throw new Error('娌℃湁鍙户缁彁浜ょ殑寰呭鏍告椿鍔ㄣ€?');
   }
 
   const tempDir = path.join(reportDir, 'review-manifests');
@@ -305,14 +283,14 @@ function writeReviewManifest(task: TaobaoBaohaojiaTask, reportDir: string) {
   const manifestActivities = activities.map((item, index) => {
     let uploadPath = `${item.uploadFile?.localPath || ''}`.trim();
     if (!uploadPath) {
-      const fileName = item.uploadFile?.fileName || `${item.activityId || index + 1}_报名.xlsx`;
+      const fileName = item.uploadFile?.fileName || `${item.activityId || index + 1}_鎶ュ悕.xlsx`;
       uploadPath = path.join(tempDir, `${Date.now()}_${index}_${fileName}`);
       fs.writeFileSync(uploadPath, Buffer.from(item.uploadFile?.fileBase64 || '', 'base64'));
     }
     return {
       activityId: item.activityId,
       activityName: item.activityName,
-      sourceTab: item.sourceTab || '未报名活动',
+      sourceTab: item.sourceTab || '鏈姤鍚嶆椿鍔?',
       uploadPath,
     };
   });
@@ -337,7 +315,7 @@ function writeRecordedActivityManifest(task: TaobaoBaohaojiaTask, reportDir: str
     (item) => normalizeText(item.activityId || item.activityName),
   );
   if (activities.length === 0) {
-    throw new Error('没有可重跑的历史活动记录。');
+    throw new Error('娌℃湁鍙噸璺戠殑鍘嗗彶娲诲姩璁板綍銆?');
   }
 
   const tempDir = path.join(reportDir, 'review-manifests');
@@ -352,7 +330,7 @@ function writeRecordedActivityManifest(task: TaobaoBaohaojiaTask, reportDir: str
           activityId: item.activityId,
           activityName: item.activityName,
           detailRoute: item.detailRoute,
-          sourceTab: item.sourceTab || '未报名活动',
+          sourceTab: item.sourceTab || '鏈姤鍚嶆椿鍔?',
         })),
       },
       null,
@@ -467,71 +445,54 @@ async function postFailureAndExit(
   });
 }
 
-async function waitForChildCompletion(
+async function waitForTaskCompletion(
   task: TaobaoBaohaojiaTask,
   runId: string,
   backendClient: BaohaojiaBackendClient,
 ) {
-  const scriptPath = getScriptPath();
-  if (!fs.existsSync(scriptPath)) {
-    await postFailureAndExit(
-      backendClient,
-      task,
-      runId,
-      `桌面端执行失败：未找到爆好价自动化入口 ${scriptPath}`,
-    );
-    return;
-  }
-
+  const runtimeBaseDir = getRuntimeBaseDir();
   const reportDir = getReportDir();
-  ensureDir(reportDir);
   const reportPath = path.join(
     reportDir,
     `${task.action === 'continue_review' ? 'baohao_review_submit' : 'baohao_signup'}_${Date.now()}.json`,
   );
-  const args = [
-    'exec',
-    'tsx',
-    scriptPath,
-    '--initial-stock',
-    String(task.initialStock || 9999),
-    '--report-path',
-    reportPath,
-  ];
+
   let manifestPath = '';
+  const runtimeOptions: BaohaojiaRuntimeOptions = {
+    continueAction:
+      task.action === 'continue_review' || task.action === 'rerun_recorded' ? task.action : undefined,
+    initialStock: task.initialStock || 9999,
+    onLog: undefined,
+    reportPath,
+    reviewMode: task.requiresManualReview ? 'manual' : 'auto',
+    runtimeBaseDir,
+    signupMode: task.signupMode || 'all',
+  };
+
   if (task.action === 'continue_review') {
     manifestPath = writeReviewManifest(task, reportDir);
-    args.push('--continue-manifest', manifestPath);
-    args.push('--continue-action', 'continue_review');
-    args.push('--signup-mode', task.signupMode || 'all');
+    runtimeOptions.continueManifestPath = manifestPath;
   } else if (task.action === 'rerun_recorded') {
     manifestPath = writeRecordedActivityManifest(task, reportDir);
-    args.push('--continue-manifest', manifestPath);
-    args.push('--continue-action', 'rerun_recorded');
-    args.push('--signup-mode', task.signupMode || 'all');
-  } else {
-    args.push('--review-mode', task.requiresManualReview ? 'manual' : 'auto');
-    args.push('--signup-mode', task.signupMode || 'all');
+    runtimeOptions.continueManifestPath = manifestPath;
   }
 
   await backendClient.appendRunLog(runId, {
     action: 'desktop-start',
     context: {
       action: task.action || 'execute',
-      args,
-      cwd: getProjectRoot(),
+      executionMode: 'in_process',
       requiresManualReview: task.requiresManualReview,
+      runtimeBaseDir,
       signupMode: task.signupMode || 'all',
-      reportDir,
-      scriptPath,
       taskId: task.taskId,
     },
     message:
       task.action === 'continue_review'
-        ? '桌面端开始继续执行爆好价审核通过任务。'
+        ? '妗岄潰绔紑濮嬬户缁墽琛岀垎濂戒环瀹℃牳閫氳繃浠诲姟銆?'
         : task.action === 'rerun_recorded'
-          ? '桌面端开始重跑当前任务已记录的爆好价活动。'
-        : '桌面端开始接管爆好价自动化执行。',
+          ? '妗岄潰绔紑濮嬮噸璺戝綋鍓嶄换鍔″凡璁板綍鐨勭垎濂戒环娲诲姩銆?'
+          : '妗岄潰绔紑濮嬫帴绠＄垎濂戒环鑷姩鍖栨墽琛屻€?',
     stage: 'desktop_executor',
   });
   await backendClient.updateRunStatus(runId, {
@@ -545,113 +506,81 @@ async function waitForChildCompletion(
     status: 'running',
   });
 
-  await new Promise<void>((resolve) => {
-    const child = spawn('pnpm', args, {
-      cwd: getProjectRoot(),
-      env: {
-        ...process.env,
-        FORCE_COLOR: '0',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+  let currentStage = 'desktop_executor';
+  let failureReason = '';
 
-    let currentStage = 'desktop_executor';
-    let failureReason = '';
-    const handleLine = (line: string, level: 'error' | 'info') => {
-      const trimmed = normalizeText(line);
-      if (!trimmed) return;
+  runtimeOptions.onLog = (entry: BaohaojiaAutomationLogEntry) => {
+    const message = buildLogMessage(entry);
+    if (!message) return;
 
-      const inferredStage = inferStageFromLine(trimmed);
-      if (inferredStage && inferredStage !== currentStage) {
-        currentStage = inferredStage;
-        void backendClient.updateRunStatus(runId, {
-          currentStage,
-          outputSummary: {
-            lastLine: trimmed,
-          },
-          status: 'running',
-        });
-      }
-
-      if (level === 'error') {
-        failureReason = trimmed;
-      }
-
-      void backendClient.appendRunLog(runId, {
-        action: level === 'error' ? 'stderr' : 'stdout',
-        context: {
-          taskId: task.taskId,
+    const inferredStage = inferStageFromLine(message);
+    if (inferredStage && inferredStage !== currentStage) {
+      currentStage = inferredStage;
+      void backendClient.updateRunStatus(runId, {
+        currentStage,
+        outputSummary: {
+          lastLine: message,
         },
-        level,
-        message: trimmed,
-        stage: currentStage,
+        status: 'running',
       });
-    };
+    }
 
-    readline.createInterface({ input: child.stdout! }).on('line', (line) => {
-      handleLine(line, 'info');
-    });
+    if (entry.level === 'error') {
+      failureReason = message;
+    }
 
-    readline.createInterface({ input: child.stderr! }).on('line', (line) => {
-      handleLine(line, 'error');
+    void backendClient.appendRunLog(runId, {
+      action: entry.level === 'error' ? 'stderr' : 'stdout',
+      context: {
+        taskId: task.taskId,
+      },
+      level: entry.level === 'warn' ? 'warning' : entry.level,
+      message,
+      stage: currentStage,
     });
+  };
 
-    child.on('error', async (error) => {
-      failureReason = error.message;
-      await postFailureAndExit(
-        backendClient,
-        task,
-        runId,
-        `桌面端执行进程启动失败：${error.message}`,
-      );
-      resolve();
-    });
+  try {
+    await runBaohaojiaSignup(runtimeOptions);
 
-    child.on('close', async (code) => {
-      try {
-        if (reportPath && fs.existsSync(reportPath)) {
-          const report = JSON.parse(
-            fs.readFileSync(reportPath, 'utf-8'),
-          ) as BaohaojiaSummaryReport;
-          const payload = mapSummaryToPayload(report);
-          await backendClient.saveRunResult(runId, payload);
-          await backendClient.updateRunStatus(runId, {
-            currentStage: 'generate_report',
-            outputSummary: payload.outputSummary,
-            status: payload.status,
-          });
-          await backendClient.appendRunLog(runId, {
-            action: 'desktop-report',
-            context: {
-              reportPath,
-            },
-            message: `桌面端执行已回写结果 ${reportPath}`,
-            stage: 'generate_report',
-          });
-        } else {
-          await postFailureAndExit(
-            backendClient,
-            task,
-            runId,
-            failureReason ||
-              `桌面端执行失败：子进程退出码 ${code ?? 'unknown'}，且未产出结果文件。`,
-          );
-        }
-      } catch (error) {
-        await postFailureAndExit(
-          backendClient,
-          task,
-          runId,
-          `桌面端执行结果回写失败：${error instanceof Error ? error.message : String(error)}`,
-        );
-      } finally {
-        if (manifestPath && fs.existsSync(manifestPath)) {
-          fs.unlinkSync(manifestPath);
-        }
-        resolve();
-      }
-    });
-  });
+    if (fs.existsSync(reportPath)) {
+      const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8')) as BaohaojiaSummaryReport;
+      const payload = mapSummaryToPayload(report);
+      await backendClient.saveRunResult(runId, payload);
+      await backendClient.updateRunStatus(runId, {
+        currentStage: 'generate_report',
+        outputSummary: payload.outputSummary,
+        status: payload.status,
+      });
+      await backendClient.appendRunLog(runId, {
+        action: 'desktop-report',
+        context: {
+          reportPath,
+        },
+        message: `妗岄潰绔墽琛屽凡鍥炲啓缁撴灉 ${reportPath}`,
+        stage: 'generate_report',
+      });
+      return;
+    }
+
+    await postFailureAndExit(
+      backendClient,
+      task,
+      runId,
+      failureReason || '妗岄潰绔墽琛屽け璐ワ細鏈骇鐢熺粨鏋滄姤鍛娿€?',
+    );
+  } catch (error) {
+    await postFailureAndExit(
+      backendClient,
+      task,
+      runId,
+      `妗岄潰绔墽琛屽彂鐢熷紓甯革細${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    if (manifestPath && fs.existsSync(manifestPath)) {
+      fs.unlinkSync(manifestPath);
+    }
+  }
 }
 
 async function startTaskExecution(task: TaobaoBaohaojiaTask) {
@@ -659,13 +588,13 @@ async function startTaskExecution(task: TaobaoBaohaojiaTask) {
   if (!runId) {
     return {
       success: false,
-      message: '桌面端执行失败：缺少 runId。',
+      message: '妗岄潰绔墽琛屽け璐ワ細缂哄皯 runId銆?',
     };
   }
   if (RUNNING_TASKS.has(runId)) {
     return {
       success: true,
-      message: '桌面端已在执行该爆好价任务，请稍后查看运行日志。',
+      message: '妗岄潰绔凡鍦ㄦ墽琛岃鐖嗗ソ浠蜂换鍔★紝璇风◢鍚庢煡鐪嬭繍琛屾棩蹇椼€?',
     };
   }
 
@@ -674,25 +603,16 @@ async function startTaskExecution(task: TaobaoBaohaojiaTask) {
     resolveBackendBaseUrl(task.backendBaseUrl),
   );
 
-  const execution = waitForChildCompletion(task, runId, backendClient)
-    .catch(async (error) => {
-      await postFailureAndExit(
-        backendClient,
-        task,
-        runId,
-        `桌面端执行发生异常：${error instanceof Error ? error.message : String(error)}`,
-      );
-    })
-    .finally(() => {
-      RUNNING_TASKS.delete(runId);
-    });
+  const execution = waitForTaskCompletion(task, runId, backendClient).finally(() => {
+    RUNNING_TASKS.delete(runId);
+  });
 
   RUNNING_TASKS.set(runId, execution);
   void execution;
 
   return {
     success: true,
-    message: '桌面端已开始执行爆好价任务。',
+    message: '妗岄潰绔凡寮€濮嬫墽琛岀垎濂戒环浠诲姟銆?',
   };
 }
 

@@ -10,19 +10,24 @@ import {
 } from '../../../../src/features/taobao-marketing-tag/config';
 import { getTargetFrame } from './shared-utils';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOG_DIR = path.join(__dirname, '..', 'logs');
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const ACTIVITY_URL =
   'https://nr.ele.me/app/eleme-nr-bfe-newretail/common-next#/pc/platformActivitiesPc/';
 
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+export interface SuperBrandAutomationLogEntry {
+  data?: any;
+  level: 'error' | 'info' | 'warn';
+  msg: string;
+  ts: string;
+}
 
-type RuntimeOptions = {
+export type RuntimeOptions = {
   entryScope: 'brand_activity' | 'unsigned_activity';
   marketingTag: string;
+  onLog?: (entry: SuperBrandAutomationLogEntry) => void;
   reportPath?: string;
+  runtimeBaseDir?: string;
 };
 
 type SignupResultStatus = 'failed' | 'partial_success' | 'succeeded';
@@ -93,27 +98,74 @@ function parseRuntimeOptions(): RuntimeOptions {
   };
 }
 
-const runtimeOptions = parseRuntimeOptions();
-const runtimeScene = findTaobaoMarketingTagSceneByTag(runtimeOptions.marketingTag);
-const runtimeEntryScope = resolveTaobaoMarketingEntryScope({
-  marketingTag: runtimeOptions.marketingTag || runtimeScene.marketingTag,
-  requestedEntryScope: runtimeOptions.entryScope,
-  sceneKey: runtimeScene.key,
-});
-if (runtimeEntryScope !== runtimeOptions.entryScope) {
-  console.warn(
-    `[super-brand-guard] entryScope corrected: ${runtimeOptions.entryScope} -> ${runtimeEntryScope}`,
-  );
-  runtimeOptions.entryScope = runtimeEntryScope;
+function resolveRuntimeOptions(runtimeOptions: RuntimeOptions) {
+  const runtimeScene = findTaobaoMarketingTagSceneByTag(runtimeOptions.marketingTag);
+  const marketingTag = runtimeOptions.marketingTag || runtimeScene.marketingTag;
+  const runtimeEntryScope = resolveTaobaoMarketingEntryScope({
+    marketingTag,
+    requestedEntryScope: runtimeOptions.entryScope,
+    sceneKey: runtimeScene.key,
+  });
+
+  return {
+    requestedEntryScope: runtimeOptions.entryScope,
+    runtimeOptions: {
+      ...runtimeOptions,
+      entryScope: runtimeEntryScope,
+      marketingTag,
+    } satisfies RuntimeOptions,
+  };
 }
 const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-const LOG_FILE = path.join(LOG_DIR, `super_brand_${today}.log`);
+let runtimeLogForwarder: RuntimeOptions['onLog'];
+let runtimePaths:
+  | {
+      dataDir: string;
+      logDir: string;
+      userDataDir: string;
+    }
+  | undefined;
+
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+function resolveRuntimeBaseDir(runtimeBaseDir?: string) {
+  return `${runtimeBaseDir || process.env.DESKTOP_AUTOMATION_BASE_DIR || path.join(__dirname, '..')}`.trim();
+}
+
+function setRuntimePaths(runtimeBaseDir?: string) {
+  const baseDir = resolveRuntimeBaseDir(runtimeBaseDir);
+  runtimePaths = {
+    dataDir: path.join(baseDir, 'data'),
+    logDir: path.join(baseDir, 'logs'),
+    userDataDir: path.join(baseDir, 'user_data'),
+  };
+
+  ensureDir(runtimePaths.dataDir);
+  ensureDir(runtimePaths.logDir);
+  ensureDir(runtimePaths.userDataDir);
+}
+
+function getRuntimePaths() {
+  if (!runtimePaths) {
+    setRuntimePaths();
+  }
+  return runtimePaths!;
+}
+
+function getLogFile() {
+  return path.join(getRuntimePaths().logDir, `super_brand_${today}.log`);
+}
 
 function log(level: 'info' | 'warn' | 'error', msg: string, data?: any) {
   const ts = new Date().toISOString();
   const line = JSON.stringify({ ts, level, msg, ...(data ? { data } : {}) });
   console.log(`[${ts}] [${level.toUpperCase()}] ${msg}${data ? ` ${JSON.stringify(data)}` : ''}`);
-  fs.appendFileSync(LOG_FILE, `${line}\n`);
+  fs.appendFileSync(getLogFile(), `${line}\n`);
+  runtimeLogForwarder?.({ data, level, msg, ts });
 }
 
 function escapeRegex(value: string) {
@@ -385,10 +437,21 @@ async function returnToFilteredList(
   return targetFrame;
 }
 
-async function main() {
+async function main(runtimeInput: RuntimeOptions = parseRuntimeOptions()) {
+  const previousLogForwarder = runtimeLogForwarder;
+  const { requestedEntryScope, runtimeOptions } = resolveRuntimeOptions(runtimeInput);
+  setRuntimePaths(runtimeOptions.runtimeBaseDir);
+  runtimeLogForwarder = runtimeOptions.onLog;
+
+  if (runtimeOptions.entryScope !== requestedEntryScope) {
+    log(
+      'warn',
+      `[super-brand-guard] entryScope corrected: ${requestedEntryScope} -> ${runtimeOptions.entryScope}`,
+    );
+  }
   log('info', '=== 超级品牌红包活动自动报名启动 ===', runtimeOptions);
 
-  const userDataDir = path.join(__dirname, '..', 'user_data');
+  const userDataDir = getRuntimePaths().userDataDir;
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chrome',
     headless: false,
@@ -615,7 +678,7 @@ async function main() {
             const storeSelection = await selectStoresAndSubmit(targetFrame, page);
             const screenshotName = `signup_super_brand_${Date.now()}.png`;
             await page
-              .screenshot({ path: path.join(LOG_DIR, screenshotName), fullPage: false })
+              .screenshot({ path: path.join(getRuntimePaths().logDir, screenshotName), fullPage: false })
               .catch(() => {});
 
             const resultText = await targetFrame
@@ -710,7 +773,7 @@ async function main() {
 
     const resultFile =
       runtimeOptions.reportPath ||
-      path.join(DATA_DIR, `super_brand_signup_${today}_${Date.now()}.json`);
+      path.join(getRuntimePaths().dataDir, `super_brand_signup_${today}_${Date.now()}.json`);
     fs.writeFileSync(resultFile, JSON.stringify(summary, null, 2), 'utf-8');
 
     log('info', '=== 报名汇总 ===');
@@ -727,11 +790,24 @@ async function main() {
     throw error;
   } finally {
     await context.close();
+    runtimeLogForwarder = previousLogForwarder;
     log('info', '=== 超级品牌红包活动报名完成 ===');
   }
 }
 
-main().catch((error) => {
-  console.error('Fatal:', error);
-  process.exit(1);
-});
+export async function runSuperBrandSignup(runtimeOptions: RuntimeOptions) {
+  return main(runtimeOptions);
+}
+
+const isDirectRun =
+  typeof process !== 'undefined' &&
+  Array.isArray(process.argv) &&
+  !!process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(__filename);
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('Fatal:', error);
+    process.exit(1);
+  });
+}

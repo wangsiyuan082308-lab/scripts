@@ -1,14 +1,16 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
 import { app } from 'electron';
+
 import {
   findTaobaoMarketingTagSceneByTag,
   resolveTaobaoMarketingEntryScope,
 } from '../../../src/features/taobao-marketing-tag/config';
-
+import {
+  runSuperBrandSignup,
+  type RuntimeOptions as SuperBrandRuntimeOptions,
+  type SuperBrandAutomationLogEntry,
+} from '../eleme-activity/automation/signup-super-brand-task';
 import {
   appendLocalSuperBrandRunLog,
   isLocalSuperBrandRunId,
@@ -45,7 +47,7 @@ interface SuperBrandActivityResultPayload {
   merchantRatio?: number;
   message: string;
   screenshot?: string;
-  sourceTab?: '品牌活动' | '已报名活动' | '未报名活动';
+  sourceTab?: string;
   status: ActivityResultStatus;
   storeCount?: number;
   storeIds?: string[];
@@ -66,7 +68,7 @@ interface SuperBrandScriptResult {
   merchantRatio?: number;
   message: string;
   screenshot?: string;
-  sourceTab?: '品牌活动' | '已报名活动' | '未报名活动';
+  sourceTab?: string;
   status?: ActivityResultStatus;
   storeCount?: number;
   storeIds?: string[];
@@ -89,7 +91,6 @@ interface SuperBrandSummaryReport {
 
 const DEFAULT_BACKEND_BASE_URL = 'http://120.55.244.232';
 const RUNNING_TASKS = new Map<string, Promise<void>>();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function normalizeText(value: unknown) {
   return `${value || ''}`.trim();
@@ -108,70 +109,51 @@ function buildApiUrl(baseUrl: string, pathname: string) {
   return `${stripTrailingSlash(baseUrl)}/api${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
 }
 
-function pathExists(target: string) {
-  return fs.existsSync(target);
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
-function firstExistingPath(candidates: string[]) {
-  return candidates.find((candidate) => pathExists(candidate));
-}
-
-function getAppBaseCandidates() {
-  const currentCwd = process.cwd();
-  const appPath = normalizeText(app?.getAppPath?.());
-  return Array.from(
-    new Set(
-      [
-        currentCwd,
-        path.resolve(currentCwd, 'apps', 'web-antd'),
-        appPath,
-        appPath ? path.resolve(appPath, 'apps', 'web-antd') : '',
-        path.resolve(__dirname, '..'),
-        path.resolve(__dirname, '..', '..', '..'),
-      ].filter(Boolean),
-    ),
-  );
-}
-
-function getProjectRoot() {
-  const basePath = firstExistingPath(
-    getAppBaseCandidates().filter((candidate) =>
-      pathExists(path.join(candidate, 'package.json')),
-    ),
-  );
-  return basePath || process.cwd();
-}
-
-function getScriptPath() {
-  const relativePath = path.join(
-    'electron',
-    'features',
-    'eleme-activity',
-    'automation',
-    'signup-super-brand-task.ts',
-  );
-  return (
-    firstExistingPath(getAppBaseCandidates().map((candidate) => path.join(candidate, relativePath))) ||
-    path.join(getProjectRoot(), relativePath)
-  );
+function getRuntimeBaseDir() {
+  const baseDir = path.join(app.getPath('userData'), 'automation', 'eleme-activity');
+  ensureDir(baseDir);
+  return baseDir;
 }
 
 function getReportDir() {
-  const relativePath = path.join('electron', 'features', 'eleme-activity', 'data');
-  return (
-    firstExistingPath(getAppBaseCandidates().map((candidate) => path.join(candidate, relativePath))) ||
-    path.join(getProjectRoot(), relativePath)
-  );
+  const reportDir = path.join(getRuntimeBaseDir(), 'data');
+  ensureDir(reportDir);
+  return reportDir;
+}
+
+function safeJsonStringify(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildLogMessage(entry: { data?: unknown; msg: string }) {
+  const message = normalizeText(entry.msg);
+  if (!entry.data) {
+    return message;
+  }
+  return `${message} ${safeJsonStringify(entry.data)}`.trim();
 }
 
 function inferStageFromLine(line: string) {
-  if (/打开活动页面|账号门禁|活动列表|目标frame/u.test(line)) return 'open_activity';
-  if (/切换筛选|超级品牌红包|扫描|第 \d+\/\d+ 页/u.test(line)) return 'scan_activities';
-  if (/进入详情页|优惠信息|商家出资/u.test(line)) return 'inspect_activity';
-  if (/向导第1步|同意协议|下一步/u.test(line)) return 'confirm_rules';
-  if (/向导第2步|门店|全选|确认弹窗/u.test(line)) return 'select_stores';
-  if (/报名成功|报名失败|结果:/u.test(line)) return 'submit_signup';
-  if (/汇总|结果已保存|报名完成/u.test(line)) return 'generate_report';
+  const normalized = line.toLowerCase();
+  if (normalized.includes('frame') || normalized.includes('account')) return 'open_activity';
+  if (normalized.includes('scan') || normalized.includes('page')) return 'scan_activities';
+  if (normalized.includes('detail') || normalized.includes('ratio')) return 'inspect_activity';
+  if (normalized.includes('next') || normalized.includes('agree')) return 'confirm_rules';
+  if (normalized.includes('store')) return 'select_stores';
+  if (normalized.includes('submit') || normalized.includes('success') || normalized.includes('failed')) {
+    return 'submit_signup';
+  }
+  if (normalized.includes('report') || normalized.includes('summary')) return 'generate_report';
   return 'desktop_executor';
 }
 
@@ -185,7 +167,7 @@ function mapSummaryToPayload(summary: SuperBrandSummaryReport): SuperBrandRunRes
   const scene = findTaobaoMarketingTagSceneByTag(summary.marketingTag);
   const activityResults = (summary.results || []).map((result, index) => ({
     activityId: result.activityId || `super_brand_activity_${index + 1}`,
-    activityName: result.activityName || `超级品牌活动 ${index + 1}`,
+    activityName: result.activityName || `瓒呯骇鍝佺墝娲诲姩 ${index + 1}`,
     detailRoute: result.detailRoute,
     marketingTag: result.marketingTag || summary.marketingTag || scene.marketingTag,
     merchantRatio: result.merchantRatio,
@@ -365,7 +347,7 @@ async function postFailureAndExit(
   });
 }
 
-async function waitForChildCompletion(
+async function waitForTaskCompletion(
   task: TaobaoSuperBrandTask,
   runId: string,
   backendClient: SuperBrandBackendClient,
@@ -377,46 +359,21 @@ async function waitForChildCompletion(
     requestedEntryScope: task.entryScope,
     sceneKey: scene.key,
   });
-  const scriptPath = getScriptPath();
-  if (!fs.existsSync(scriptPath)) {
-    await postFailureAndExit(
-      backendClient,
-      task,
-      runId,
-      `桌面端执行失败：未找到超级品牌红包自动化入口 ${scriptPath}`,
-    );
-    return;
-  }
-
+  const runtimeBaseDir = getRuntimeBaseDir();
   const reportDir = getReportDir();
-  if (!fs.existsSync(reportDir)) {
-    fs.mkdirSync(reportDir, { recursive: true });
-  }
   const reportPath = path.join(reportDir, `super_brand_signup_${Date.now()}.json`);
-  const args = [
-    'exec',
-    'tsx',
-    scriptPath,
-    '--marketing-tag',
-    resolvedMarketingTag,
-    '--entry-scope',
-    resolvedEntryScope,
-    '--report-path',
-    reportPath,
-  ];
 
   await backendClient.appendRunLog(runId, {
     action: 'desktop-start',
     context: {
-      args,
-      cwd: getProjectRoot(),
       entryScope: resolvedEntryScope,
+      executionMode: 'in_process',
       marketingTag: resolvedMarketingTag,
       reportDir,
-      scriptPath,
+      runtimeBaseDir,
       taskId: task.taskId,
     },
-    message: '桌面端开始接管超级品牌红包自动化执行。',
+    message: '妗岄潰绔紑濮嬫帴绠¤秴绾у搧鐗岀孩鍖呰嚜鍔ㄥ寲鎵ц銆?',
     stage: 'desktop_executor',
   });
   await backendClient.updateRunStatus(runId, {
@@ -429,110 +386,87 @@ async function waitForChildCompletion(
     status: 'running',
   });
 
-  await new Promise<void>((resolve) => {
-    const child = spawn('pnpm', args, {
-      cwd: getProjectRoot(),
-      env: {
-        ...process.env,
-        FORCE_COLOR: '0',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+  let currentStage = 'desktop_executor';
+  let failureReason = '';
 
-    let currentStage = 'desktop_executor';
-    let failureReason = '';
-    const handleLine = (line: string, level: 'error' | 'info') => {
-      const trimmed = normalizeText(line);
-      if (!trimmed) return;
+  const handleAutomationLog = (entry: SuperBrandAutomationLogEntry) => {
+    const message = buildLogMessage(entry);
+    if (!message) return;
 
-      const inferredStage = inferStageFromLine(trimmed);
-      if (inferredStage && inferredStage !== currentStage) {
-        currentStage = inferredStage;
-        void backendClient.updateRunStatus(runId, {
-          currentStage,
-          outputSummary: {
-            lastLine: trimmed,
-            entryScope: resolvedEntryScope,
-            marketingTag: resolvedMarketingTag,
-          },
-          status: 'running',
-        });
-      }
-
-      if (level === 'error') {
-        failureReason = trimmed;
-      }
-
-      void backendClient.appendRunLog(runId, {
-        action: level === 'error' ? 'stderr' : 'stdout',
-        context: {
-          taskId: task.taskId,
+    const inferredStage = inferStageFromLine(message);
+    if (inferredStage && inferredStage !== currentStage) {
+      currentStage = inferredStage;
+      void backendClient.updateRunStatus(runId, {
+        currentStage,
+        outputSummary: {
+          entryScope: resolvedEntryScope,
+          lastLine: message,
+          marketingTag: resolvedMarketingTag,
         },
-        level,
-        message: trimmed,
-        stage: currentStage,
+        status: 'running',
       });
+    }
+
+    if (entry.level === 'error') {
+      failureReason = message;
+    }
+
+    void backendClient.appendRunLog(runId, {
+      action: entry.level === 'error' ? 'stderr' : 'stdout',
+      context: {
+        taskId: task.taskId,
+      },
+      level: entry.level === 'warn' ? 'warning' : entry.level,
+      message,
+      stage: currentStage,
+    });
+  };
+
+  try {
+    const runtimeOptions: SuperBrandRuntimeOptions = {
+      entryScope: resolvedEntryScope,
+      marketingTag: resolvedMarketingTag,
+      onLog: handleAutomationLog,
+      reportPath,
+      runtimeBaseDir,
     };
 
-    readline.createInterface({ input: child.stdout! }).on('line', (line) => {
-      handleLine(line, 'info');
-    });
+    await runSuperBrandSignup(runtimeOptions);
 
-    readline.createInterface({ input: child.stderr! }).on('line', (line) => {
-      handleLine(line, 'error');
-    });
+    if (fs.existsSync(reportPath)) {
+      const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8')) as SuperBrandSummaryReport;
+      const payload = mapSummaryToPayload(report);
+      await backendClient.saveRunResult(runId, payload);
+      await backendClient.updateRunStatus(runId, {
+        currentStage: 'generate_report',
+        outputSummary: payload.outputSummary,
+        status: payload.status,
+      });
+      await backendClient.appendRunLog(runId, {
+        action: 'desktop-report',
+        context: {
+          reportPath,
+        },
+        message: `妗岄潰绔墽琛屽凡鍥炲啓缁撴灉 ${reportPath}`,
+        stage: 'generate_report',
+      });
+      return;
+    }
 
-    child.on('error', async (error) => {
-      failureReason = error.message;
-      await postFailureAndExit(
-        backendClient,
-        task,
-        runId,
-        `桌面端执行进程启动失败：${error.message}`,
-      );
-      resolve();
-    });
-
-    child.on('close', async (code) => {
-      try {
-        if (reportPath && fs.existsSync(reportPath)) {
-          const report = JSON.parse(fs.readFileSync(reportPath, 'utf-8')) as SuperBrandSummaryReport;
-          const payload = mapSummaryToPayload(report);
-          await backendClient.saveRunResult(runId, payload);
-          await backendClient.updateRunStatus(runId, {
-            currentStage: 'generate_report',
-            outputSummary: payload.outputSummary,
-            status: payload.status,
-          });
-          await backendClient.appendRunLog(runId, {
-            action: 'desktop-report',
-            context: {
-              reportPath,
-            },
-            message: `桌面端执行已回写结果 ${reportPath}`,
-            stage: 'generate_report',
-          });
-        } else {
-          await postFailureAndExit(
-            backendClient,
-            task,
-            runId,
-            failureReason ||
-              `桌面端执行失败：子进程退出码 ${code ?? 'unknown'}，且未产出结果文件。`,
-          );
-        }
-      } catch (error) {
-        await postFailureAndExit(
-          backendClient,
-          task,
-          runId,
-          `桌面端执行结果回写失败：${error instanceof Error ? error.message : String(error)}`,
-        );
-      } finally {
-        resolve();
-      }
-    });
-  });
+    await postFailureAndExit(
+      backendClient,
+      task,
+      runId,
+      failureReason || '妗岄潰绔墽琛屽け璐ワ細鏈骇鐢熺粨鏋滄姤鍛娿€?',
+    );
+  } catch (error) {
+    await postFailureAndExit(
+      backendClient,
+      task,
+      runId,
+      `妗岄潰绔墽琛屽彂鐢熷紓甯革細${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function startTaskExecution(task: TaobaoSuperBrandTask) {
@@ -540,13 +474,13 @@ async function startTaskExecution(task: TaobaoSuperBrandTask) {
   if (!runId) {
     return {
       success: false,
-      message: '桌面端执行失败：缺少 runId。',
+      message: '妗岄潰绔墽琛屽け璐ワ細缂哄皯 runId銆?',
     };
   }
   if (RUNNING_TASKS.has(runId)) {
     return {
       success: true,
-      message: '桌面端已在执行该超级品牌红包任务，请稍后查看运行日志。',
+      message: '妗岄潰绔凡鍦ㄦ墽琛岃瓒呯骇鍝佺墝绾㈠寘浠诲姟锛岃绋嶅悗鏌ョ湅杩愯鏃ュ織銆?',
     };
   }
 
@@ -555,25 +489,16 @@ async function startTaskExecution(task: TaobaoSuperBrandTask) {
     resolveBackendBaseUrl(task.backendBaseUrl),
   );
 
-  const execution = waitForChildCompletion(task, runId, backendClient)
-    .catch(async (error) => {
-      await postFailureAndExit(
-        backendClient,
-        task,
-        runId,
-        `桌面端执行发生异常：${error instanceof Error ? error.message : String(error)}`,
-      );
-    })
-    .finally(() => {
-      RUNNING_TASKS.delete(runId);
-    });
+  const execution = waitForTaskCompletion(task, runId, backendClient).finally(() => {
+    RUNNING_TASKS.delete(runId);
+  });
 
   RUNNING_TASKS.set(runId, execution);
   void execution;
 
   return {
     success: true,
-    message: '桌面端已开始执行超级品牌红包任务。',
+    message: '妗岄潰绔凡寮€濮嬫墽琛岃秴绾у搧鐗岀孩鍖呬换鍔°€?',
   };
 }
 

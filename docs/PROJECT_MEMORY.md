@@ -179,6 +179,7 @@ Relevant backend implementation:
 
 - `C:\Users\31314\Documents\GitHub\scripts-backend\src\lib\product-compare.ts`
 - `C:\Users\31314\Documents\GitHub\scripts-backend\src\routes\product-center.ts`
+- `C:\Users\31314\Documents\GitHub\scripts-backend\docs\PRODUCT_COMPARE_RUNTIME.md`
 
 Related note:
 

@@ -59,7 +59,12 @@ const tagColumns = [
 ];
 
 const supplierColumns = [
-  { title: '供应商', dataIndex: 'supplierName', key: 'supplierName', width: 180 },
+  {
+    title: '供应商',
+    dataIndex: 'supplierName',
+    key: 'supplierName',
+    width: 180,
+  },
   { title: 'ID', dataIndex: 'supplierId', key: 'supplierId', width: 120 },
   { title: '类型', dataIndex: 'type', key: 'type', width: 120 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
@@ -75,26 +80,43 @@ const storeColumns = [
 async function fetchData() {
   loading.value = true;
   try {
-    const [configRes, tagRes, supplierRes, storeRes] = await Promise.all([
-      getProcurementConfig(),
-      getProcurementTags(),
-      getSupplierList({}),
-      getStoreList({}),
-    ]);
-    config.value = configRes;
-    tags.value = tagRes || [];
-    suppliers.value = supplierRes || [];
-    stores.value = storeRes || [];
-    configForm.executionHost = configRes.executionHost || 'electron';
-    configForm.platforms = configRes.platforms || ['Aoxiang'];
-    configForm.reminderChannels =
-      configRes.reminderDefaults?.channels || ['feishu', 'webhook'];
-    configForm.feishuWebhook =
-      configRes.reminderDefaults?.channelTargets?.feishu || '';
-    configForm.webhookUrl =
-      configRes.reminderDefaults?.channelTargets?.webhook || '';
-    configForm.defaultStatuses =
-      configRes.workbench?.defaultStatuses || ['pending', 'running', 'waiting_retry'];
+    const [configRes, tagRes, supplierRes, storeRes] = await Promise.allSettled(
+      [
+        getProcurementConfig(),
+        getProcurementTags(),
+        getSupplierList({}),
+        getStoreList({}),
+      ],
+    );
+    if (configRes.status === 'fulfilled') {
+      config.value = configRes.value;
+      configForm.executionHost = configRes.value.executionHost || 'electron';
+      configForm.platforms = configRes.value.platforms || ['Aoxiang'];
+      configForm.reminderChannels = configRes.value.reminderDefaults
+        ?.channels || ['feishu', 'webhook'];
+      configForm.feishuWebhook =
+        configRes.value.reminderDefaults?.channelTargets?.feishu || '';
+      configForm.webhookUrl =
+        configRes.value.reminderDefaults?.channelTargets?.webhook || '';
+      configForm.defaultStatuses = configRes.value.workbench
+        ?.defaultStatuses || ['pending', 'running', 'waiting_retry'];
+    }
+    tags.value = tagRes.status === 'fulfilled' ? tagRes.value || [] : [];
+    suppliers.value =
+      supplierRes.status === 'fulfilled' ? supplierRes.value || [] : [];
+    stores.value = storeRes.status === 'fulfilled' ? storeRes.value || [] : [];
+    if (
+      suppliers.value.length === 0 &&
+      stores.value.length === 0 &&
+      tags.value.length === 0
+    ) {
+      message.warning(
+        '\u91c7\u8d2d\u57fa\u7840\u6570\u636e\u6682\u672a\u52a0\u8f7d\u5b8c\u6574\uff0c\u95e8\u5e97\u548c\u4f9b\u5e94\u5546\u5217\u8868\u53ef\u80fd\u4e3a\u7a7a',
+      );
+    }
+    if (configRes.status === 'rejected') {
+      throw configRes.reason;
+    }
   } finally {
     loading.value = false;
   }
@@ -104,14 +126,14 @@ async function handleSaveConfig() {
   await saveProcurementConfig({
     executionHost: configForm.executionHost,
     platforms: configForm.platforms,
-        reminderDefaults: {
-          channelTargets: {
-            feishu: configForm.feishuWebhook,
-            webhook: configForm.webhookUrl,
-          },
-          channels: configForm.reminderChannels,
-          enabled: true,
-        },
+    reminderDefaults: {
+      channelTargets: {
+        feishu: configForm.feishuWebhook,
+        webhook: configForm.webhookUrl,
+      },
+      channels: configForm.reminderChannels,
+      enabled: true,
+    },
     workbench: {
       defaultStatuses: configForm.defaultStatuses,
     },
@@ -227,7 +249,9 @@ onMounted(fetchData);
                   <Tag :color="record.color">{{ record.tagName }}</Tag>
                 </template>
                 <template v-else-if="column.key === 'status'">
-                  <Tag :color="record.status === 'active' ? 'success' : 'default'">
+                  <Tag
+                    :color="record.status === 'active' ? 'success' : 'default'"
+                  >
                     {{ record.status }}
                   </Tag>
                 </template>
@@ -273,9 +297,10 @@ onMounted(fetchData);
                   <Tag color="blue">{{ rule.platform }}</Tag>
                   <span class="font-medium">{{ rule.name }}</span>
                 </div>
-                <pre class="mb-0 overflow-auto rounded bg-gray-50 p-3 text-xs">{{
-                  JSON.stringify(rule.rulePayload, null, 2)
-                }}</pre>
+                <pre
+                  class="mb-0 overflow-auto rounded bg-gray-50 p-3 text-xs"
+                  >{{ JSON.stringify(rule.rulePayload, null, 2) }}</pre
+                >
               </div>
             </Space>
           </Tabs.TabPane>

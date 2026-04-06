@@ -28,7 +28,6 @@ import {
   executeProcurementTask,
   getProcurementAlertEvents,
   getProcurementReportDetail,
-  getProcurementTags,
   getProcurementTaskDetail,
   getProcurementTaskRuns,
   getProcurementTasks,
@@ -36,18 +35,15 @@ import {
   type ProcurementAlertEvent,
   type ProcurementReport,
   type ProcurementRun,
-  type ProcurementTag,
   type ProcurementTask,
   updateProcurementTask,
 } from '#/api/procurement';
-import { getStoreList } from '#/api/store';
-import { getSupplierList } from '#/api/supplier';
+import { useProcurementBaseOptions } from '#/composables/useProcurementBaseOptions';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 const accessStore = useAccessStore();
-const suppliers = ref<Array<{ label: string; value: string }>>([]);
-const stores = ref<Array<{ label: string; value: string }>>([]);
-const tags = ref<ProcurementTag[]>([]);
+const { loadBaseOptions, suppliers, stores, tags } =
+  useProcurementBaseOptions();
 const tableRef = ref();
 const modalOpen = ref(false);
 const drawerOpen = ref(false);
@@ -126,20 +122,11 @@ function resetForm() {
 }
 
 async function fetchBaseOptions() {
-  const [supplierRes, storeRes, tagRes] = await Promise.all([
-    getSupplierList({}),
-    getStoreList({}),
-    getProcurementTags(),
-  ]);
-  suppliers.value = (supplierRes || []).map((item: any) => ({
-    label: item.supplierName,
-    value: item.supplierId,
-  }));
-  stores.value = (storeRes || []).map((item: any) => ({
-    label: item.storeName,
-    value: item.storeId,
-  }));
-  tags.value = tagRes || [];
+  await loadBaseOptions();
+
+  if (stores.value.length === 0) {
+    message.warning('采购门店选项暂未加载到，请稍后重试或检查门店数据源');
+  }
 }
 
 function handleCreate() {
@@ -240,7 +227,9 @@ async function openRunDetail(run: ProcurementRun) {
   runDrawerOpen.value = true;
   const [logsRes, report] = await Promise.all([
     getProcurementRunLogs(run.id),
-    run.reportId ? getProcurementReportDetail(run.reportId) : Promise.resolve(null),
+    run.reportId
+      ? getProcurementReportDetail(run.reportId)
+      : Promise.resolve(null),
   ]);
   currentLogs.value = logsRes.items || [];
   currentReport.value = report;
@@ -276,7 +265,9 @@ const generatedTaskName = computed(() => {
   const supplierNames = form.supplierIds.map(
     (id) => supplierNameMap.value.get(id) || id,
   );
-  const storeNames = form.storeIds.map((id) => storeNameMap.value.get(id) || id);
+  const storeNames = form.storeIds.map(
+    (id) => storeNameMap.value.get(id) || id,
+  );
   const supplierLabel =
     supplierNames.length === 0
       ? '全部供应商'
@@ -394,14 +385,16 @@ const taskColumns = computed(() => [
     dataIndex: 'supplierNames',
     key: 'supplierNames',
     width: 220,
-    render: (_h: any, { text }: { text?: string | string[] }) => formatNameList(text),
+    render: (_h: any, { text }: { text?: string | string[] }) =>
+      formatNameList(text),
   },
   {
     title: '门店',
     dataIndex: 'storeNames',
     key: 'storeNames',
     width: 220,
-    render: (_h: any, { text }: { text?: string | string[] }) => formatNameList(text),
+    render: (_h: any, { text }: { text?: string | string[] }) =>
+      formatNameList(text),
   },
   {
     title: '标签',
@@ -434,7 +427,11 @@ const taskColumns = computed(() => [
     key: 'latestRunStatus',
     width: 140,
     render: (_h: any, { text }: { text: string }) =>
-      h(Tag, { color: statusColor(text || '') }, { default: () => text || '-' }),
+      h(
+        Tag,
+        { color: statusColor(text || '') },
+        { default: () => text || '-' },
+      ),
   },
   { title: '提醒', dataIndex: 'alertCount', key: 'alertCount', width: 80 },
   { title: '上次执行', dataIndex: 'lastRunAt', key: 'lastRunAt', width: 180 },
@@ -510,7 +507,12 @@ const runColumns = [
   { title: '运行ID', dataIndex: 'id', key: 'id', width: 180 },
   { title: '阶段', dataIndex: 'currentStage', key: 'currentStage', width: 140 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 120 },
-  { title: '触发来源', dataIndex: 'triggerSource', key: 'triggerSource', width: 100 },
+  {
+    title: '触发来源',
+    dataIndex: 'triggerSource',
+    key: 'triggerSource',
+    width: 100,
+  },
   { title: '开始时间', dataIndex: 'startedAt', key: 'startedAt', width: 180 },
   { title: '结束时间', dataIndex: 'finishedAt', key: 'finishedAt', width: 180 },
   { title: '操作', key: 'action', width: 120 },
@@ -556,7 +558,9 @@ onMounted(() => {
     >
       <Form layout="vertical">
         <Form.Item label="任务名称">
-          <div class="rounded bg-[#f6f8fb] px-3 py-2 text-[13px] text-[#334155]">
+          <div
+            class="rounded bg-[#f6f8fb] px-3 py-2 text-[13px] text-[#334155]"
+          >
             {{ generatedTaskName }}
           </div>
           <div class="mt-2 text-[12px] text-[#64748b]">
@@ -574,7 +578,11 @@ onMounted(() => {
           />
         </Form.Item>
         <Form.Item label="门店">
-          <Select v-model:value="form.storeIds" mode="multiple" :options="stores" />
+          <Select
+            v-model:value="form.storeIds"
+            mode="multiple"
+            :options="stores"
+          />
         </Form.Item>
         <Form.Item label="供应商">
           <Select
@@ -624,11 +632,7 @@ onMounted(() => {
       </Form>
     </Modal>
 
-    <Drawer
-      v-model:open="drawerOpen"
-      title="任务详情"
-      width="78%"
-    >
+    <Drawer v-model:open="drawerOpen" title="任务详情" width="78%">
       <template v-if="currentTaskDetail">
         <Descriptions bordered class="mb-4" :column="2" size="small">
           <Descriptions.Item label="任务名称">
@@ -676,7 +680,11 @@ onMounted(() => {
               </template>
               <template v-else-if="column.key === 'action'">
                 <Space>
-                  <Button type="link" @click="openRunDetail(record as ProcurementRun)">日志</Button>
+                  <Button
+                    type="link"
+                    @click="openRunDetail(record as ProcurementRun)"
+                    >日志</Button
+                  >
                   <Button
                     v-if="record.status === 'running'"
                     danger
@@ -702,7 +710,9 @@ onMounted(() => {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'status'">
-                <Tag :color="record.status === 'pending' ? 'warning' : 'success'">
+                <Tag
+                  :color="record.status === 'pending' ? 'warning' : 'success'"
+                >
                   {{ record.status }}
                 </Tag>
               </template>
@@ -712,14 +722,12 @@ onMounted(() => {
       </template>
     </Drawer>
 
-    <Drawer
-      v-model:open="runDrawerOpen"
-      title="运行详情"
-      width="68%"
-    >
+    <Drawer v-model:open="runDrawerOpen" title="运行详情" width="68%">
       <template v-if="currentRun">
         <Descriptions bordered class="mb-4" :column="2" size="small">
-          <Descriptions.Item label="运行ID">{{ currentRun.id }}</Descriptions.Item>
+          <Descriptions.Item label="运行ID">{{
+            currentRun.id
+          }}</Descriptions.Item>
           <Descriptions.Item label="状态">
             <Tag :color="statusColor(currentRun.status)">
               {{ currentRun.status }}

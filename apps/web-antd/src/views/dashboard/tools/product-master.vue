@@ -189,15 +189,27 @@ async function loadStatus() {
 
 async function loadFilterOptions() {
   try {
-    const [stores, filterOptions] = await Promise.all([
+    const [storeRes, filterOptionRes] = await Promise.allSettled([
       getStoreList({ page: 1, pageSize: 500 }),
       getProductMasterFilterOptions(),
     ]);
-    storeOptions.value = (stores || []).map((item: any) => ({
-      label: item.storeName,
-      value: item.storeName,
-    }));
-    supplierOptions.value = filterOptions.supplierOptions || [];
+    storeOptions.value =
+      storeRes.status === 'fulfilled'
+        ? (storeRes.value || []).map((item: any) => ({
+            label: item.storeName,
+            value: item.storeName,
+          }))
+        : [];
+    supplierOptions.value =
+      filterOptionRes.status === 'fulfilled'
+        ? filterOptionRes.value.supplierOptions || []
+        : [];
+    if (
+      storeRes.status === 'rejected' &&
+      filterOptionRes.status === 'rejected'
+    ) {
+      throw storeRes.reason || filterOptionRes.reason;
+    }
   } catch (error: any) {
     message.error(error.message || '获取商品总表筛选项失败');
   }

@@ -24,22 +24,22 @@ import {
   getProcurementAlertDeliveries,
   getProcurementAlertEvents,
   getProcurementAlertRules,
-  getProcurementTags,
   type ProcurementAlertDelivery,
   type ProcurementAlertEvent,
   type ProcurementAlertRule,
-  type ProcurementTag,
 } from '#/api/procurement';
-import { getStoreList } from '#/api/store';
-import { getSupplierList } from '#/api/supplier';
+import { useProcurementBaseOptions } from '#/composables/useProcurementBaseOptions';
 
 const loading = ref(false);
 const rules = ref<ProcurementAlertRule[]>([]);
 const events = ref<ProcurementAlertEvent[]>([]);
 const deliveries = ref<ProcurementAlertDelivery[]>([]);
-const tagOptions = ref<ProcurementTag[]>([]);
-const supplierOptions = ref<Array<{ label: string; value: string }>>([]);
-const storeOptions = ref<Array<{ label: string; value: string }>>([]);
+const {
+  loadBaseOptions,
+  suppliers: supplierOptions,
+  stores: storeOptions,
+  tags: tagOptions,
+} = useProcurementBaseOptions();
 const modalOpen = ref(false);
 
 const form = reactive({
@@ -100,27 +100,27 @@ function alertTypeLabel(alertType: string) {
 async function fetchData() {
   loading.value = true;
   try {
-    const [ruleRes, eventRes, deliveryRes, tags, suppliers, stores] =
-      await Promise.all([
-        getProcurementAlertRules(),
-        getProcurementAlertEvents(),
-        getProcurementAlertDeliveries(),
-        getProcurementTags(),
-        getSupplierList({}),
-        getStoreList({}),
-      ]);
-    rules.value = ruleRes.items || [];
-    events.value = eventRes.items || [];
-    deliveries.value = deliveryRes.items || [];
-    tagOptions.value = tags || [];
-    supplierOptions.value = (suppliers || []).map((item: any) => ({
-      label: item.supplierName,
-      value: item.supplierId,
-    }));
-    storeOptions.value = (stores || []).map((item: any) => ({
-      label: item.storeName,
-      value: item.storeId,
-    }));
+    const [ruleRes, eventRes, deliveryRes] = await Promise.allSettled([
+      getProcurementAlertRules(),
+      getProcurementAlertEvents(),
+      getProcurementAlertDeliveries(),
+      loadBaseOptions(),
+    ]);
+    rules.value =
+      ruleRes.status === 'fulfilled' ? ruleRes.value.items || [] : [];
+    events.value =
+      eventRes.status === 'fulfilled' ? eventRes.value.items || [] : [];
+    deliveries.value =
+      deliveryRes.status === 'fulfilled' ? deliveryRes.value.items || [] : [];
+    if (
+      supplierOptions.value.length === 0 &&
+      storeOptions.value.length === 0 &&
+      tagOptions.value.length === 0
+    ) {
+      message.warning(
+        '\u63d0\u9192\u89c4\u5219\u7684\u95e8\u5e97\u3001\u4f9b\u5e94\u5546\u3001\u6807\u7b7e\u9009\u9879\u6682\u672a\u52a0\u8f7d\u5230\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5',
+      );
+    }
   } finally {
     loading.value = false;
   }
@@ -188,7 +188,9 @@ onMounted(fetchData);
                   </Space>
                 </template>
                 <template v-else-if="column.key === 'status'">
-                  <Tag :color="record.status === 'active' ? 'success' : 'default'">
+                  <Tag
+                    :color="record.status === 'active' ? 'success' : 'default'"
+                  >
                     {{ record.status }}
                   </Tag>
                 </template>
@@ -223,7 +225,9 @@ onMounted(fetchData);
                   {{ alertTypeLabel(record.alertType) }}
                 </template>
                 <template v-else-if="column.key === 'status'">
-                  <Tag :color="record.status === 'pending' ? 'warning' : 'success'">
+                  <Tag
+                    :color="record.status === 'pending' ? 'warning' : 'success'"
+                  >
                     {{ record.status }}
                   </Tag>
                 </template>

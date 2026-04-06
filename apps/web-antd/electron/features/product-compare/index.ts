@@ -13,7 +13,7 @@ import {
   type ProductMasterRecord,
   type ProductMasterStoreRecord,
 } from '../product-master/index';
-import { readExcelWithSchema } from '../../utils/excel-helper';
+import { readProductCompareWorkbook } from './import-templates';
 
 export type ProductCompareSourceMode = 'custom' | 'productMaster';
 export type ProductCompareMatchType = 'ai_fuzzy' | 'unmatched' | 'upc_exact';
@@ -164,6 +164,9 @@ const DEFAULT_AI_CONFIG: ProductCompareAiConfig = {
   model: 'qwen3.5-plus',
   newProductMonthlySalesThreshold: 10,
 };
+const AI_MATCH_BATCH_SIZE = 1000;
+const RULE_MATCH_MIN_SCORE = 16;
+const RULE_MATCH_SCORE_GAP = 4;
 
 const COMPARE_SCHEMA = [
   { key: 'upc', aliases: ['商品UPC', 'UPC', '商品条码', '条码', '商品条形码'] },
@@ -479,6 +482,16 @@ function hasMeaningfulRowContent(row: ParsedCompareRow) {
   );
 }
 
+function hasMatchIdentity(row: ParsedCompareRow) {
+  return Boolean(
+    row.upc ||
+      row.productName ||
+      row.specification ||
+      row.supplierProductName ||
+      row.supplierProductSpec,
+  );
+}
+
 function toSide(
   row: ParsedCompareRow,
   sourceLabel: string,
@@ -537,9 +550,9 @@ function parseRows(
       return;
     }
 
-    if (!parsed.upc) {
+    if (!hasMatchIdentity(parsed)) {
       invalidRows.push({
-        reason: '缺少 UPC',
+        reason: '缺少可用于比对的商品标识',
         row: parsed,
       });
       return;
@@ -800,6 +813,26 @@ function buildBigrams(input: string) {
   return bigrams;
 }
 
+function extractDescriptorHints(row: ParsedCompareRow | ComparisonCandidate) {
+  const text = `${normalizeText(row.productName)} ${normalizeText(row.supplierProductName)}`;
+  const hints = new Set<string>();
+  const patterns = [
+    /[\p{Script=Han}]{1,8}(?:味|型)/gu,
+    /(蓝色|红色|绿色|青柠|柑橘|黄金桃|白桃|多肽|纤维|乳钙|茶氨酸)/gu,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const hint = normalizeKey(match[0]);
+      if (hint) {
+        hints.add(hint);
+      }
+    }
+  }
+
+  return [...hints];
+}
+
 function scoreCandidate(target: ParsedCompareRow, candidate: ComparisonCandidate) {
   const targetText = buildAIText(target);
   const candidateText = buildAIText(candidate);
@@ -834,7 +867,78 @@ function scoreCandidate(target: ParsedCompareRow, candidate: ComparisonCandidate
     }
   }
 
+  const targetHints = extractDescriptorHints(target);
+  const targetHintSet = new Set(targetHints);
+  const candidateHintSet = new Set(extractDescriptorHints(candidate));
+  for (const hint of targetHints) {
+    if (candidateHintSet.has(hint)) {
+      score += 20;
+    } else {
+      score -= 5;
+    }
+  }
+  for (const hint of candidateHintSet) {
+    if (!targetHintSet.has(hint)) {
+      score -= 5;
+    }
+  }
+
   return score;
+}
+
+function extractMeasureTokens(row: ParsedCompareRow | ComparisonCandidate) {
+  const matches =
+    buildAIText(row).match(/\d+(?:\.\d+)?\s*(?:ml|l|g|kg|毫升|升|克|千克)/gi) || [];
+  return new Set(matches.map((item) => normalizeKey(item)));
+}
+
+function hasCompatibleMeasures(target: ParsedCompareRow, candidate: ComparisonCandidate) {
+  const targetMeasures = extractMeasureTokens(target);
+  const candidateMeasures = extractMeasureTokens(candidate);
+  if (targetMeasures.size === 0 || candidateMeasures.size === 0) {
+    return true;
+  }
+  for (const token of targetMeasures) {
+    if (candidateMeasures.has(token)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function selectCandidateByRule(
+  target: ParsedCompareRow,
+  candidates: ComparisonCandidate[],
+) {
+  const scored = candidates
+    .filter((candidate) => hasCompatibleMeasures(target, candidate))
+    .map((candidate) => ({
+      candidate,
+      score: scoreCandidate(target, candidate),
+    }))
+    .filter((item) => item.score >= RULE_MATCH_MIN_SCORE)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return (
+        (left.candidate.procurementCost ?? Number.POSITIVE_INFINITY) -
+        (right.candidate.procurementCost ?? Number.POSITIVE_INFINITY)
+      );
+    });
+
+  const best = scored[0];
+  if (!best) {
+    return null;
+  }
+
+  const second = scored[1];
+  if (second && best.score - second.score < RULE_MATCH_SCORE_GAP) {
+    return null;
+  }
+
+  return {
+    candidate: best.candidate,
+    reason: `规则匹配命中（名称/规格特征高度一致，score=${best.score}）`,
+  };
 }
 
 function collectAICandidates(
@@ -868,9 +972,7 @@ function renderPromptTemplate(
       supplierProductName: payload.target.supplierProductName,
       supplierProductSpec: payload.target.supplierProductSpec,
       upc: payload.target.upc,
-    },
-    null,
-    2,
+    }
   );
 
   const candidatesJson = JSON.stringify(
@@ -882,9 +984,7 @@ function renderPromptTemplate(
       supplierProductName: candidate.supplierProductName,
       supplierProductSpec: candidate.supplierProductSpec,
       upc: candidate.upc,
-    })),
-    null,
-    2,
+    }))
   );
 
   return template
@@ -996,16 +1096,183 @@ async function callMatchModel(
   return parseAISelection(content);
 }
 
+function chunkCandidates(candidates: ComparisonCandidate[], batchSize: number) {
+  const chunks: ComparisonCandidate[][] = [];
+  for (let index = 0; index < candidates.length; index += batchSize) {
+    chunks.push(candidates.slice(index, index + batchSize));
+  }
+  return chunks;
+}
+
+function dedupeCandidates(candidates: ComparisonCandidate[]) {
+  const seen = new Set<string>();
+  const deduped: ComparisonCandidate[] = [];
+  for (const candidate of candidates) {
+    if (seen.has(candidate.candidateId)) continue;
+    seen.add(candidate.candidateId);
+    deduped.push(candidate);
+  }
+  return deduped;
+}
+
+async function selectCandidateViaAI(
+  config: ProductCompareAiConfig,
+  target: ParsedCompareRow,
+  candidates: ComparisonCandidate[],
+) {
+  if (candidates.length === 0) {
+    return {
+      candidate: null,
+      confidence: undefined,
+      reason: '没有可供 AI 比对的候选商品',
+    };
+  }
+
+  let currentRound = dedupeCandidates(candidates);
+  let round = 1;
+
+  while (currentRound.length > AI_MATCH_BATCH_SIZE) {
+    const winners: Array<{
+      candidate: ComparisonCandidate;
+      confidence?: number;
+      reason?: string;
+    }> = [];
+
+    for (const batch of chunkCandidates(currentRound, AI_MATCH_BATCH_SIZE)) {
+      const selection = await callMatchModel(config, target, batch);
+      if (!selection.matched || !selection.candidateId) {
+        continue;
+      }
+
+      const candidate = batch.find((item) => item.candidateId === selection.candidateId);
+      if (!candidate) {
+        continue;
+      }
+
+      winners.push({
+        candidate,
+        confidence: selection.confidence,
+        reason: selection.reason,
+      });
+    }
+
+    if (winners.length === 0) {
+      return {
+        candidate: null,
+        confidence: undefined,
+        reason:
+          round === 1
+            ? 'AI 未找到可信候选商品'
+            : `AI 在第 ${round} 轮筛选后未找到可信候选商品`,
+      };
+    }
+
+    currentRound = dedupeCandidates(winners.map((item) => item.candidate));
+    round++;
+  }
+
+  const finalSelection = await callMatchModel(config, target, currentRound);
+  if (!finalSelection.matched || !finalSelection.candidateId) {
+    return {
+      candidate: null,
+      confidence: finalSelection.confidence,
+      reason: finalSelection.reason || 'AI 未找到可信匹配',
+    };
+  }
+
+  const finalCandidate = currentRound.find(
+    (item) => item.candidateId === finalSelection.candidateId,
+  );
+  if (!finalCandidate) {
+    return {
+      candidate: null,
+      confidence: finalSelection.confidence,
+      reason: 'AI 返回了无效候选商品',
+    };
+  }
+
+  return {
+    candidate: finalCandidate,
+    confidence: finalSelection.confidence,
+    reason: finalSelection.reason,
+  };
+}
+
 async function matchUnmatchedRows(
   aiConfig: ProductCompareAiConfig,
   unmatchedRows: ParsedCompareRow[],
   candidates: ComparisonCandidate[],
   stats: ProductCompareRunStats,
+  enableRuleMatch: boolean,
 ) {
   const resultMap = new Map<string, ProductCompareResult>();
   const candidateMap = new Map(candidates.map((item) => [item.candidateId, item]));
 
   for (const row of unmatchedRows) {
+    if (candidates.length === 0) {
+      stats.aiSkippedCount++;
+      resultMap.set(
+        row.rowId,
+        buildUnmatchedResult(
+          row.rowId,
+          row,
+          aiConfig.newProductMonthlySalesThreshold,
+          '没有可供 AI 比对的候选商品',
+        ),
+      );
+      continue;
+    }
+
+    const ruleSelection = enableRuleMatch ? selectCandidateByRule(row, candidates) : null;
+    if (ruleSelection) {
+      resultMap.set(
+        row.rowId,
+        buildPriceCompareResult(row.rowId, 'ai_fuzzy', row, ruleSelection.candidate, {
+          matchReason: ruleSelection.reason,
+        }),
+      );
+      continue;
+    }
+
+    try {
+      const aiSelection = await selectCandidateViaAI(aiConfig, row, candidates);
+      if (!aiSelection.candidate) {
+        stats.aiNoMatchCount++;
+        resultMap.set(
+          row.rowId,
+          buildUnmatchedResult(
+            row.rowId,
+            row,
+            aiConfig.newProductMonthlySalesThreshold,
+            aiSelection.reason || 'AI 未找到可信匹配',
+          ),
+        );
+        continue;
+      }
+
+      stats.aiMatchedCount++;
+      resultMap.set(
+        row.rowId,
+        buildPriceCompareResult(row.rowId, 'ai_fuzzy', row, aiSelection.candidate, {
+          matchConfidence: aiSelection.confidence ?? null,
+          matchReason: aiSelection.reason || 'AI 模糊匹配命中',
+        }),
+      );
+      continue;
+    } catch (error: any) {
+      stats.aiNoMatchCount++;
+      resultMap.set(
+        row.rowId,
+        buildUnmatchedResult(
+          row.rowId,
+          row,
+          aiConfig.newProductMonthlySalesThreshold,
+          `AI比对失败: ${error?.message || '未知错误'}`,
+        ),
+      );
+      continue;
+    }
+
     const shortlist = collectAICandidates(row, candidates);
     if (shortlist.length === 0) {
       stats.aiSkippedCount++;
@@ -1101,10 +1368,10 @@ export async function runProductCompare(
   const sourceMode =
     payload.sourceMode === 'productMaster' ? 'productMaster' : 'custom';
 
-  const targetResult = await readExcelWithSchema(payload.targetBuffer, [...COMPARE_SCHEMA]);
+  const targetResult = await readProductCompareWorkbook(payload.targetBuffer);
   assertSchemaCapability(targetResult.fieldMap, targetResult.headers, '主货盘', {
     requireAiText: true,
-    requireUpc: true,
+    requireUpc: false,
   });
 
   const { invalidRows: invalidTargetRows, validRows: validTargetRows } = parseRows(
@@ -1129,13 +1396,10 @@ export async function runProductCompare(
     if (!payload.referenceBuffer || payload.referenceBuffer.length === 0) {
       throw new Error('自定义双货盘模式必须上传对照货盘');
     }
-    const referenceResult = await readExcelWithSchema(
-      payload.referenceBuffer,
-      [...COMPARE_SCHEMA],
-    );
+    const referenceResult = await readProductCompareWorkbook(payload.referenceBuffer);
     assertSchemaCapability(referenceResult.fieldMap, referenceResult.headers, '对照货盘', {
       requireAiText: true,
-      requireUpc: true,
+      requireUpc: false,
     });
 
     const { validRows: referenceRows } = parseRows(
@@ -1170,7 +1434,7 @@ export async function runProductCompare(
   const aiPendingRows: ParsedCompareRow[] = [];
 
   for (const row of validTargetRows) {
-    const exactCandidates = exactMap.get(row.upc) || [];
+    const exactCandidates = row.upc ? exactMap.get(row.upc) || [] : [];
     if (exactCandidates.length > 0) {
       const bestCandidate = pickBestCandidateByCost(exactCandidates);
       if (bestCandidate) {
@@ -1192,6 +1456,7 @@ export async function runProductCompare(
     aiPendingRows,
     referenceCandidates,
     stats,
+    sourceMode === 'productMaster',
   );
   results.push(...aiPendingRows.map((row) => aiResults.get(row.rowId)!));
 

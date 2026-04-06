@@ -2,7 +2,15 @@
 import { computed, ref } from 'vue';
 
 import dayjs from 'dayjs';
-import { Button, Descriptions, Drawer, Table, Tag, Tabs } from 'ant-design-vue';
+import {
+  Button,
+  Descriptions,
+  Drawer,
+  Table,
+  Tag,
+  Tabs,
+  message,
+} from 'ant-design-vue';
 
 import {
   getAoxiangReplenishmentSummary,
@@ -12,8 +20,7 @@ import {
   type ProcurementAlertDelivery,
   type ProcurementAlertEvent,
 } from '#/api/procurement';
-import { getStoreList, type Store } from '#/api/store';
-import { getSupplierList, type Supplier } from '#/api/supplier';
+import { useProcurementBaseOptions } from '#/composables/useProcurementBaseOptions';
 import SimpleTemplate from '#/components/base/SimpleTemplate/index.vue';
 
 type SearchModel = {
@@ -61,8 +68,11 @@ const filters = ref<SearchModel>({
 const rawRows = ref<StoreSoldOutLogRow[]>([]);
 const rawEvents = ref<ProcurementAlertEvent[]>([]);
 const rawDeliveries = ref<ProcurementAlertDelivery[]>([]);
-const storeOptions = ref<Array<{ label: string; value: string }>>([]);
-const supplierOptions = ref<Array<{ label: string; value: string }>>([]);
+const {
+  loadBaseOptions,
+  stores: storeOptions,
+  suppliers: supplierOptions,
+} = useProcurementBaseOptions();
 
 const detailOpen = ref(false);
 const currentDetailRow = ref<StoreSoldOutLogRow | null>(null);
@@ -131,9 +141,11 @@ function formatPercent(value?: number) {
 }
 
 function renderFetchStatus(status: StoreSoldOutLogRow['fetchStatus']) {
-  return status === 'success'
-    ? <Tag color="success">抓取成功</Tag>
-    : <Tag color="error">抓取失败</Tag>;
+  return status === 'success' ? (
+    <Tag color="success">抓取成功</Tag>
+  ) : (
+    <Tag color="error">抓取失败</Tag>
+  );
 }
 
 function renderSendStatus(status: StoreSoldOutLogRow['sendStatus']) {
@@ -157,7 +169,9 @@ function renderSupplierPreview(suppliers: SupplierSoldOutSummary[]) {
     : `${names.slice(0, 2).join('、')} 等${names.length}个`;
 }
 
-function resolveSendStatus(deliveries: ProcurementAlertDelivery[]): StoreSoldOutLogRow['sendStatus'] {
+function resolveSendStatus(
+  deliveries: ProcurementAlertDelivery[],
+): StoreSoldOutLogRow['sendStatus'] {
   if (deliveries.length === 0) return 'pending';
   const statuses = deliveries.map((item) => item.status);
   if (statuses.every((status) => status === 'sent')) return 'sent';
@@ -169,11 +183,14 @@ function resolveSendStatus(deliveries: ProcurementAlertDelivery[]): StoreSoldOut
 function getRelatedEvents(row: StoreSoldOutLogRow) {
   return rawEvents.value.filter((event) => {
     if (event.sourceType !== 'replenishment') return false;
-    if (event.storeIds.length > 0 && !event.storeIds.includes(row.storeCode)) return false;
+    if (event.storeIds.length > 0 && !event.storeIds.includes(row.storeCode))
+      return false;
     if (
       row.supplierSummaries.length > 0 &&
       event.supplierIds.length > 0 &&
-      !row.supplierSummaries.some((item) => event.supplierIds.includes(item.supplierCode))
+      !row.supplierSummaries.some((item) =>
+        event.supplierIds.includes(item.supplierCode),
+      )
     ) {
       return false;
     }
@@ -183,7 +200,9 @@ function getRelatedEvents(row: StoreSoldOutLogRow) {
 
 function getRelatedDeliveries(row: StoreSoldOutLogRow) {
   const eventIds = new Set(getRelatedEvents(row).map((event) => event.id));
-  return rawDeliveries.value.filter((delivery) => eventIds.has(delivery.eventId));
+  return rawDeliveries.value.filter((delivery) =>
+    eventIds.has(delivery.eventId),
+  );
 }
 
 const columns = [
@@ -202,7 +221,10 @@ const columns = [
     dataIndex: 'supplierSummaries',
     title: '涉及供应商',
     minWidth: 240,
-    render: (_h: any, ctx: { row?: StoreSoldOutLogRow; record?: StoreSoldOutLogRow }) => {
+    render: (
+      _h: any,
+      ctx: { row?: StoreSoldOutLogRow; record?: StoreSoldOutLogRow },
+    ) => {
       const row = ctx?.row || ctx?.record;
       return renderSupplierPreview(row?.supplierSummaries || []);
     },
@@ -213,7 +235,9 @@ const columns = [
     title: '售罄商品数',
     width: 100,
     render: (_h: any, ctx: { text?: number }) => (
-      <Tag color={(ctx?.text || 0) > 0 ? 'error' : 'default'}>{ctx?.text || 0}</Tag>
+      <Tag color={(ctx?.text || 0) > 0 ? 'error' : 'default'}>
+        {ctx?.text || 0}
+      </Tag>
     ),
   },
   {
@@ -228,20 +252,27 @@ const columns = [
     title: '抓取状态',
     width: 120,
     render: (_h: any, ctx: { text?: StoreSoldOutLogRow['fetchStatus'] }) =>
-      renderFetchStatus((ctx?.text || 'failed') as StoreSoldOutLogRow['fetchStatus']),
+      renderFetchStatus(
+        (ctx?.text || 'failed') as StoreSoldOutLogRow['fetchStatus'],
+      ),
   },
   {
     dataIndex: 'sendStatus',
     title: '发送状态',
     width: 120,
     render: (_h: any, ctx: { text?: StoreSoldOutLogRow['sendStatus'] }) =>
-      renderSendStatus((ctx?.text || 'pending') as StoreSoldOutLogRow['sendStatus']),
+      renderSendStatus(
+        (ctx?.text || 'pending') as StoreSoldOutLogRow['sendStatus'],
+      ),
   },
   { dataIndex: 'latestSummary', title: '摘要', minWidth: 320 },
   {
     title: '操作',
     width: 120,
-    render: (_h: any, ctx: { row?: StoreSoldOutLogRow; record?: StoreSoldOutLogRow }) => {
+    render: (
+      _h: any,
+      ctx: { row?: StoreSoldOutLogRow; record?: StoreSoldOutLogRow },
+    ) => {
       const row = ctx?.row || ctx?.record;
       if (!row) return null;
       return (
@@ -260,7 +291,9 @@ const detailSupplierColumns = [
     title: '售罄商品数',
     width: 100,
     render: (_h: any, ctx: { text?: number }) => (
-      <Tag color={(ctx?.text || 0) > 0 ? 'error' : 'default'}>{ctx?.text || 0}</Tag>
+      <Tag color={(ctx?.text || 0) > 0 ? 'error' : 'default'}>
+        {ctx?.text || 0}
+      </Tag>
     ),
   },
   {
@@ -287,7 +320,9 @@ const detailDeliveryColumns = [
     title: '渠道',
     width: 120,
     render: (_h: any, ctx: { text?: string }) => (
-      <Tag color={ctx?.text === 'feishu' ? 'blue' : 'purple'}>{ctx?.text || '-'}</Tag>
+      <Tag color={ctx?.text === 'feishu' ? 'blue' : 'purple'}>
+        {ctx?.text || '-'}
+      </Tag>
     ),
   },
   {
@@ -295,7 +330,9 @@ const detailDeliveryColumns = [
     title: '状态',
     width: 120,
     render: (_h: any, ctx: { text?: string }) =>
-      renderSendStatus((ctx?.text || 'pending') as StoreSoldOutLogRow['sendStatus']),
+      renderSendStatus(
+        (ctx?.text || 'pending') as StoreSoldOutLogRow['sendStatus'],
+      ),
   },
   { dataIndex: 'payloadSummary', title: '摘要', minWidth: 320 },
   { dataIndex: 'failureReason', title: '失败原因', width: 240 },
@@ -317,27 +354,25 @@ const detailDeliveries = computed(() => {
 async function ensureBaseOptionsLoaded() {
   if (storeOptions.value.length > 0 && supplierOptions.value.length > 0) return;
 
-  const [stores, suppliers] = await Promise.all([
-    getStoreList({}),
-    getSupplierList({}),
-  ]);
+  await loadBaseOptions();
 
-  storeOptions.value = stores.map((item: Store) => ({
-    label: item.storeName,
-    value: item.storeId,
-  }));
-  supplierOptions.value = suppliers.map((item: Supplier) => ({
-    label: item.supplierName,
-    value: item.supplierId,
-  }));
+  if (storeOptions.value.length === 0 && supplierOptions.value.length === 0) {
+    message.warning(
+      '\u95e8\u5e97\u548c\u4f9b\u5e94\u5546\u7b5b\u9009\u9879\u6682\u672a\u52a0\u8f7d\u5230\uff0c\u5c06\u7ee7\u7eed\u5c55\u793a\u6c47\u603b\u6570\u636e',
+    );
+  }
 }
 
-function buildStoreRows(summary: Awaited<ReturnType<typeof getAoxiangReplenishmentSummary>>) {
+function buildStoreRows(
+  summary: Awaited<ReturnType<typeof getAoxiangReplenishmentSummary>>,
+) {
   const storeMap = new Map<string, StoreSoldOutLogRow>();
 
   for (const report of summary.reports || []) {
     for (const store of report.triggeredStores || report.storeSummaries || []) {
-      const rowItems = (report.items || []).filter((item) => item.storeCode === store.storeCode);
+      const rowItems = (report.items || []).filter(
+        (item) => item.storeCode === store.storeCode,
+      );
       const existing = storeMap.get(store.storeCode) || {
         createdAt: summary.generatedAt,
         fetchStatus: 'success',
@@ -369,7 +404,8 @@ function buildStoreRows(summary: Awaited<ReturnType<typeof getAoxiangReplenishme
         existing.totalItems += store.totalItems;
       }
       existing.supplierCount = existing.supplierSummaries.length;
-      const storeTotalItems = existing.productMasterTotalItems || existing.totalItems;
+      const storeTotalItems =
+        existing.productMasterTotalItems || existing.totalItems;
       existing.storeSoldRate =
         storeTotalItems > 0
           ? Number(((existing.soldItems / storeTotalItems) * 100).toFixed(2))
@@ -407,11 +443,14 @@ async function loadData(query: SearchModel) {
       if (query.storeId && row.storeCode !== query.storeId) return false;
       if (
         query.supplierId &&
-        !row.supplierSummaries.some((item) => item.supplierCode === query.supplierId)
+        !row.supplierSummaries.some(
+          (item) => item.supplierCode === query.supplierId,
+        )
       ) {
         return false;
       }
-      if (query.fetchStatus && row.fetchStatus !== query.fetchStatus) return false;
+      if (query.fetchStatus && row.fetchStatus !== query.fetchStatus)
+        return false;
       if (query.sendStatus && row.sendStatus !== query.sendStatus) return false;
       return true;
     })
@@ -423,7 +462,9 @@ function openDetail(row: StoreSoldOutLogRow) {
   detailOpen.value = true;
 }
 
-async function serveMethods(params: { data?: Partial<SearchModel> } | Partial<SearchModel>) {
+async function serveMethods(
+  params: { data?: Partial<SearchModel> } | Partial<SearchModel>,
+) {
   const query = {
     ...filters.value,
     ...((params as any)?.data || params || {}),
@@ -456,7 +497,11 @@ async function serveMethods(params: { data?: Partial<SearchModel> } | Partial<Se
 
   <Drawer
     v-model:open="detailOpen"
-    :title="currentDetailRow ? `${currentDetailRow.storeName} 门店售罄详情` : '门店售罄详情'"
+    :title="
+      currentDetailRow
+        ? `${currentDetailRow.storeName} 门店售罄详情`
+        : '门店售罄详情'
+    "
     width="78%"
   >
     <template v-if="currentDetailRow">
@@ -480,8 +525,16 @@ async function serveMethods(params: { data?: Partial<SearchModel> } | Partial<Se
           {{ currentDetailRow.totalItems }}
         </Descriptions.Item>
         <Descriptions.Item label="抓取状态">
-          <Tag :color="currentDetailRow.fetchStatus === 'success' ? 'success' : 'error'">
-            {{ currentDetailRow.fetchStatus === 'success' ? '抓取成功' : '抓取失败' }}
+          <Tag
+            :color="
+              currentDetailRow.fetchStatus === 'success' ? 'success' : 'error'
+            "
+          >
+            {{
+              currentDetailRow.fetchStatus === 'success'
+                ? '抓取成功'
+                : '抓取失败'
+            }}
           </Tag>
         </Descriptions.Item>
         <Descriptions.Item label="发送状态">
@@ -513,7 +566,10 @@ async function serveMethods(params: { data?: Partial<SearchModel> } | Partial<Se
       </Descriptions>
 
       <Tabs>
-        <Tabs.TabPane key="suppliers" :tab="`供应商汇总 (${currentDetailRow.supplierSummaries.length})`">
+        <Tabs.TabPane
+          key="suppliers"
+          :tab="`供应商汇总 (${currentDetailRow.supplierSummaries.length})`"
+        >
           <Table
             row-key="supplierCode"
             size="small"
@@ -523,17 +579,25 @@ async function serveMethods(params: { data?: Partial<SearchModel> } | Partial<Se
             :scroll="{ x: 760 }"
           />
         </Tabs.TabPane>
-        <Tabs.TabPane key="items" :tab="`售罄商品 (${currentDetailRow.supplierSummaries.flatMap((item) => item.items).length})`">
+        <Tabs.TabPane
+          key="items"
+          :tab="`售罄商品 (${currentDetailRow.supplierSummaries.flatMap((item) => item.items).length})`"
+        >
           <Table
             row-key="skuCode"
             size="small"
             :columns="detailItemColumns"
-            :data-source="currentDetailRow.supplierSummaries.flatMap((item) => item.items)"
+            :data-source="
+              currentDetailRow.supplierSummaries.flatMap((item) => item.items)
+            "
             :pagination="{ pageSize: 10 }"
             :scroll="{ x: 1180 }"
           />
         </Tabs.TabPane>
-        <Tabs.TabPane key="deliveries" :tab="`发送记录 (${detailDeliveries.length})`">
+        <Tabs.TabPane
+          key="deliveries"
+          :tab="`发送记录 (${detailDeliveries.length})`"
+        >
           <Table
             row-key="id"
             size="small"

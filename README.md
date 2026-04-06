@@ -69,6 +69,7 @@ pnpm dev:withdraw
 
 - [项目总览](./docs/PROJECT_MAP.md)
 - [项目记忆](./docs/PROJECT_MEMORY.md)
+- [商品比对记忆](./docs/PRODUCT_COMPARE_MEMORY.md)
 - [系统变更记录](./docs/CHANGELOG.md)
 - [Electron 发布流程](./docs/RELEASE_PROCESS.md)
 - [商家工具扩展方案](./docs/merchant-tool-extension.md)

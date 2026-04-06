@@ -155,3 +155,31 @@ This is the default expectation for merchant, store, supplier, account, and simi
 - Before changing route refresh behavior, read `docs/VBEN_FRONTEND_NOTES.md`.
 - Before changing backend assumptions, also read `C:\Users\31314\Documents\GitHub\scripts-backend\README.md`.
 - Avoid assuming an old mock-based architecture unless you have verified the referenced file still exists.
+
+## 9. Product compare durable rules
+
+The product compare flow should now be understood as a layered matching pipeline rather than a pure `UPC -> AI` flow.
+
+Current backend order:
+
+- `UPC` exact match first
+- learned match reuse second
+- guarded rule match third
+- AI fallback last
+
+Important practical rules:
+
+- In `productMaster` mode, a row should not be rejected only because candidate UPC differs.
+- Product master candidates are expanded per store, so rule matching must deduplicate same-product multi-store variants before applying score-gap rejection.
+- High-confidence same-product cases such as same brand + same series + same capacity but different carton/unit packaging should prefer rule match instead of burning AI quota.
+- When AI confirms a non-UPC match, that decision should be persisted and reused on later runs so the same naming/spec pattern is intercepted before AI next time.
+- AI configuration is runtime state, not repository state. Do not commit API keys into the repo. The server reads product compare AI config from runtime storage/API, and learned match history is also runtime data.
+
+Relevant backend implementation:
+
+- `C:\Users\31314\Documents\GitHub\scripts-backend\src\lib\product-compare.ts`
+- `C:\Users\31314\Documents\GitHub\scripts-backend\src\routes\product-center.ts`
+
+Related note:
+
+- Read `docs/PRODUCT_COMPARE_MEMORY.md` before changing product compare matching behavior again.
